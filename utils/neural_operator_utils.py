@@ -1,0 +1,782 @@
+"""
+==================================================
+Project     : Vibro-Acoustic Metamaterials
+Module      : Neural Operator Utilities
+Description : Shared ERP neural-operator training/evaluation workflow
+==================================================
+
+All operator models use the same convention:
+
+    configuration : (batch, num_res, 3) normalized [f_t, x, y]
+    frequency     : (batch, n_freq, 1) normalized evaluation frequencies
+    output        : (batch, n_freq, 1) normalized ERP
+
+Dataset preprocessing is owned by ``erp_dataset.py``. Plot construction and
+file output are owned by ``plotting.py``. This module owns reusable network
+blocks, full-spectrum loaders, training/evaluation and checkpoint workflows.
+"""
+
+from __future__ import annotations
+
+import copy
+import math
+from pathlib import Path
+from typing import Callable, Mapping, Sequence
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+
+from .erp_dataset import (
+    DEFAULT_DATASET_FILE,
+    configuration_to_resonators,
+    denormalize_erp_array,
+    normalize_configuration_array,
+    normalize_erp_array,
+    normalize_frequency_array,
+    prepare_erp_dataset,
+)
+from utils.physics import freqs, num_res as default_num_res
+from .plotting import (
+    operator_plot_dir,
+    plot_erp_comparison,
+    plot_loss_curves,
+    plot_prediction_scatter,
+)
+from .solver import compute_erp_spectrum
+from .utils import device, seed_everything
+
+
+# ==================================================
+# Small reusable network blocks
+# ==================================================
+
+
+class MLP(nn.Module):
+    """Compact fully connected network."""
+
+    def __init__(
+        self,
+        widths: Sequence[int],
+        activation: type[nn.Module] = nn.SiLU,
+        final_activation: nn.Module | None = None,
+    ) -> None:
+        super().__init__()
+        widths = [int(v) for v in widths]
+        if len(widths) < 2 or any(v <= 0 for v in widths):
+            raise ValueError("widths must contain at least two positive integers.")
+
+        layers: list[nn.Module] = []
+        for i, (din, dout) in enumerate(zip(widths[:-1], widths[1:])):
+            layers.append(nn.Linear(din, dout))
+            if i < len(widths) - 2:
+                layers.append(activation())
+        if final_activation is not None:
+            layers.append(final_activation)
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class ResidualMLPBlock(nn.Module):
+    """Two-layer residual MLP block."""
+
+    def __init__(self, width: int, activation: type[nn.Module] = nn.SiLU) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(width, width),
+            activation(),
+            nn.Linear(width, width),
+        )
+        self.norm = nn.LayerNorm(width)
+        self.activation = activation()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.activation(self.norm(x + self.net(x)))
+
+
+class ResonatorSetEncoder(nn.Module):
+    """Permutation-invariant encoder for resonator configurations."""
+
+    def __init__(
+        self,
+        feature_dim: int = 3,
+        hidden_dim: int = 128,
+        element_dim: int = 128,
+        output_dim: int = 128,
+    ) -> None:
+        super().__init__()
+        self.element_net = MLP(
+            [feature_dim, hidden_dim, hidden_dim, element_dim],
+            activation=nn.SiLU,
+        )
+        self.fusion_net = MLP(
+            [2 * element_dim, hidden_dim, output_dim],
+            activation=nn.SiLU,
+        )
+
+    def forward(self, configuration: torch.Tensor) -> torch.Tensor:
+        if configuration.ndim != 3 or configuration.shape[-1] != 3:
+            raise ValueError("configuration must have shape (batch, num_res, 3).")
+        h = self.element_net(configuration)
+        pooled = torch.cat((h.mean(dim=1), h.max(dim=1).values), dim=-1)
+        return self.fusion_net(pooled)
+
+
+# ==================================================
+# Dataset compatibility / full-spectrum loaders
+# ==================================================
+
+
+def _configuration_features(dataset) -> np.ndarray:
+    """Read current configuration features, with legacy name support."""
+    if hasattr(dataset, "configuration_features"):
+        value = dataset.configuration_features
+    elif hasattr(dataset, "design_features"):
+        value = dataset.design_features
+    else:
+        raise AttributeError("ERP dataset has no configuration/design feature array.")
+    return np.asarray(value, dtype=np.float32)
+
+
+def _split_ids(dataset) -> dict[str, np.ndarray]:
+    """Read current configuration split IDs, with legacy name support."""
+    if hasattr(dataset, "split_configuration_ids"):
+        value = dataset.split_configuration_ids
+    elif hasattr(dataset, "split_design_ids"):
+        value = dataset.split_design_ids
+    else:
+        value = None
+    if value is None:
+        raise RuntimeError("ERP dataset has not been split.")
+    return {name: np.asarray(ids, dtype=np.int64) for name, ids in value.items()}
+
+
+class ERPSpectrumDataset(Dataset):
+    """One item = one complete resonator configuration and ERP spectrum."""
+
+    def __init__(self, dataset, configuration_ids: Sequence[int]) -> None:
+        if dataset.norm_params is None:
+            raise RuntimeError("Dataset normalization must be available first.")
+
+        ids = np.asarray(configuration_ids, dtype=np.int64)
+        norm = dataset.norm_params
+
+        configuration = normalize_configuration_array(
+            _configuration_features(dataset)[ids], norm
+        )
+        frequency = normalize_frequency_array(dataset.frequency_values, norm)
+        response = normalize_erp_array(
+            np.asarray(dataset.responses, dtype=np.float32)[ids, :, 0], norm
+        )
+
+        self.configuration = torch.from_numpy(configuration.astype(np.float32))
+        self.frequency = torch.from_numpy(frequency[:, None].astype(np.float32))
+        self.response = torch.from_numpy(response[..., None].astype(np.float32))
+
+    def __len__(self) -> int:
+        return self.configuration.shape[0]
+
+    def __getitem__(self, index: int):
+        return self.configuration[index], self.frequency, self.response[index]
+
+
+def build_spectrum_loaders(
+    dataset,
+    batch_size: int = 32,
+    pin_memory: bool | None = None,
+    seed: int = 727,
+) -> dict[str, DataLoader]:
+    """Create configuration-level loaders for full-spectrum operator training."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+    splits = _split_ids(dataset)
+    if pin_memory is None:
+        pin_memory = device.type == "cuda"
+
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    loaders: dict[str, DataLoader] = {}
+    for name in ("train", "val", "test"):
+        subset = ERPSpectrumDataset(dataset, splits[name])
+        loaders[name] = DataLoader(
+            subset,
+            batch_size=batch_size,
+            shuffle=(name == "train"),
+            pin_memory=pin_memory,
+            generator=generator if name == "train" else None,
+        )
+    return loaders
+
+
+def prepare_operator_data(
+    num_configurations: int = 500,
+    *,
+    batch_size: int = 32,
+    dataset_file: str = DEFAULT_DATASET_FILE,
+    regenerate_dataset: bool = False,
+    num_generate: int | None = None,
+    num_res: int = default_num_res,
+    seed: int = 727,
+    preprocessing_state: Mapping[str, object] | None = None,
+    verbose: bool = True,
+):
+    """Prepare the common ERP data and configuration-level spectrum loaders."""
+    dataset, _ = prepare_erp_dataset(
+        num_samples=num_configurations,
+        input_mode="multi_res",
+        batch_size=batch_size,
+        num_res=num_res,
+        dataset_file=dataset_file,
+        regenerate_dataset=regenerate_dataset,
+        num_generate=num_generate,
+        seed=seed,
+        preprocessing_state=preprocessing_state,
+        verbose=verbose,
+    )
+    loaders = build_spectrum_loaders(
+        dataset,
+        batch_size=batch_size,
+        seed=seed,
+    )
+    return dataset, loaders
+
+
+# ==================================================
+# Loss, training and evaluation
+# ==================================================
+
+
+def erp_spectrum_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    slope_weight: float = 0.05,
+) -> torch.Tensor:
+    """Normalized ERP MSE plus a small first-difference penalty."""
+    mse = F.mse_loss(prediction, target)
+    if slope_weight <= 0.0 or prediction.shape[1] < 2:
+        return mse
+    dp = prediction[:, 1:] - prediction[:, :-1]
+    dt = target[:, 1:] - target[:, :-1]
+    return mse + float(slope_weight) * F.mse_loss(dp, dt)
+
+
+def train_operator(
+    model: nn.Module,
+    loaders: Mapping[str, DataLoader],
+    *,
+    epochs: int = 200,
+    lr: float = 5e-4,
+    weight_decay: float = 1e-4,
+    slope_weight: float = 0.05,
+    plot: bool = True,
+    save_plots: bool = True,
+    operator_name: str = "operator",
+    plots_dir: str | Path | None = None,
+) -> tuple[nn.Module, dict[str, list[float]]]:
+    """Train a common-API neural operator and retain best-validation weights."""
+    if epochs <= 0:
+        raise ValueError("epochs must be positive.")
+
+    model = model.to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=epochs, eta_min=1e-6
+    )
+
+    history = {"train": [], "val": []}
+    best_val = math.inf
+    best_state = None
+
+    for epoch in range(epochs):
+        model.train()
+        train_sum = 0.0
+        train_count = 0
+
+        for configuration, frequency, target in loaders["train"]:
+            configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
+            frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
+            target = target.to(device, dtype=torch.float32, non_blocking=True)
+
+            optimizer.zero_grad(set_to_none=True)
+            prediction = model(configuration, frequency)
+            loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            optimizer.step()
+
+            batch = configuration.shape[0]
+            train_sum += loss.item() * batch
+            train_count += batch
+
+        train_loss = train_sum / max(train_count, 1)
+        history["train"].append(train_loss)
+
+        model.eval()
+        val_sum = 0.0
+        val_count = 0
+        with torch.inference_mode():
+            for configuration, frequency, target in loaders["val"]:
+                configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
+                frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
+                target = target.to(device, dtype=torch.float32, non_blocking=True)
+                prediction = model(configuration, frequency)
+                loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                batch = configuration.shape[0]
+                val_sum += loss.item() * batch
+                val_count += batch
+
+        val_loss = val_sum / max(val_count, 1)
+        history["val"].append(val_loss)
+        scheduler.step()
+
+        if val_loss < best_val:
+            best_val = val_loss
+            best_state = copy.deepcopy(model.state_dict())
+
+        print(
+            f"epoch {epoch + 1:4d}/{epochs} | "
+            f"train={train_loss:.6e} | val={val_loss:.6e}"
+        )
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    if save_plots or plot:
+        plot_dir = operator_plot_dir(operator_name, plots_dir) if save_plots else None
+        plot_loss_curves(
+            history["train"],
+            history["val"],
+            title=f"{operator_name} ERP training loss",
+            ylabel="Normalized loss",
+            log_y=True,
+            save_path=(plot_dir / "loss_curve.png") if plot_dir else None,
+            show=plot,
+        )
+
+    return model, history
+
+
+def evaluate_operator(
+    model: nn.Module,
+    loaders: Mapping[str, DataLoader],
+    norm_params: Mapping[str, object],
+    frequency_values: np.ndarray,
+    *,
+    plot: bool = True,
+    num_plot: int = 5,
+    save_plots: bool = True,
+    operator_name: str = "operator",
+    plots_dir: str | Path | None = None,
+) -> dict[str, object]:
+    """Evaluate complete test spectra in physical ERP units.
+
+    Saves a full-test parity plot and up to ``num_plot`` complete ERP spectrum
+    comparisons when ``save_plots=True``. ``plot`` controls display only.
+    """
+    model = model.to(device)
+    model.eval()
+    pred_batches: list[np.ndarray] = []
+    true_batches: list[np.ndarray] = []
+
+    with torch.inference_mode():
+        for configuration, frequency, target in loaders["test"]:
+            configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
+            frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
+            prediction = model(configuration, frequency)
+            pred_batches.append(prediction.cpu().numpy())
+            true_batches.append(target.numpy())
+
+    pred_norm = np.concatenate(pred_batches, axis=0)[..., 0]
+    true_norm = np.concatenate(true_batches, axis=0)[..., 0]
+    pred = denormalize_erp_array(pred_norm, norm_params)
+    true = denormalize_erp_array(true_norm, norm_params)
+
+    error = pred - true
+    mse = float(np.mean(error**2))
+    mae = float(np.mean(np.abs(error)))
+    rmse = float(np.sqrt(mse))
+
+    freq = np.asarray(frequency_values, dtype=np.float64)
+    true_peak_idx = np.argmax(true, axis=1)
+    pred_peak_idx = np.argmax(pred, axis=1)
+    peak_frequency_mae = float(
+        np.mean(np.abs(freq[pred_peak_idx] - freq[true_peak_idx]))
+    )
+    true_peak_amp = true[np.arange(true.shape[0]), true_peak_idx]
+    pred_at_true_peak = pred[np.arange(pred.shape[0]), true_peak_idx]
+    peak_amplitude_mae = float(np.mean(np.abs(pred_at_true_peak - true_peak_amp)))
+
+    print("=" * 68)
+    print(f"ERP test RMSE               : {rmse:.6f} dB")
+    print(f"ERP test MAE                : {mae:.6f} dB")
+    print(f"Dominant peak frequency MAE : {peak_frequency_mae:.4f} Hz")
+    print(f"ERP error at true peak MAE  : {peak_amplitude_mae:.6f} dB")
+    print("=" * 68)
+
+    plot_dir = operator_plot_dir(operator_name, plots_dir) if save_plots else None
+    n_to_plot = min(max(int(num_plot), 0), true.shape[0])
+
+    if save_plots or plot:
+        for i in range(n_to_plot):
+            plot_erp_comparison(
+                freq,
+                true[i],
+                pred[i],
+                title=f"{operator_name} - test configuration {i + 1}",
+                save_path=(
+                    plot_dir / f"erp_spectrum_test_config_{i + 1:02d}.png"
+                    if plot_dir
+                    else None
+                ),
+                show=plot,
+            )
+
+        plot_prediction_scatter(
+            true,
+            pred,
+            xlabel="Ground Truth ERP (dB)",
+            ylabel="Predicted ERP (dB)",
+            title=f"{operator_name} - test ERP prediction vs ground truth",
+            save_path=(plot_dir / "prediction_vs_ground_truth.png") if plot_dir else None,
+            show=plot,
+        )
+
+    return {
+        "mse": mse,
+        "rmse": rmse,
+        "mae": mae,
+        "peak_frequency_mae_hz": peak_frequency_mae,
+        "peak_amplitude_mae_db": peak_amplitude_mae,
+        "predictions": pred,
+        "targets": true,
+        "plot_directory": str(plot_dir) if plot_dir is not None else None,
+    }
+
+
+# ==================================================
+# Prediction and checkpoint helpers
+# ==================================================
+
+
+def predict_erp_spectrum(
+    model: nn.Module,
+    configuration: np.ndarray,
+    norm_params: Mapping[str, object],
+    *,
+    frequency_values: np.ndarray = freqs,
+    compare_solver: bool = True,
+    plot: bool = True,
+    save_plots: bool = True,
+    operator_name: str = "operator",
+    plots_dir: str | Path | None = None,
+) -> dict[str, object]:
+    """Predict ERP for one raw [f_t,x,y] resonator configuration."""
+    configuration = np.asarray(configuration, dtype=np.float32)
+    normalized_configuration = normalize_configuration_array(configuration, norm_params)
+
+    frequency_values = np.asarray(frequency_values, dtype=np.float32)
+    normalized_frequency = normalize_frequency_array(frequency_values, norm_params)
+
+    config_tensor = torch.from_numpy(normalized_configuration).unsqueeze(0).to(device)
+    freq_tensor = torch.from_numpy(normalized_frequency[:, None]).unsqueeze(0).to(device)
+
+    model = model.to(device)
+    model.eval()
+    with torch.inference_mode():
+        pred_norm = model(config_tensor, freq_tensor).cpu().numpy()[0, :, 0]
+    prediction = denormalize_erp_array(pred_norm, norm_params)
+
+    result: dict[str, object] = {
+        "configuration": configuration,
+        "frequencies": frequency_values,
+        "prediction": prediction,
+    }
+
+    ground_truth = None
+    if compare_solver:
+        ground_truth = compute_erp_spectrum(
+            configuration_to_resonators(configuration),
+            frequencies=frequency_values,
+        )
+        result["ground_truth"] = ground_truth
+
+    if save_plots or plot:
+        plot_dir = operator_plot_dir(operator_name, plots_dir) if save_plots else None
+        if ground_truth is not None:
+            plot_erp_comparison(
+                frequency_values,
+                ground_truth,
+                prediction,
+                title=f"{operator_name} - ERP spectrum prediction",
+                save_path=(plot_dir / "prediction_spectrum.png") if plot_dir else None,
+                show=plot,
+            )
+        else:
+            # Use the same comparison plot API; when no solver curve exists,
+            # no plot is created because a meaningful comparison is unavailable.
+            print("Prediction computed; no ground truth requested for comparison plot.")
+        result["plot_directory"] = str(plot_dir) if plot_dir is not None else None
+
+    return result
+
+
+def parameter_count(model: nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def save_operator_checkpoint(
+    model: nn.Module,
+    *,
+    operator_name: str,
+    model_config: Mapping[str, object],
+    preprocessing_state: Mapping[str, object],
+    filename: str,
+) -> None:
+    path = Path(filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "operator_name": operator_name,
+            "model_config": dict(model_config),
+            "model_state_dict": model.state_dict(),
+            "preprocessing_state": preprocessing_state,
+        },
+        path,
+    )
+    print(f"Checkpoint saved: {path}")
+
+
+def load_operator_checkpoint(filename: str) -> dict[str, object]:
+    path = Path(filename)
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found. Train the operator first.")
+    return torch.load(path, map_location=device, weights_only=False)
+
+
+# ==================================================
+# Common experiment workflow
+# ==================================================
+
+
+def run_operator_experiment(
+    *,
+    operator_name: str,
+    build_model: Callable[..., nn.Module],
+    model_config: Mapping[str, object],
+    action: str = "train",
+    num_configurations: int = 500,
+    batch_size: int = 16,
+    epochs: int = 200,
+    learning_rate: float = 5e-4,
+    weight_decay: float = 1e-4,
+    slope_weight: float = 0.05,
+    dataset_file: str = DEFAULT_DATASET_FILE,
+    regenerate_dataset: bool = False,
+    num_generate: int | None = None,
+    seed: int = 727,
+    checkpoint_file: str | None = None,
+    configuration: np.ndarray | None = None,
+    plot: bool = True,
+    save_plots: bool = True,
+    plots_dir: str | Path | None = None,
+    num_evaluation_plots: int = 5,
+    evaluate_after_training: bool = False,
+) -> dict[str, object]:
+    """Train, evaluate, or predict with one operator architecture."""
+    action = str(action).lower().strip()
+    if action not in {"train", "evaluate", "predict"}:
+        raise ValueError("action must be 'train', 'evaluate', or 'predict'.")
+
+    seed_everything(seed)
+    checkpoint_file = checkpoint_file or f"models/{operator_name.lower()}_erp.pth"
+
+    if action == "train":
+        dataset, loaders = prepare_operator_data(
+            num_configurations=num_configurations,
+            batch_size=batch_size,
+            dataset_file=dataset_file,
+            regenerate_dataset=regenerate_dataset,
+            num_generate=num_generate,
+            seed=seed,
+            verbose=True,
+        )
+        model = build_model(num_res=dataset.num_res, **dict(model_config)).to(device)
+        print(f"{operator_name} trainable parameters: {parameter_count(model):,}")
+        model, history = train_operator(
+            model,
+            loaders,
+            epochs=epochs,
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            slope_weight=slope_weight,
+            plot=plot,
+            save_plots=save_plots,
+            operator_name=operator_name,
+            plots_dir=plots_dir,
+        )
+        save_operator_checkpoint(
+            model,
+            operator_name=operator_name,
+            model_config=model_config,
+            preprocessing_state=dataset.preprocessing_state(),
+            filename=checkpoint_file,
+        )
+
+        result: dict[str, object] = {
+            "action": action,
+            "operator_name": operator_name,
+            "model": model,
+            "dataset": dataset,
+            "loaders": loaders,
+            "history": history,
+        }
+        if evaluate_after_training:
+            result["metrics"] = evaluate_operator(
+                model,
+                loaders,
+                dataset.norm_params,
+                dataset.frequency_values,
+                plot=plot,
+                num_plot=num_evaluation_plots,
+                save_plots=save_plots,
+                operator_name=operator_name,
+                plots_dir=plots_dir,
+            )
+        return result
+
+    checkpoint = load_operator_checkpoint(checkpoint_file)
+    saved_config = dict(checkpoint["model_config"])
+    preprocessing_state = checkpoint["preprocessing_state"]
+    selected_ids = np.asarray(preprocessing_state["selected_source_ids"], dtype=np.int64)
+
+    dataset, loaders = prepare_operator_data(
+        num_configurations=int(selected_ids.size),
+        batch_size=batch_size,
+        dataset_file=dataset_file,
+        regenerate_dataset=False,
+        seed=seed,
+        preprocessing_state=preprocessing_state,
+        verbose=True,
+    )
+    model = build_model(num_res=dataset.num_res, **saved_config).to(device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+
+    if action == "evaluate":
+        metrics = evaluate_operator(
+            model,
+            loaders,
+            dataset.norm_params,
+            dataset.frequency_values,
+            plot=plot,
+            num_plot=num_evaluation_plots,
+            save_plots=save_plots,
+            operator_name=operator_name,
+            plots_dir=plots_dir,
+        )
+        return {
+            "action": action,
+            "operator_name": operator_name,
+            "model": model,
+            "metrics": metrics,
+            "frequency_values": np.asarray(dataset.frequency_values).copy(),
+        }
+
+    if configuration is None:
+        test_id = int(_split_ids(dataset)["test"][0])
+        configuration = _configuration_features(dataset)[test_id].copy()
+        print("No configuration supplied; using the first test configuration:")
+        print(configuration)
+
+    prediction = predict_erp_spectrum(
+        model,
+        configuration,
+        dataset.norm_params,
+        frequency_values=dataset.frequency_values,
+        compare_solver=True,
+        plot=plot,
+        save_plots=save_plots,
+        operator_name=operator_name,
+        plots_dir=plots_dir,
+    )
+    return {
+        "action": action,
+        "operator_name": operator_name,
+        "model": model,
+        "prediction": prediction,
+    }
+
+
+def make_operator_runner(
+    *,
+    operator_name: str,
+    build_model: Callable[..., nn.Module],
+    model_config: Mapping[str, object],
+    default_epochs: int = 200,
+    default_learning_rate: float = 5e-4,
+) -> Callable[..., dict[str, object]]:
+    """Create the repeated per-architecture ``main`` experiment wrapper once."""
+
+    def runner(
+        action: str = "train",
+        num_configurations: int = 500,
+        batch_size: int = 16,
+        epochs: int = default_epochs,
+        learning_rate: float = default_learning_rate,
+        dataset_file: str = DEFAULT_DATASET_FILE,
+        regenerate_dataset: bool = False,
+        seed: int = 727,
+        configuration=None,
+        plot: bool = True,
+        save_plots: bool = True,
+        plots_dir: str | Path | None = None,
+        num_evaluation_plots: int = 5,
+        evaluate_after_training: bool = False,
+    ) -> dict[str, object]:
+        return run_operator_experiment(
+            operator_name=operator_name,
+            build_model=build_model,
+            model_config=model_config,
+            action=action,
+            num_configurations=num_configurations,
+            batch_size=batch_size,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            dataset_file=dataset_file,
+            regenerate_dataset=regenerate_dataset,
+            seed=seed,
+            configuration=configuration,
+            plot=plot,
+            save_plots=save_plots,
+            plots_dir=plots_dir,
+            num_evaluation_plots=num_evaluation_plots,
+            evaluate_after_training=evaluate_after_training,
+        )
+
+    runner.__name__ = "main"
+    runner.__doc__ = f"Run train/evaluate/predict workflow for {operator_name}."
+    return runner
+
+
+__all__ = [
+    "MLP",
+    "ResidualMLPBlock",
+    "ResonatorSetEncoder",
+    "ERPSpectrumDataset",
+    "build_spectrum_loaders",
+    "prepare_operator_data",
+    "erp_spectrum_loss",
+    "train_operator",
+    "evaluate_operator",
+    "predict_erp_spectrum",
+    "parameter_count",
+    "save_operator_checkpoint",
+    "load_operator_checkpoint",
+    "run_operator_experiment",
+    "make_operator_runner",
+]
