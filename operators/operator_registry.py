@@ -62,7 +62,7 @@ OPERATORS = {
         build_model=build_don,
         model_config=DON_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "2": _make_spec(
         name="Deep Neural Operator",
@@ -71,7 +71,7 @@ OPERATORS = {
         build_model=build_dno,
         model_config=DNO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "3": _make_spec(
         name="Fourier Neural Operator",
@@ -80,7 +80,7 @@ OPERATORS = {
         build_model=build_fno,
         model_config=FNO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "4": _make_spec(
         name="Deep Cat Operator",
@@ -89,7 +89,7 @@ OPERATORS = {
         build_model=build_dco,
         model_config=DCO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "5": _make_spec(
         name="Graph Neural Operator",
@@ -98,7 +98,7 @@ OPERATORS = {
         build_model=build_gno,
         model_config=GNO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "6": _make_spec(
         name="Set Transformer Operator",
@@ -107,7 +107,7 @@ OPERATORS = {
         build_model=build_sto,
         model_config=STO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
     "7": _make_spec(
         name="SIREN Neural Operator",
@@ -116,7 +116,7 @@ OPERATORS = {
         build_model=build_siren,
         model_config=SIREN_MODEL_CONFIG,
         epochs=500,
-        lr=2e-3,
+        lr=2e-4,
     ),
     "8": _make_spec(
         name="Wavelet Neural Operator",
@@ -125,7 +125,7 @@ OPERATORS = {
         build_model=build_wno,
         model_config=WNO_MODEL_CONFIG,
         epochs=500,
-        lr=5e-3,
+        lr=5e-4,
     ),
 }
 
