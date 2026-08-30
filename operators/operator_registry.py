@@ -61,7 +61,7 @@ OPERATORS = {
         operator_name="DON",
         build_model=build_don,
         model_config=DON_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "2": _make_spec(
@@ -70,7 +70,7 @@ OPERATORS = {
         operator_name="DNO",
         build_model=build_dno,
         model_config=DNO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "3": _make_spec(
@@ -79,7 +79,7 @@ OPERATORS = {
         operator_name="FNO",
         build_model=build_fno,
         model_config=FNO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "4": _make_spec(
@@ -88,7 +88,7 @@ OPERATORS = {
         operator_name="DCO",
         build_model=build_dco,
         model_config=DCO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "5": _make_spec(
@@ -97,7 +97,7 @@ OPERATORS = {
         operator_name="GNO",
         build_model=build_gno,
         model_config=GNO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "6": _make_spec(
@@ -106,7 +106,7 @@ OPERATORS = {
         operator_name="STO",
         build_model=build_sto,
         model_config=STO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
     "7": _make_spec(
@@ -115,7 +115,7 @@ OPERATORS = {
         operator_name="SIREN_NO",
         build_model=build_siren,
         model_config=SIREN_MODEL_CONFIG,
-        epochs=500,
+        epochs=250,
         lr=2e-4,
     ),
     "8": _make_spec(
@@ -124,7 +124,7 @@ OPERATORS = {
         operator_name="WNO",
         build_model=build_wno,
         model_config=WNO_MODEL_CONFIG,
-        epochs=500,
+        epochs=200,
         lr=5e-4,
     ),
 }

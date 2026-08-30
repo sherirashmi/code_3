@@ -98,8 +98,44 @@ class ResidualMLPBlock(nn.Module):
         return self.activation(self.norm(x + self.net(x)))
 
 
+def physics_aware_resonator_features(
+    configuration: torch.Tensor,
+    harmonics: int = 4,
+) -> torch.Tensor:
+    """Augment normalized ``[f_t, x, y]`` with plate-inspired sine features.
+
+    ``x`` and ``y`` are already normalized by ``Lx`` and ``Ly`` in the common
+    preprocessing pipeline.  Therefore ``sin(m*pi*x)`` and ``sin(n*pi*y)``
+    follow the same spatial structure that appears in the plate mode shapes.
+    Low-order tensor-product terms are included so the network does not have to
+    rediscover the dominant modal spatial interactions from raw coordinates.
+    """
+    if configuration.ndim < 2 or configuration.shape[-1] != 3:
+        raise ValueError("configuration must end with normalized [f_t, x, y].")
+    if harmonics < 0:
+        raise ValueError("harmonics cannot be negative.")
+
+    if harmonics == 0:
+        return configuration
+
+    f_t = configuration[..., 0:1]
+    x = configuration[..., 1:2]
+    y = configuration[..., 2:3]
+
+    x_modes = [torch.sin(math.pi * float(m) * x) for m in range(1, harmonics + 1)]
+    y_modes = [torch.sin(math.pi * float(n) * y) for n in range(1, harmonics + 1)]
+    products = [xm * yn for xm in x_modes for yn in y_modes]
+    return torch.cat([f_t, x, y, *x_modes, *y_modes, *products], dim=-1)
+
+
 class ResonatorSetEncoder(nn.Module):
-    """Permutation-invariant encoder for resonator configurations."""
+    """Permutation-invariant, physics-aware encoder for resonator sets.
+
+    Every resonator is embedded with shared weights, using normalized raw
+    ``[f_t,x,y]`` plus low-order plate-inspired spatial sine features.  Mean and
+    max pooling preserve permutation invariance while retaining both distributed
+    and dominant-resonator information.
+    """
 
     def __init__(
         self,
@@ -107,10 +143,15 @@ class ResonatorSetEncoder(nn.Module):
         hidden_dim: int = 128,
         element_dim: int = 128,
         output_dim: int = 128,
+        modal_harmonics: int = 4,
     ) -> None:
         super().__init__()
+        if int(feature_dim) != 3:
+            raise ValueError("ResonatorSetEncoder expects [f_t,x,y] feature_dim=3.")
+        self.modal_harmonics = int(modal_harmonics)
+        augmented_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.element_net = MLP(
-            [feature_dim, hidden_dim, hidden_dim, element_dim],
+            [augmented_dim, hidden_dim, hidden_dim, element_dim],
             activation=nn.SiLU,
         )
         self.fusion_net = MLP(
@@ -121,8 +162,71 @@ class ResonatorSetEncoder(nn.Module):
     def forward(self, configuration: torch.Tensor) -> torch.Tensor:
         if configuration.ndim != 3 or configuration.shape[-1] != 3:
             raise ValueError("configuration must have shape (batch, num_res, 3).")
-        h = self.element_net(configuration)
+        features = physics_aware_resonator_features(
+            configuration, harmonics=self.modal_harmonics
+        )
+        h = self.element_net(features)
         pooled = torch.cat((h.mean(dim=1), h.max(dim=1).values), dim=-1)
+        return self.fusion_net(pooled)
+
+
+class ResonanceQueryEncoder(nn.Module):
+    """Permutation-invariant resonator/query interaction encoder.
+
+    For every requested frequency, each resonator is combined with the query
+    frequency and a normalized detuning proxy ``frequency - f_t``.  A shared
+    element network followed by mean/max pooling keeps the result invariant to
+    resonator ordering while exposing near-resonance information explicitly.
+
+    Note that frequency and resonator tuning frequency use the project's existing
+    normalization rules, so the detuning is dimensionless rather than Hz.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int = 64,
+        element_dim: int = 64,
+        output_dim: int = 64,
+        modal_harmonics: int = 4,
+    ) -> None:
+        super().__init__()
+        self.modal_harmonics = int(modal_harmonics)
+        resonator_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        interaction_dim = resonator_dim + 4  # f, delta, |delta|, delta^2
+        self.element_net = MLP(
+            [interaction_dim, hidden_dim, hidden_dim, element_dim],
+            activation=nn.SiLU,
+        )
+        self.fusion_net = MLP(
+            [2 * element_dim, hidden_dim, output_dim],
+            activation=nn.SiLU,
+        )
+
+    def forward(
+        self,
+        configuration: torch.Tensor,
+        frequency: torch.Tensor,
+    ) -> torch.Tensor:
+        if configuration.ndim != 3 or configuration.shape[-1] != 3:
+            raise ValueError("configuration must have shape (batch, num_res, 3).")
+        if frequency.ndim != 3 or frequency.shape[-1] != 1:
+            raise ValueError("frequency must have shape (batch, n_freq, 1).")
+        if configuration.shape[0] != frequency.shape[0]:
+            raise ValueError("configuration and frequency batch sizes must match.")
+
+        b, n, _ = configuration.shape
+        f = frequency.shape[1]
+        resonator = physics_aware_resonator_features(
+            configuration, harmonics=self.modal_harmonics
+        )
+        resonator = resonator[:, None, :, :].expand(b, f, n, -1)
+
+        query = frequency[:, :, None, :].expand(b, f, n, 1)
+        f_t = configuration[:, None, :, 0:1].expand(b, f, n, 1)
+        delta = query - f_t
+        pair = torch.cat((resonator, query, delta, delta.abs(), delta.square()), dim=-1)
+        h = self.element_net(pair)
+        pooled = torch.cat((h.mean(dim=2), h.max(dim=2).values), dim=-1)
         return self.fusion_net(pooled)
 
 
@@ -186,7 +290,8 @@ class ERPSpectrumDataset(Dataset):
 
 def build_spectrum_loaders(
     dataset,
-    batch_size: int = 32,
+    batch_size: int = 16,
+    num_workers: int = 0,
     pin_memory: bool | None = None,
     seed: int = 727,
 ) -> dict[str, DataLoader]:
@@ -207,7 +312,9 @@ def build_spectrum_loaders(
             subset,
             batch_size=batch_size,
             shuffle=(name == "train"),
+            num_workers=num_workers,
             pin_memory=pin_memory,
+            persistent_workers=(num_workers > 0),
             generator=generator if name == "train" else None,
         )
     return loaders
@@ -216,31 +323,34 @@ def build_spectrum_loaders(
 def prepare_operator_data(
     num_configurations: int = 500,
     *,
-    batch_size: int = 32,
+    batch_size: int = 16,
     dataset_file: str = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
     num_res: int = default_num_res,
     seed: int = 727,
     preprocessing_state: Mapping[str, object] | None = None,
+    num_workers: int = 0,
     verbose: bool = True,
 ):
     """Prepare the common ERP data and configuration-level spectrum loaders."""
     dataset, _ = prepare_erp_dataset(
         num_samples=num_configurations,
         input_mode="multi_res",
-        batch_size=batch_size,
+        batch_size=max(64, batch_size),
         num_res=num_res,
         dataset_file=dataset_file,
         regenerate_dataset=regenerate_dataset,
         num_generate=num_generate,
         seed=seed,
         preprocessing_state=preprocessing_state,
+        num_workers=0,
         verbose=verbose,
     )
     loaders = build_spectrum_loaders(
         dataset,
         batch_size=batch_size,
+        num_workers=num_workers,
         seed=seed,
     )
     return dataset, loaders
@@ -579,6 +689,7 @@ def run_operator_experiment(
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
     seed: int = 727,
+    num_workers: int = 0,
     checkpoint_file: str | None = None,
     configuration: np.ndarray | None = None,
     plot: bool = True,
@@ -603,6 +714,7 @@ def run_operator_experiment(
             regenerate_dataset=regenerate_dataset,
             num_generate=num_generate,
             seed=seed,
+            num_workers=num_workers,
             verbose=True,
         )
         model = build_model(num_res=dataset.num_res, **dict(model_config)).to(device)
@@ -661,6 +773,7 @@ def run_operator_experiment(
         regenerate_dataset=False,
         seed=seed,
         preprocessing_state=preprocessing_state,
+        num_workers=num_workers,
         verbose=True,
     )
     model = build_model(num_res=dataset.num_res, **saved_config).to(device)
@@ -766,7 +879,9 @@ def make_operator_runner(
 __all__ = [
     "MLP",
     "ResidualMLPBlock",
+    "physics_aware_resonator_features",
     "ResonatorSetEncoder",
+    "ResonanceQueryEncoder",
     "ERPSpectrumDataset",
     "build_spectrum_loaders",
     "prepare_operator_data",

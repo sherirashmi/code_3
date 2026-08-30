@@ -1,65 +1,92 @@
-"""Lightweight 1D Haar Wavelet Neural Operator (WNO) for ERP spectra."""
+"""Multi-level Haar Wavelet Neural Operator (WNO) for ERP spectra."""
 
 from __future__ import annotations
 
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.neural_operator_utils import ResonatorSetEncoder, run_operator_experiment
+from utils.neural_operator_utils import (
+    ResonanceQueryEncoder,
+    ResonatorSetEncoder,
+    run_operator_experiment,
+)
 
 
-class HaarWaveletBlock1d(nn.Module):
-    """One learned Haar analysis/mixing/synthesis operator block.
+class MultiLevelHaarWaveletBlock1d(nn.Module):
+    """Learned multi-scale Haar analysis/mixing/synthesis residual block."""
 
-    The transform is fixed and dependency-free. Learned convolutions act on the
-    low- and high-frequency wavelet coefficients before exact Haar synthesis.
-    """
-
-    def __init__(self, width: int) -> None:
+    def __init__(self, width: int, levels: int = 3) -> None:
         super().__init__()
-        self.low_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
-        self.high_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
-        self.local = nn.Conv1d(width, width, kernel_size=1)
+        if levels <= 0:
+            raise ValueError("levels must be positive.")
+        self.levels = int(levels)
+        self.low_mix = nn.ModuleList(
+            [nn.Conv1d(width, width, kernel_size=3, padding=1) for _ in range(levels)]
+        )
+        self.high_mix = nn.ModuleList(
+            [nn.Conv1d(width, width, kernel_size=3, padding=1) for _ in range(levels)]
+        )
+        self.coarse_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
+        self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B,C,F). Haar requires pairs, so duplicate the last point if odd.
-        original_n = x.shape[-1]
-        if original_n % 2:
-            x_pad = F.pad(x, (0, 1), mode="replicate")
-        else:
-            x_pad = x
-
-        even = x_pad[..., 0::2]
-        odd = x_pad[..., 1::2]
         inv_sqrt2 = 1.0 / math.sqrt(2.0)
-        low = (even + odd) * inv_sqrt2
-        high = (even - odd) * inv_sqrt2
+        current = x
+        details: list[torch.Tensor] = []
+        original_lengths: list[int] = []
 
-        low = self.low_mix(low)
-        high = self.high_mix(high)
+        for level in range(self.levels):
+            original_n = current.shape[-1]
+            original_lengths.append(original_n)
+            if original_n % 2:
+                padded = F.pad(current, (0, 1), mode="replicate")
+            else:
+                padded = current
 
-        even_rec = (low + high) * inv_sqrt2
-        odd_rec = (low - high) * inv_sqrt2
-        reconstructed = torch.empty_like(x_pad)
-        reconstructed[..., 0::2] = even_rec
-        reconstructed[..., 1::2] = odd_rec
-        reconstructed = reconstructed[..., :original_n]
+            even = padded[..., 0::2]
+            odd = padded[..., 1::2]
+            low = (even + odd) * inv_sqrt2
+            high = (even - odd) * inv_sqrt2
 
-        return F.gelu(self.norm(reconstructed + self.local(x)))
+            low = F.gelu(self.low_mix[level](low))
+            high = F.gelu(self.high_mix[level](high))
+            details.append(high)
+            current = low
+
+        current = F.gelu(self.coarse_mix(current))
+
+        for level in reversed(range(self.levels)):
+            high = details[level]
+            even = (current + high) * inv_sqrt2
+            odd = (current - high) * inv_sqrt2
+            reconstructed = torch.empty(
+                *even.shape[:-1],
+                even.shape[-1] * 2,
+                device=x.device,
+                dtype=x.dtype,
+            )
+            reconstructed[..., 0::2] = even
+            reconstructed[..., 1::2] = odd
+            current = reconstructed[..., : original_lengths[level]]
+
+        return F.gelu(self.norm(x + current + self.local(x)))
 
 
 class WNO(nn.Module):
-    """Permutation-invariant configuration encoder + Haar wavelet operator."""
+    """Physics-aware multi-level WNO with explicit resonance-query features."""
 
     def __init__(
         self,
         num_res: int,
-        width: int = 64,
+        width: int = 96,
         depth: int = 4,
+        levels: int = 3,
         config_hidden: int = 128,
+        query_dim: int = 48,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -68,8 +95,15 @@ class WNO(nn.Module):
             element_dim=config_hidden,
             output_dim=width,
         )
-        self.lift = nn.Linear(width + 1, width)
-        self.blocks = nn.ModuleList([HaarWaveletBlock1d(width) for _ in range(depth)])
+        self.resonance_query = ResonanceQueryEncoder(
+            hidden_dim=query_dim,
+            element_dim=query_dim,
+            output_dim=query_dim,
+        )
+        self.lift = nn.Linear(width + query_dim + 1, width)
+        self.blocks = nn.ModuleList(
+            [MultiLevelHaarWaveletBlock1d(width, levels=levels) for _ in range(depth)]
+        )
         self.project = nn.Sequential(
             nn.Linear(width, width),
             nn.GELU(),
@@ -79,7 +113,8 @@ class WNO(nn.Module):
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         context = self.configuration_encoder(configuration)[:, None, :]
         context = context.expand(-1, frequency.shape[1], -1)
-        x = self.lift(torch.cat((context, frequency), dim=-1)).transpose(1, 2)
+        query = self.resonance_query(configuration, frequency)
+        x = self.lift(torch.cat((context, query, frequency), dim=-1)).transpose(1, 2)
         for block in self.blocks:
             x = block(x)
         return self.project(x.transpose(1, 2))
@@ -90,9 +125,11 @@ def build_model(num_res: int, **kwargs) -> WNO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "width": 64,
+    "width": 96,
     "depth": 4,
+    "levels": 3,
     "config_hidden": 128,
+    "query_dim": 48,
 }
 
 

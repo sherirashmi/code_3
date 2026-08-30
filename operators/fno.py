@@ -1,4 +1,4 @@
-"""1D Fourier Neural Operator (FNO) for ERP spectra."""
+"""Peak-aware 1D Fourier Neural Operator (FNO) for ERP spectra."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.neural_operator_utils import ResonatorSetEncoder, run_operator_experiment
+from utils.neural_operator_utils import (
+    ResonanceQueryEncoder,
+    ResonatorSetEncoder,
+    run_operator_experiment,
+)
 
 
 class SpectralConv1d(nn.Module):
-    """Learned convolution on the lowest Fourier modes."""
+    """Learned convolution on retained Fourier modes."""
 
     def __init__(self, in_channels: int, out_channels: int, modes: int) -> None:
         super().__init__()
@@ -18,17 +22,21 @@ class SpectralConv1d(nn.Module):
         self.out_channels = int(out_channels)
         self.modes = int(modes)
         scale = 1.0 / max(1, in_channels * out_channels)
-        weight = scale * torch.randn(in_channels, out_channels, modes, dtype=torch.cfloat)
+        weight = scale * torch.randn(
+            in_channels, out_channels, modes, dtype=torch.cfloat
+        )
         self.weight = nn.Parameter(weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B,C,F)
         n = x.shape[-1]
         x_ft = torch.fft.rfft(x, dim=-1)
         n_modes = min(self.modes, x_ft.shape[-1])
         out_ft = torch.zeros(
-            x.shape[0], self.out_channels, x_ft.shape[-1],
-            device=x.device, dtype=torch.cfloat,
+            x.shape[0],
+            self.out_channels,
+            x_ft.shape[-1],
+            device=x.device,
+            dtype=torch.cfloat,
         )
         out_ft[:, :, :n_modes] = torch.einsum(
             "bim,iom->bom",
@@ -39,36 +47,46 @@ class SpectralConv1d(nn.Module):
 
 
 class FNOBlock1d(nn.Module):
+    """Global Fourier mixing plus local kernel-3 peak refinement."""
+
     def __init__(self, width: int, modes: int) -> None:
         super().__init__()
         self.spectral = SpectralConv1d(width, width, modes)
-        self.local = nn.Conv1d(width, width, kernel_size=1)
+        self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.spectral(x) + self.local(x)
+        y = x + self.spectral(x) + self.local(x)
         return F.gelu(self.norm(y))
 
 
 class FNO(nn.Module):
-    """Permutation-invariant configuration encoder + 1D FNO on frequency grid."""
+    """FNO with more retained modes, local mixing, padding and detuning features."""
 
     def __init__(
         self,
         num_res: int,
         width: int = 64,
-        modes: int = 32,
+        modes: int = 64,
         depth: int = 4,
         config_hidden: int = 128,
+        query_dim: int = 48,
+        padding: int = 8,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        self.padding = int(padding)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=config_hidden,
             element_dim=config_hidden,
             output_dim=width,
         )
-        self.lift = nn.Linear(width + 1, width)
+        self.resonance_query = ResonanceQueryEncoder(
+            hidden_dim=query_dim,
+            element_dim=query_dim,
+            output_dim=query_dim,
+        )
+        self.lift = nn.Linear(width + query_dim + 1, width)
         self.blocks = nn.ModuleList([FNOBlock1d(width, modes) for _ in range(depth)])
         self.project = nn.Sequential(
             nn.Linear(width, width),
@@ -79,12 +97,17 @@ class FNO(nn.Module):
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         context = self.configuration_encoder(configuration)[:, None, :]
         context = context.expand(-1, frequency.shape[1], -1)
-        x = self.lift(torch.cat((context, frequency), dim=-1))  # (B,F,C)
-        x = x.transpose(1, 2)                                  # (B,C,F)
+        query = self.resonance_query(configuration, frequency)
+        x = self.lift(torch.cat((context, query, frequency), dim=-1)).transpose(1, 2)
+
+        if self.padding > 0:
+            x = F.pad(x, (self.padding, self.padding), mode="replicate")
         for block in self.blocks:
             x = block(x)
-        x = x.transpose(1, 2)
-        return self.project(x)
+        if self.padding > 0:
+            x = x[..., self.padding : -self.padding]
+
+        return self.project(x.transpose(1, 2))
 
 
 def build_model(num_res: int, **kwargs) -> FNO:
@@ -93,9 +116,11 @@ def build_model(num_res: int, **kwargs) -> FNO:
 
 DEFAULT_MODEL_CONFIG = {
     "width": 64,
-    "modes": 32,
+    "modes": 64,
     "depth": 4,
     "config_hidden": 128,
+    "query_dim": 48,
+    "padding": 8,
 }
 
 

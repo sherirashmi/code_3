@@ -373,7 +373,7 @@ def main():
 
     if action == "train":
         num_configurations = _prompt_int(
-            "Number of configurations to use", default=500, minimum=3
+            "Number of configurations to use", default=5000, minimum=3
         )
         batch_size = _prompt_int(
             "Batch size (complete ERP spectra per batch)", default=16, minimum=1

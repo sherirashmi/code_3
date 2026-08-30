@@ -1,78 +1,118 @@
-"""SIREN-based neural operator for sharp ERP spectra."""
+"""Peak-aware SIREN neural operator for ERP spectra."""
 
 from __future__ import annotations
 
 import math
+
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import ResonatorSetEncoder, run_operator_experiment
+from utils.neural_operator_utils import (
+    ResonanceQueryEncoder,
+    ResonatorSetEncoder,
+    run_operator_experiment,
+)
 
 
-class SineLayer(nn.Module):
-    """SIREN layer with the initialization proposed for periodic activations."""
+class ModulatedSineLayer(nn.Module):
+    """SIREN layer with configuration-dependent FiLM modulation."""
 
     def __init__(
         self,
         in_features: int,
         out_features: int,
+        context_dim: int,
         *,
         first: bool = False,
-        omega_0: float = 30.0,
+        omega_0: float = 20.0,
     ) -> None:
         super().__init__()
         self.in_features = int(in_features)
+        self.out_features = int(out_features)
         self.omega_0 = float(omega_0)
         self.linear = nn.Linear(in_features, out_features)
+        self.film = nn.Linear(context_dim, 2 * out_features)
 
         with torch.no_grad():
             if first:
-                bound = 1.0 / in_features
+                bound = 1.0 / max(1, in_features)
             else:
-                bound = math.sqrt(6.0 / in_features) / self.omega_0
+                bound = math.sqrt(6.0 / max(1, in_features)) / self.omega_0
             self.linear.weight.uniform_(-bound, bound)
             self.linear.bias.uniform_(-bound, bound)
+            # Start near an ordinary SIREN and learn modulation gradually.
+            self.film.weight.zero_()
+            self.film.bias.zero_()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sin(self.omega_0 * self.linear(x))
+    def forward(self, x: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        gamma, beta = self.film(context).chunk(2, dim=-1)
+        gamma = 1.0 + 0.25 * torch.tanh(gamma)[:, None, :]
+        beta = 0.10 * beta[:, None, :]
+        preactivation = gamma * self.linear(x) + beta
+        return torch.sin(self.omega_0 * preactivation)
 
 
 class SIRENOperator(nn.Module):
-    """Continuous frequency-coordinate operator using sinusoidal activations."""
+    """Continuous operator with detuning features and layer-wise configuration modulation."""
 
     def __init__(
         self,
         num_res: int,
-        context_dim: int = 64,
+        context_dim: int = 128,
+        query_dim: int = 32,
         hidden_dim: int = 128,
         depth: int = 4,
-        omega_0: float = 30.0,
+        omega_0: float = 20.0,
     ) -> None:
         super().__init__()
+        if depth <= 0:
+            raise ValueError("depth must be positive.")
         self.num_res = int(num_res)
+        self.omega_0 = float(omega_0)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=128,
             element_dim=128,
             output_dim=context_dim,
         )
-        input_dim = context_dim + 1
+        self.resonance_query = ResonanceQueryEncoder(
+            hidden_dim=64,
+            element_dim=64,
+            output_dim=query_dim,
+        )
+
+        input_dim = 1 + query_dim
         layers: list[nn.Module] = [
-            SineLayer(input_dim, hidden_dim, first=True, omega_0=omega_0)
+            ModulatedSineLayer(
+                input_dim,
+                hidden_dim,
+                context_dim,
+                first=True,
+                omega_0=omega_0,
+            )
         ]
         for _ in range(depth - 1):
-            layers.append(SineLayer(hidden_dim, hidden_dim, omega_0=omega_0))
-        self.siren = nn.Sequential(*layers)
+            layers.append(
+                ModulatedSineLayer(
+                    hidden_dim,
+                    hidden_dim,
+                    context_dim,
+                    omega_0=omega_0,
+                )
+            )
+        self.layers = nn.ModuleList(layers)
         self.output = nn.Linear(hidden_dim, 1)
 
         with torch.no_grad():
-            bound = math.sqrt(6.0 / hidden_dim) / omega_0
+            bound = math.sqrt(6.0 / hidden_dim) / self.omega_0
             self.output.weight.uniform_(-bound, bound)
             self.output.bias.zero_()
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        context = self.configuration_encoder(configuration)[:, None, :]
-        context = context.expand(-1, frequency.shape[1], -1)
-        h = self.siren(torch.cat((context, frequency), dim=-1))
+        context = self.configuration_encoder(configuration)
+        query_features = self.resonance_query(configuration, frequency)
+        h = torch.cat((frequency, query_features), dim=-1)
+        for layer in self.layers:
+            h = layer(h, context)
         return self.output(h)
 
 
@@ -81,10 +121,11 @@ def build_model(num_res: int, **kwargs) -> SIRENOperator:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "context_dim": 64,
+    "context_dim": 128,
+    "query_dim": 32,
     "hidden_dim": 128,
     "depth": 4,
-    "omega_0": 30.0,
+    "omega_0": 20.0,
 }
 
 

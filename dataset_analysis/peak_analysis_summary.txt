@@ -1,0 +1,46 @@
+==============================================================================
+ERP DATASET PEAK ANALYSIS
+==============================================================================
+Configurations        : 5000
+Frequencies/config    : 301
+Frequency range       : 10 to 160 Hz
+Approx. frequency step: 0.5 Hz
+Peak prominence       : 5 dB
+
+------------------------------------------------------------------------------
+NUMBER OF DETECTED PEAKS PER CONFIGURATION
+------------------------------------------------------------------------------
+0 peaks                 :     0  (  0.00%)
+1 peak                  :     0  (  0.00%)
+2 peaks                 :     0  (  0.00%)
+3 peaks                 :    15  (  0.30%)
+4 peaks                 :   179  (  3.58%)
+5 or more peaks         :  4806  ( 96.12%)
+
+Exact detected-peak histogram:
+   3 peak(s):    15  (  0.30%)
+   4 peak(s):   179  (  3.58%)
+   5 peak(s):  1159  ( 23.18%)
+   6 peak(s):  2734  ( 54.68%)
+   7 peak(s):   913  ( 18.26%)
+
+------------------------------------------------------------------------------
+CLOSE-PEAK ANALYSIS — CUMULATIVE
+------------------------------------------------------------------------------
+A configuration is counted when its closest pair of detected peaks is within the stated distance.
+Any adjacent peak pair <= 5 Hz:   970  ( 19.40% of all configurations)
+Any adjacent peak pair <= 10 Hz:  2844  ( 56.88% of all configurations)
+Any adjacent peak pair <= 20 Hz:  4819  ( 96.38% of all configurations)
+
+------------------------------------------------------------------------------
+CLOSE-PEAK ANALYSIS — NON-OVERLAPPING BINS
+------------------------------------------------------------------------------
+Configurations with >= 2 peaks: 5000 (100.00%)
+Configurations with < 2 peaks : 0 (spacing not defined)
+
+<= 5 Hz                   :   970  ( 19.40% of >=2-peak configurations)
+> 5 to <= 10 Hz           :  1874  ( 37.48% of >=2-peak configurations)
+> 10 to <= 20 Hz          :  1975  ( 39.50% of >=2-peak configurations)
+> 20 Hz                   :   181  (  3.62% of >=2-peak configurations)
+
+==============================================================================
