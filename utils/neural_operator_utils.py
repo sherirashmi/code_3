@@ -510,6 +510,58 @@ def evaluate_operator(
     mse = float(np.mean(error**2))
     mae = float(np.mean(np.abs(error)))
     rmse = float(np.sqrt(mse))
+    mean_error = float(np.mean(error))
+    error_std = float(np.std(error))
+
+    # Global agreement statistics across every test-spectrum frequency point.
+    true_flat = true.reshape(-1).astype(np.float64, copy=False)
+    pred_flat = pred.reshape(-1).astype(np.float64, copy=False)
+    true_centered = true_flat - np.mean(true_flat)
+    pred_centered = pred_flat - np.mean(pred_flat)
+    correlation_denominator = float(
+        np.sqrt(np.sum(true_centered**2) * np.sum(pred_centered**2))
+    )
+    pearson_correlation = (
+        float(np.sum(true_centered * pred_centered) / correlation_denominator)
+        if correlation_denominator > 0.0
+        else float("nan")
+    )
+
+    r2_denominator = float(np.sum(true_centered**2))
+    r2_score = (
+        float(1.0 - np.sum((pred_flat - true_flat) ** 2) / r2_denominator)
+        if r2_denominator > 0.0
+        else float("nan")
+    )
+
+    # Also summarize Pearson correlation spectrum-by-spectrum. This captures
+    # whether each individual predicted ERP curve follows the ground-truth
+    # spectral shape, rather than only measuring agreement after flattening.
+    per_spectrum_pearson: list[float] = []
+    for true_spectrum, pred_spectrum in zip(true, pred):
+        true_spectrum = np.asarray(true_spectrum, dtype=np.float64)
+        pred_spectrum = np.asarray(pred_spectrum, dtype=np.float64)
+        true_spectrum_centered = true_spectrum - np.mean(true_spectrum)
+        pred_spectrum_centered = pred_spectrum - np.mean(pred_spectrum)
+        denominator = float(
+            np.sqrt(
+                np.sum(true_spectrum_centered**2)
+                * np.sum(pred_spectrum_centered**2)
+            )
+        )
+        if denominator > 0.0:
+            per_spectrum_pearson.append(
+                float(
+                    np.sum(true_spectrum_centered * pred_spectrum_centered)
+                    / denominator
+                )
+            )
+
+    mean_spectrum_pearson = (
+        float(np.mean(per_spectrum_pearson))
+        if per_spectrum_pearson
+        else float("nan")
+    )
 
     freq = np.asarray(frequency_values, dtype=np.float64)
     true_peak_idx = np.argmax(true, axis=1)
@@ -524,6 +576,11 @@ def evaluate_operator(
     print("=" * 68)
     print(f"ERP test RMSE               : {rmse:.6f} dB")
     print(f"ERP test MAE                : {mae:.6f} dB")
+    print(f"ERP mean error (bias)       : {mean_error:.6f} dB")
+    print(f"ERP error standard deviation: {error_std:.6f} dB")
+    print(f"Pearson correlation         : {pearson_correlation:.6f}")
+    print(f"Mean spectrum Pearson corr. : {mean_spectrum_pearson:.6f}")
+    print(f"R^2 score                   : {r2_score:.6f}")
     print(f"Dominant peak frequency MAE : {peak_frequency_mae:.4f} Hz")
     print(f"ERP error at true peak MAE  : {peak_amplitude_mae:.6f} dB")
     print("=" * 68)
@@ -560,6 +617,11 @@ def evaluate_operator(
         "mse": mse,
         "rmse": rmse,
         "mae": mae,
+        "mean_error_db": mean_error,
+        "error_std_db": error_std,
+        "pearson_correlation": pearson_correlation,
+        "mean_spectrum_pearson_correlation": mean_spectrum_pearson,
+        "r2_score": r2_score,
         "peak_frequency_mae_hz": peak_frequency_mae,
         "peak_amplitude_mae_db": peak_amplitude_mae,
         "predictions": pred,

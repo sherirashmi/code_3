@@ -160,6 +160,9 @@ def _print_comparison_table(rows: list[dict[str, object]]) -> None:
         ("Test MSE", "mse", ".6f"),
         ("Test RMSE (dB)", "rmse", ".6f"),
         ("Test MAE (dB)", "mae", ".6f"),
+        ("Pearson r", "pearson_global", ".6f"),
+        ("Mean Spectrum r", "pearson_mean", ".6f"),
+        ("R^2", "r2", ".6f"),
         ("Peak Freq MAE (Hz)", "peak_frequency_mae_hz", ".4f"),
         ("Peak Amp MAE (dB)", "peak_amplitude_mae_db", ".6f"),
     ]
@@ -288,6 +291,9 @@ def train_all_models(
                 "mse": metrics["mse"],
                 "rmse": metrics["rmse"],
                 "mae": metrics["mae"],
+                "pearson_global": metrics["pearson_global"],
+                "pearson_mean": metrics["pearson_mean"],
+                "r2": metrics["r2"],
                 "peak_frequency_mae_hz": metrics["peak_frequency_mae_hz"],
                 "peak_amplitude_mae_db": metrics["peak_amplitude_mae_db"],
             }
