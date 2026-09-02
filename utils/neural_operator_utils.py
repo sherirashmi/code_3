@@ -46,7 +46,7 @@ from .plotting import (
     plot_prediction_scatter,
 )
 from .solver import compute_erp_spectrum
-from .utils import device, seed_everything
+from .support import device, seed_everything
 
 
 # ==================================================
@@ -364,7 +364,7 @@ def prepare_operator_data(
 def erp_spectrum_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
-    slope_weight: float = 0.05,
+    slope_weight: float = 0.5,
 ) -> torch.Tensor:
     """Normalized ERP MSE plus a small first-difference penalty."""
     mse = F.mse_loss(prediction, target)
@@ -382,7 +382,7 @@ def train_operator(
     epochs: int = 200,
     lr: float = 5e-4,
     weight_decay: float = 1e-4,
-    slope_weight: float = 0.05,
+    slope_weight: float = 0.5,
     plot: bool = True,
     save_plots: bool = True,
     operator_name: str = "operator",
@@ -746,7 +746,7 @@ def run_operator_experiment(
     epochs: int = 200,
     learning_rate: float = 5e-4,
     weight_decay: float = 1e-4,
-    slope_weight: float = 0.05,
+    slope_weight: float = 0.5,
     dataset_file: str = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,

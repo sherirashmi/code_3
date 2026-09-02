@@ -22,7 +22,11 @@ import torch
 from utils.erp_dataset import DEFAULT_DATASET_FILE
 from operators.operator_registry import OPERATORS
 from utils.physics import Lx, Ly, fmin, fmax, k, num_res as default_num_res
-from utils.plotting import DEFAULT_PLOTS_DIR, save_operator_experiment_plots
+from utils.plotting import (
+    DEFAULT_PLOTS_DIR,
+    save_all_model_comparison_plots,
+    save_operator_experiment_plots,
+)
 
 
 DATASET_FILE = DEFAULT_DATASET_FILE
@@ -214,6 +218,7 @@ def train_all_models(
     called, so training proceeds continuously without waiting for plot windows.
     """
     comparison_rows: list[dict[str, object]] = []
+    all_model_plot_data: dict[str, dict[str, np.ndarray]] = {}
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 76)
@@ -291,13 +296,58 @@ def train_all_models(
                 "mse": metrics["mse"],
                 "rmse": metrics["rmse"],
                 "mae": metrics["mae"],
-                "pearson_global": metrics["pearson_global"],
-                "pearson_mean": metrics["pearson_mean"],
-                "r2": metrics["r2"],
+                # evaluate_operator() uses these metric names:
+                "pearson_global": metrics["pearson_correlation"],
+                "pearson_mean": metrics["mean_spectrum_pearson_correlation"],
+                "r2": metrics["r2_score"],
                 "peak_frequency_mae_hz": metrics["peak_frequency_mae_hz"],
                 "peak_amplitude_mae_db": metrics["peak_amplitude_mae_db"],
             }
         )
+
+        # Keep only compact arrays needed for cross-architecture plots.
+        # This avoids retaining the trained model or complete experiment object.
+        pred = np.asarray(metrics["predictions"], dtype=np.float64)
+        true = np.asarray(metrics["targets"], dtype=np.float64)
+        error = pred - true
+
+        spectrum_rmse = np.sqrt(np.mean(error**2, axis=1))
+        spectrum_mae = np.mean(np.abs(error), axis=1)
+
+        true_centered = true - np.mean(true, axis=1, keepdims=True)
+        pred_centered = pred - np.mean(pred, axis=1, keepdims=True)
+        corr_num = np.sum(true_centered * pred_centered, axis=1)
+        corr_den = np.sqrt(
+            np.sum(true_centered**2, axis=1)
+            * np.sum(pred_centered**2, axis=1)
+        )
+        spectrum_pearson = np.divide(
+            corr_num,
+            corr_den,
+            out=np.full(corr_num.shape, np.nan, dtype=np.float64),
+            where=corr_den > 0.0,
+        )
+
+        freq = np.asarray(result["dataset"].frequency_values, dtype=np.float64)
+        true_peak_idx = np.argmax(true, axis=1)
+        pred_peak_idx = np.argmax(pred, axis=1)
+        peak_frequency_abs_error = np.abs(
+            freq[pred_peak_idx] - freq[true_peak_idx]
+        )
+        peak_amplitude_abs_error = np.abs(
+            pred[np.arange(pred.shape[0]), true_peak_idx]
+            - true[np.arange(true.shape[0]), true_peak_idx]
+        )
+
+        all_model_plot_data[spec["short"]] = {
+            "train_loss": np.asarray(history["train"], dtype=np.float64),
+            "val_loss": np.asarray(history["val"], dtype=np.float64),
+            "spectrum_rmse": spectrum_rmse,
+            "spectrum_mae": spectrum_mae,
+            "spectrum_pearson": spectrum_pearson,
+            "peak_frequency_abs_error": peak_frequency_abs_error,
+            "peak_amplitude_abs_error": peak_amplitude_abs_error,
+        }
 
         # Release the complete experiment result before the next architecture.
         del history, metrics, result
@@ -306,10 +356,19 @@ def train_all_models(
             torch.cuda.empty_cache()
 
     _print_comparison_table(comparison_rows)
+
+    comparison_plot_dir = save_all_model_comparison_plots(
+        all_model_plot_data,
+        comparison_rows,
+        plots_dir=PLOTS_DIR,
+        show=False,
+    )
+
     return {
         "action": "train_all",
         "comparison": comparison_rows,
         "plots_dir": str(PLOTS_DIR),
+        "comparison_plots_dir": str(comparison_plot_dir),
     }
 
 

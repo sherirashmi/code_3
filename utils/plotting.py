@@ -471,6 +471,157 @@ def save_operator_experiment_plots(
     return plot_dir
 
 
+# ==================================================
+# Cross-architecture comparison plots
+# ==================================================
+
+
+def save_all_model_comparison_plots(
+    plot_data: dict[str, dict[str, np.ndarray]],
+    comparison_rows: list[dict[str, object]],
+    *,
+    plots_dir: str | Path | None = None,
+    show: bool = False,
+) -> Path:
+    """Save plots that compare every trained operator in one figure.
+
+    ``plot_data`` contains compact per-model arrays prepared by ``main.py``:
+    training/validation histories plus per-test-spectrum error distributions.
+    """
+    base = Path(plots_dir) if plots_dir is not None else DEFAULT_PLOTS_DIR
+    out_dir = base / "ALL_MODELS"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    model_names = list(plot_data)
+    if not model_names:
+        raise ValueError("plot_data is empty.")
+
+    # 1) All training-loss histories in one graph.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for name in model_names:
+        values = np.asarray(plot_data[name]["train_loss"], dtype=float)
+        ax.semilogy(np.arange(1, len(values) + 1), values, lw=2, label=name)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Normalized training loss")
+    ax.set_title("Training Loss - All Neural Operators")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(ncol=2)
+    fig.tight_layout()
+    _finalize_figure(
+        fig, save_path=out_dir / "all_training_loss.png", show=show
+    )
+
+    # 2) All validation-loss histories in one graph.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for name in model_names:
+        values = np.asarray(plot_data[name]["val_loss"], dtype=float)
+        ax.semilogy(np.arange(1, len(values) + 1), values, lw=2, label=name)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Normalized validation loss")
+    ax.set_title("Validation Loss - All Neural Operators")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(ncol=2)
+    fig.tight_layout()
+    _finalize_figure(
+        fig, save_path=out_dir / "all_validation_loss.png", show=show
+    )
+
+    def _boxplot(metric_key: str, ylabel: str, title: str, filename: str) -> None:
+        values = [
+            np.asarray(plot_data[name][metric_key], dtype=float)
+            for name in model_names
+        ]
+        fig, ax = plt.subplots(figsize=(11, 6))
+        ax.boxplot(values, tick_labels=model_names, showmeans=True)
+        ax.set_xlabel("Architecture")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True, axis="y", alpha=0.3)
+        fig.tight_layout()
+        _finalize_figure(fig, save_path=out_dir / filename, show=show)
+
+    # 3-7) Distribution plots across complete test spectra.
+    _boxplot(
+        "spectrum_rmse",
+        "RMSE (dB)",
+        "Per-Spectrum Test RMSE - All Neural Operators",
+        "test_rmse_boxplot.png",
+    )
+    _boxplot(
+        "spectrum_mae",
+        "MAE (dB)",
+        "Per-Spectrum Test MAE - All Neural Operators",
+        "test_mae_boxplot.png",
+    )
+    _boxplot(
+        "spectrum_pearson",
+        "Pearson correlation",
+        "Per-Spectrum Pearson Correlation - All Neural Operators",
+        "spectrum_pearson_boxplot.png",
+    )
+    _boxplot(
+        "peak_frequency_abs_error",
+        "Absolute dominant-peak frequency error (Hz)",
+        "Dominant-Peak Frequency Error - All Neural Operators",
+        "peak_frequency_error_boxplot.png",
+    )
+    _boxplot(
+        "peak_amplitude_abs_error",
+        "Absolute ERP error at true peak (dB)",
+        "ERP Error at True Peak - All Neural Operators",
+        "peak_amplitude_error_boxplot.png",
+    )
+
+    # 8) Overall test RMSE / MAE as grouped bars (same physical unit: dB).
+    row_by_model = {str(row["model"]): row for row in comparison_rows}
+    x = np.arange(len(model_names), dtype=float)
+    width = 0.36
+    rmse = np.array([float(row_by_model[name]["rmse"]) for name in model_names])
+    mae = np.array([float(row_by_model[name]["mae"]) for name in model_names])
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    ax.bar(x - width / 2, rmse, width, label="RMSE")
+    ax.bar(x + width / 2, mae, width, label="MAE")
+    ax.set_xticks(x, model_names)
+    ax.set_xlabel("Architecture")
+    ax.set_ylabel("Error (dB)")
+    ax.set_title("Overall Test Error - All Neural Operators")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    _finalize_figure(
+        fig, save_path=out_dir / "overall_test_error_bars.png", show=show
+    )
+
+    # 9) Dimensionless agreement metrics in one grouped-bar graph.
+    width = 0.25
+    global_r = np.array(
+        [float(row_by_model[name]["pearson_global"]) for name in model_names]
+    )
+    mean_r = np.array(
+        [float(row_by_model[name]["pearson_mean"]) for name in model_names]
+    )
+    r2 = np.array([float(row_by_model[name]["r2"]) for name in model_names])
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    ax.bar(x - width, global_r, width, label="Global Pearson r")
+    ax.bar(x, mean_r, width, label="Mean spectrum r")
+    ax.bar(x + width, r2, width, label="R²")
+    ax.set_xticks(x, model_names)
+    ax.set_xlabel("Architecture")
+    ax.set_ylabel("Score")
+    ax.set_title("Prediction Agreement - All Neural Operators")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    _finalize_figure(
+        fig, save_path=out_dir / "overall_agreement_bars.png", show=show
+    )
+
+    print(f"Saved all-model comparison plots to: {out_dir.resolve()}")
+    return out_dir
+
+
 __all__ = [
     "DEFAULT_PLOTS_DIR",
     "operator_plot_dir",
@@ -484,4 +635,5 @@ __all__ = [
     "plot_prediction_scatter",
     "plot_mode_shape",
     "save_operator_experiment_plots",
+    "save_all_model_comparison_plots",
 ]

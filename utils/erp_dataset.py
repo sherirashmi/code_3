@@ -46,9 +46,15 @@ on ``dataset`` and can be saved with any model checkpoint.
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Mapping, Sequence
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import torch
@@ -62,8 +68,8 @@ from utils.physics import (
     num_res as default_num_res,
     resonator_bounds,
 )
-from .solver import compute_erp_spectrum
-from .utils import lhs_sampling, load_dataset, save_dataset
+from utils.solver import compute_erp_spectrum
+from utils.support import lhs_sampling, load_dataset, save_dataset
 
 
 VALID_INPUT_MODES = {"flat_all", "flat_freq", "multi_res"}
@@ -933,7 +939,7 @@ from pathlib import Path
 if __name__ == "__main__":
     
     # Initial master-dataset generation.
-    NUM_CONFIGURATIONS_TO_GENERATE = 5000
+    NUM_CONFIGURATIONS_TO_GENERATE = 10000
 
     dataset = ERPDataset(
         num_samples=NUM_CONFIGURATIONS_TO_GENERATE,
