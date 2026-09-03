@@ -58,9 +58,9 @@ class SIRENOperator(nn.Module):
     def __init__(
         self,
         num_res: int,
-        context_dim: int = 128,
-        query_dim: int = 32,
-        hidden_dim: int = 128,
+        context_dim: int = 104,
+        query_dim: int = 26,
+        hidden_dim: int = 104,
         depth: int = 4,
         omega_0: float = 20.0,
     ) -> None:
@@ -70,13 +70,13 @@ class SIRENOperator(nn.Module):
         self.num_res = int(num_res)
         self.omega_0 = float(omega_0)
         self.configuration_encoder = ResonatorSetEncoder(
-            hidden_dim=128,
-            element_dim=128,
+            hidden_dim=context_dim,
+            element_dim=context_dim,
             output_dim=context_dim,
         )
         self.resonance_query = ResonanceQueryEncoder(
-            hidden_dim=64,
-            element_dim=64,
+            hidden_dim=2 * query_dim,
+            element_dim=2 * query_dim,
             output_dim=query_dim,
         )
 
@@ -121,9 +121,9 @@ def build_model(num_res: int, **kwargs) -> SIRENOperator:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "context_dim": 128,
-    "query_dim": 32,
-    "hidden_dim": 128,
+    "context_dim": 104,
+    "query_dim": 26,
+    "hidden_dim": 104,
     "depth": 4,
     "omega_0": 20.0,
 }

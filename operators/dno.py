@@ -51,10 +51,10 @@ class DNO(nn.Module):
     def __init__(
         self,
         num_res: int,
-        hidden_dim: int = 128,
-        context_dim: int = 128,
-        frequency_dim: int = 64,
-        query_dim: int = 64,
+        hidden_dim: int = 76,
+        context_dim: int = 76,
+        frequency_dim: int = 38,
+        query_dim: int = 38,
         depth: int = 4,
     ) -> None:
         super().__init__()
@@ -100,10 +100,10 @@ def build_model(num_res: int, **kwargs) -> DNO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
-    "context_dim": 128,
-    "frequency_dim": 64,
-    "query_dim": 64,
+    "hidden_dim": 76,
+    "context_dim": 76,
+    "frequency_dim": 38,
+    "query_dim": 38,
     "depth": 4,
 }
 

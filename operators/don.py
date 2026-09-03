@@ -41,9 +41,9 @@ class DON(nn.Module):
     def __init__(
         self,
         num_res: int,
-        hidden_dim: int = 128,
-        context_dim: int = 160,
-        basis_dim: int = 256,
+        hidden_dim: int = 108,
+        context_dim: int = 135,
+        basis_dim: int = 216,
         fourier_bands: int = 6,
     ) -> None:
         super().__init__()
@@ -86,9 +86,9 @@ def build_model(num_res: int, **kwargs) -> DON:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
-    "context_dim": 160,
-    "basis_dim": 256,
+    "hidden_dim": 108,
+    "context_dim": 135,
+    "basis_dim": 216,
     "fourier_bands": 6,
 }
 

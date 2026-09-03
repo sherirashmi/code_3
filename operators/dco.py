@@ -37,10 +37,10 @@ class DCO(nn.Module):
     def __init__(
         self,
         num_res: int,
-        hidden_dim: int = 128,
-        branch_dim: int = 128,
-        trunk_dim: int = 128,
-        query_dim: int = 64,
+        hidden_dim: int = 88,
+        branch_dim: int = 88,
+        trunk_dim: int = 88,
+        query_dim: int = 44,
         depth: int = 4,
     ) -> None:
         super().__init__()
@@ -81,10 +81,10 @@ def build_model(num_res: int, **kwargs) -> DCO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
-    "branch_dim": 128,
-    "trunk_dim": 128,
-    "query_dim": 64,
+    "hidden_dim": 88,
+    "branch_dim": 88,
+    "trunk_dim": 88,
+    "query_dim": 44,
     "depth": 4,
 }
 
