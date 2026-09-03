@@ -82,11 +82,11 @@ class WNO(nn.Module):
     def __init__(
         self,
         num_res: int,
-        width: int = 44,
+        width: int = 30,
         depth: int = 4,
         levels: int = 3,
-        config_hidden: int = 58,
-        query_dim: int = 22,
+        config_hidden: int = 39,
+        query_dim: int = 15,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -125,11 +125,11 @@ def build_model(num_res: int, **kwargs) -> WNO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "width": 44,
+    "width": 30,
     "depth": 4,
     "levels": 3,
-    "config_hidden": 58,
-    "query_dim": 22,
+    "config_hidden": 39,
+    "query_dim": 15,
 }
 
 

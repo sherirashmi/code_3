@@ -66,11 +66,11 @@ class FNO(nn.Module):
     def __init__(
         self,
         num_res: int,
-        width: int = 18,
+        width: int = 13,
         modes: int = 140,
         depth: int = 4,
-        config_hidden: int = 36,
-        query_dim: int = 13,
+        config_hidden: int = 26,
+        query_dim: int = 9,
         padding: int = 8,
     ) -> None:
         super().__init__()
@@ -115,11 +115,11 @@ def build_model(num_res: int, **kwargs) -> FNO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "width": 18,
+    "width": 13,
     "modes": 140,
     "depth": 4,
-    "config_hidden": 36,
-    "query_dim": 13,
+    "config_hidden": 26,
+    "query_dim": 9,
     "padding": 8,
 }
 

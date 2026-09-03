@@ -80,10 +80,10 @@ class SetTransformerOperator(nn.Module):
     def __init__(
         self,
         num_res: int,
-        width: int = 80,
+        width: int = 56,
         heads: int = 4,
         depth: int = 2,
-        ff_dim: int = 160,
+        ff_dim: int = 112,
         modal_harmonics: int = 4,
     ) -> None:
         super().__init__()
@@ -124,10 +124,10 @@ def build_model(num_res: int, **kwargs) -> SetTransformerOperator:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "width": 80,
+    "width": 56,
     "heads": 4,
     "depth": 2,
-    "ff_dim": 160,
+    "ff_dim": 112,
     "modal_harmonics": 4,
 }
 

@@ -58,9 +58,9 @@ class SIRENOperator(nn.Module):
     def __init__(
         self,
         num_res: int,
-        context_dim: int = 104,
-        query_dim: int = 26,
-        hidden_dim: int = 104,
+        context_dim: int = 76,
+        query_dim: int = 19,
+        hidden_dim: int = 76,
         depth: int = 4,
         omega_0: float = 20.0,
     ) -> None:
@@ -121,9 +121,9 @@ def build_model(num_res: int, **kwargs) -> SIRENOperator:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "context_dim": 104,
-    "query_dim": 26,
-    "hidden_dim": 104,
+    "context_dim": 76,
+    "query_dim": 19,
+    "hidden_dim": 76,
     "depth": 4,
     "omega_0": 20.0,
 }

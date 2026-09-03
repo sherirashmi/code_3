@@ -63,9 +63,9 @@ class GNO(nn.Module):
     def __init__(
         self,
         num_res: int,
-        width: int = 80,
+        width: int = 56,
         depth: int = 3,
-        frequency_dim: int = 40,
+        frequency_dim: int = 28,
         modal_harmonics: int = 4,
     ) -> None:
         super().__init__()
@@ -128,9 +128,9 @@ def build_model(num_res: int, **kwargs) -> GNO:
 
 
 DEFAULT_MODEL_CONFIG = {
-    "width": 80,
+    "width": 56,
     "depth": 3,
-    "frequency_dim": 40,
+    "frequency_dim": 28,
     "modal_harmonics": 4,
 }
 
