@@ -60,7 +60,7 @@ class MLP(nn.Module):
     def __init__(
         self,
         widths: Sequence[int],
-        activation: type[nn.Module] = nn.SiLU,
+        activation: type[nn.Module] = nn.Tanh,
         final_activation: nn.Module | None = None,
     ) -> None:
         super().__init__()
@@ -84,7 +84,7 @@ class MLP(nn.Module):
 class ResidualMLPBlock(nn.Module):
     """Two-layer residual MLP block."""
 
-    def __init__(self, width: int, activation: type[nn.Module] = nn.SiLU) -> None:
+    def __init__(self, width: int, activation: type[nn.Module] = nn.Tanh) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(width, width),
@@ -152,11 +152,11 @@ class ResonatorSetEncoder(nn.Module):
         augmented_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.element_net = MLP(
             [augmented_dim, hidden_dim, hidden_dim, element_dim],
-            activation=nn.SiLU,
+            activation=nn.Tanh,
         )
         self.fusion_net = MLP(
             [2 * element_dim, hidden_dim, output_dim],
-            activation=nn.SiLU,
+            activation=nn.Tanh,
         )
 
     def forward(self, configuration: torch.Tensor) -> torch.Tensor:
@@ -195,11 +195,11 @@ class ResonanceQueryEncoder(nn.Module):
         interaction_dim = resonator_dim + 4  # f, delta, |delta|, delta^2
         self.element_net = MLP(
             [interaction_dim, hidden_dim, hidden_dim, element_dim],
-            activation=nn.SiLU,
+            activation=nn.Tanh,
         )
         self.fusion_net = MLP(
             [2 * element_dim, hidden_dim, output_dim],
-            activation=nn.SiLU,
+            activation=nn.Tanh,
         )
 
     def forward(
