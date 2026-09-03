@@ -365,14 +365,66 @@ def erp_spectrum_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
     slope_weight: float = 0.5,
+    curvature_weight: float = 0.25,
+    peak_weight: float = 2.0,
+    peak_location_weight: float = 0.1,
+    peak_softmax_temperature: float = 0.05,
 ) -> torch.Tensor:
-    """Normalized ERP MSE plus a small first-difference penalty."""
-    mse = F.mse_loss(prediction, target)
-    if slope_weight <= 0.0 or prediction.shape[1] < 2:
-        return mse
-    dp = prediction[:, 1:] - prediction[:, :-1]
-    dt = target[:, 1:] - target[:, :-1]
-    return mse + float(slope_weight) * F.mse_loss(dp, dt)
+    """Peak-aware ERP loss.
+
+    Plain per-point MSE is dominated by the ~294 smooth background samples in
+    every 301-point spectrum and gives almost no gradient signal to the 5-7
+    narrow resonance peaks, so a network minimizing it converges to a
+    de-tuned, low-pass version of the true spectrum (correct on average,
+    wrong at every peak). This loss corrects that by:
+
+    1. up-weighting points that sit above the per-spectrum mean (``peak_weight``),
+       so the optimizer is penalized more for missing a peak than for missing
+       a fraction of a dB in the flat background;
+    2. penalizing first- and second-difference mismatch (``slope_weight`` /
+       ``curvature_weight``), since curvature is what distinguishes a sharp
+       resonance from a broad bump;
+    3. an explicit soft-argmax peak-location term plus a peak-amplitude term
+       evaluated at the true peak (``peak_location_weight``), which gives
+       direct gradient on the two metrics (peak frequency, peak height) that
+       raw MSE barely moves.
+    """
+    weight = 1.0 + float(peak_weight) * F.relu(
+        target - target.mean(dim=1, keepdim=True)
+    )
+    loss = (weight * (prediction - target) ** 2).mean()
+
+    n_freq = prediction.shape[1]
+
+    if slope_weight > 0.0 and n_freq >= 2:
+        dp = prediction[:, 1:] - prediction[:, :-1]
+        dt = target[:, 1:] - target[:, :-1]
+        loss = loss + float(slope_weight) * F.mse_loss(dp, dt)
+
+    if curvature_weight > 0.0 and n_freq >= 3:
+        ddp = prediction[:, 2:] - 2.0 * prediction[:, 1:-1] + prediction[:, :-2]
+        ddt = target[:, 2:] - 2.0 * target[:, 1:-1] + target[:, :-2]
+        loss = loss + float(curvature_weight) * F.mse_loss(ddp, ddt)
+
+    if peak_location_weight > 0.0 and n_freq >= 2:
+        index = torch.arange(n_freq, device=target.device, dtype=target.dtype)
+        index = index.view(1, n_freq, 1)
+        tau = float(peak_softmax_temperature)
+
+        true_weights = F.softmax(target / tau, dim=1)
+        true_location = (true_weights * index).sum(dim=1)
+        pred_weights = F.softmax(prediction / tau, dim=1)
+        pred_location = (pred_weights * index).sum(dim=1)
+        location_loss = F.mse_loss(pred_location / n_freq, true_location / n_freq)
+
+        true_peak_idx = target[..., 0].argmax(dim=1, keepdim=True)
+        true_peak_amp = target[..., 0].gather(1, true_peak_idx)
+        pred_at_true_peak = prediction[..., 0].gather(1, true_peak_idx)
+        amplitude_loss = F.mse_loss(pred_at_true_peak, true_peak_amp)
+
+        loss = loss + float(peak_location_weight) * (location_loss + amplitude_loss)
+
+    return loss
 
 
 def train_operator(
@@ -383,6 +435,10 @@ def train_operator(
     lr: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    curvature_weight: float = 0.25,
+    peak_weight: float = 2.0,
+    peak_location_weight: float = 0.1,
+    peak_select_weight: float = 1.0,
     plot: bool = True,
     save_plots: bool = True,
     operator_name: str = "operator",
@@ -398,8 +454,18 @@ def train_operator(
         optimizer, T_max=epochs, eta_min=1e-6
     )
 
+    def loss_fn(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return erp_spectrum_loss(
+            prediction,
+            target,
+            slope_weight=slope_weight,
+            curvature_weight=curvature_weight,
+            peak_weight=peak_weight,
+            peak_location_weight=peak_location_weight,
+        )
+
     history = {"train": [], "val": []}
-    best_val = math.inf
+    best_selection_score = math.inf
     best_state = None
 
     for epoch in range(epochs):
@@ -414,7 +480,7 @@ def train_operator(
 
             optimizer.zero_grad(set_to_none=True)
             prediction = model(configuration, frequency)
-            loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+            loss = loss_fn(prediction, target)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
@@ -429,28 +495,56 @@ def train_operator(
         model.eval()
         val_sum = 0.0
         val_count = 0
+        n_freq = None
+        peak_location_error_sum = 0.0
+        peak_amplitude_error_sum = 0.0
         with torch.inference_mode():
             for configuration, frequency, target in loaders["val"]:
                 configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
                 frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
                 target = target.to(device, dtype=torch.float32, non_blocking=True)
                 prediction = model(configuration, frequency)
-                loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                loss = loss_fn(prediction, target)
                 batch = configuration.shape[0]
                 val_sum += loss.item() * batch
                 val_count += batch
+
+                n_freq = target.shape[1]
+                true_peak_idx = target[..., 0].argmax(dim=1, keepdim=True)
+                pred_peak_idx = prediction[..., 0].argmax(dim=1, keepdim=True)
+                peak_location_error_sum += (
+                    (true_peak_idx - pred_peak_idx).abs().float().sum().item()
+                )
+                true_peak_amp = target[..., 0].gather(1, true_peak_idx)
+                pred_at_true_peak = prediction[..., 0].gather(1, true_peak_idx)
+                peak_amplitude_error_sum += (
+                    (true_peak_amp - pred_at_true_peak).abs().sum().item()
+                )
 
         val_loss = val_sum / max(val_count, 1)
         history["val"].append(val_loss)
         scheduler.step()
 
-        if val_loss < best_val:
-            best_val = val_loss
+        # Plain val MSE rewards a smoothed-out spectrum just as much as one that
+        # gets peak location/height right, so checkpoint selection also scores
+        # the peak-frequency and peak-amplitude error that the training loss
+        # only softly encourages.
+        peak_location_mae = peak_location_error_sum / max(val_count, 1)
+        peak_location_mae_normalized = peak_location_mae / max(n_freq or 1, 1)
+        peak_amplitude_mae = peak_amplitude_error_sum / max(val_count, 1)
+        selection_score = val_loss + float(peak_select_weight) * (
+            peak_location_mae_normalized + peak_amplitude_mae
+        )
+
+        if selection_score < best_selection_score:
+            best_selection_score = selection_score
             best_state = copy.deepcopy(model.state_dict())
 
         print(
             f"epoch {epoch + 1:4d}/{epochs} | "
-            f"train={train_loss:.6e} | val={val_loss:.6e}"
+            f"train={train_loss:.6e} | val={val_loss:.6e} | "
+            f"val_peak_loc_mae={peak_location_mae:.3f} | "
+            f"val_peak_amp_mae={peak_amplitude_mae:.6e}"
         )
 
     if best_state is not None:
@@ -747,6 +841,10 @@ def run_operator_experiment(
     learning_rate: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    curvature_weight: float = 0.25,
+    peak_weight: float = 2.0,
+    peak_location_weight: float = 0.1,
+    peak_select_weight: float = 1.0,
     dataset_file: str = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
@@ -788,6 +886,10 @@ def run_operator_experiment(
             lr=learning_rate,
             weight_decay=weight_decay,
             slope_weight=slope_weight,
+            curvature_weight=curvature_weight,
+            peak_weight=peak_weight,
+            peak_location_weight=peak_location_weight,
+            peak_select_weight=peak_select_weight,
             plot=plot,
             save_plots=save_plots,
             operator_name=operator_name,
