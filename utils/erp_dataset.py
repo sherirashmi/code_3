@@ -66,6 +66,7 @@ from utils.physics import (
     freqs,
     k,
     num_res as default_num_res,
+    omega_n,
     resonator_bounds,
 )
 from utils.solver import compute_erp_spectrum
@@ -916,8 +917,127 @@ def prepare_erp_dataset(
     return dataset, loaders
 
 
+# ==================================================
+# Frequency-band dataset split
+# ==================================================
+
+
+def split_dataset_by_frequency(
+    source_file: str = DEFAULT_DATASET_FILE,
+    low_file: str = "datasets/dataset_erp_ft_low.pth",
+    high_file: str = "datasets/dataset_erp_ft_high.pth",
+    split_frequency_hz: float | None = None,
+    margin_hz: float = 5.0,
+    verbose: bool = True,
+) -> dict[str, object]:
+    """Split one raw ERP dataset into two frequency sub-bands.
+
+    Splits purely along the frequency axis -- both output datasets keep the
+    exact same resonator configurations (``configuration_features``); only
+    the slice of each configuration's ERP spectrum differs. This separates
+    "below the plate's own first structural mode" (smooth, low variance
+    across configurations -- no plate resonance to interact with, so the
+    ERP curve there is dominated by simple off-resonance compliance) from
+    "at or above the first mode" (high variance: mode-splitting/veering
+    against the resonators makes the target far more configuration-
+    sensitive there). The two bands behave like different learning
+    problems, which is why every operator in this project consistently
+    fits the low band better regardless of architecture.
+
+    ``split_frequency_hz`` defaults to ``first_mode_hz - margin_hz``, where
+    ``first_mode_hz`` is the plate's own lowest bending mode taken from
+    ``utils.physics.omega_n`` (already sorted ascending) -- not a value
+    derived from the resonators, whose tuning frequencies are sampled
+    across the whole ``[fmin, fmax]`` range and don't define this boundary.
+
+    A point exactly at the split frequency (rare, since the physical
+    computation is not generally grid-aligned) is assigned to the low band.
+
+    Returns a summary dict describing both output files.
+    """
+    payload = load_dataset(source_file)
+
+    if split_frequency_hz is None:
+        first_mode_hz = float(omega_n[0] / (2.0 * np.pi))
+        split_frequency_hz = first_mode_hz - float(margin_hz)
+    else:
+        split_frequency_hz = float(split_frequency_hz)
+
+    frequency_values = np.asarray(payload["frequency_values"], dtype=np.float32)
+    responses = np.asarray(payload["responses"], dtype=np.float32)
+
+    low_mask = frequency_values <= split_frequency_hz
+    high_mask = ~low_mask
+
+    if not low_mask.any():
+        raise ValueError(
+            f"split_frequency_hz={split_frequency_hz:g} Hz leaves the low band "
+            f"empty (dataset frequency range is {frequency_values.min():g}-"
+            f"{frequency_values.max():g} Hz)."
+        )
+    if not high_mask.any():
+        raise ValueError(
+            f"split_frequency_hz={split_frequency_hz:g} Hz leaves the high band empty."
+        )
+
+    def _sub_payload(mask: np.ndarray, band_name: str) -> dict[str, object]:
+        sub = dict(payload)
+        sub["frequency_values"] = frequency_values[mask].copy()
+        sub["responses"] = responses[:, mask, :].copy()
+        sub["frequency_band"] = band_name
+        sub["split_frequency_hz"] = split_frequency_hz
+        sub["source_file"] = str(source_file)
+        return sub
+
+    save_dataset(_sub_payload(low_mask, "low"), low_file)
+    save_dataset(_sub_payload(high_mask, "high"), high_file)
+
+    summary = {
+        "split_frequency_hz": split_frequency_hz,
+        "low_file": str(low_file),
+        "high_file": str(high_file),
+        "low_num_frequencies": int(low_mask.sum()),
+        "high_num_frequencies": int(high_mask.sum()),
+        "low_frequency_range_hz": (
+            float(frequency_values[low_mask].min()),
+            float(frequency_values[low_mask].max()),
+        ),
+        "high_frequency_range_hz": (
+            float(frequency_values[high_mask].min()),
+            float(frequency_values[high_mask].max()),
+        ),
+        "num_samples": int(payload["num_samples"]),
+    }
+
+    if verbose:
+        print("=" * 68)
+        print("ERP dataset split by frequency")
+        print(f"Source file          : {source_file}")
+        print(
+            f"Split frequency      : {split_frequency_hz:.3f} Hz "
+            f"(first plate mode - {margin_hz:g} Hz)"
+        )
+        print(f"Low band  -> {low_file}")
+        print(
+            f"  frequencies        : {summary['low_num_frequencies']} "
+            f"({summary['low_frequency_range_hz'][0]:.2f}-"
+            f"{summary['low_frequency_range_hz'][1]:.2f} Hz)"
+        )
+        print(f"High band -> {high_file}")
+        print(
+            f"  frequencies        : {summary['high_num_frequencies']} "
+            f"({summary['high_frequency_range_hz'][0]:.2f}-"
+            f"{summary['high_frequency_range_hz'][1]:.2f} Hz)"
+        )
+        print(f"Configurations (shared by both) : {summary['num_samples']}")
+        print("=" * 68)
+
+    return summary
+
+
 __all__ = [
     "ERPDataset",
+    "split_dataset_by_frequency",
     "prepare_erp_dataset",
     "normalize_configuration_array",
     "normalize_frequency_array",
