@@ -922,6 +922,109 @@ def prepare_erp_dataset(
 # ==================================================
 
 
+VALID_FREQUENCY_BANDS = {"low", "high"}
+
+
+def prepare_erp_dataset_band(
+    num_samples: int = 100,
+    *,
+    frequency_band: str,
+    input_mode: str = "flat_all",
+    batch_size: int = 64,
+    num_res: int = default_num_res,
+    master_dataset_file: str = DEFAULT_DATASET_FILE,
+    low_file: str = "datasets/dataset_erp_ft_low.pth",
+    high_file: str = "datasets/dataset_erp_ft_high.pth",
+    split_frequency_hz: float | None = None,
+    margin_hz: float = 5.0,
+    regenerate_dataset: bool = False,
+    num_generate: int | None = None,
+    seed: int = 727,
+    train_ratio: float = 0.8,
+    val_ratio: float = 0.1,
+    num_workers: int = 0,
+    pin_memory: bool | None = None,
+    preprocessing_state: Mapping[str, object] | None = None,
+    verbose: bool = True,
+) -> tuple[ERPDataset, dict[str, DataLoader]]:
+    """Band-aware wrapper around :func:`prepare_erp_dataset`.
+
+    Regeneration always targets the *complete* dataset (the full 10-160 Hz
+    spectrum) at ``master_dataset_file`` -- the frequency split is never
+    baked into generation itself, only ever applied afterward. If
+    ``regenerate_dataset=True`` (or the master file doesn't exist yet), the
+    complete dataset is (re)generated first, then split into
+    ``low_file``/``high_file`` via :func:`split_dataset_by_frequency`; only
+    after that does this function load the requested ``frequency_band`` and
+    hand off to :func:`prepare_erp_dataset` exactly as if you had called it
+    directly on that band file with ``regenerate_dataset=False``.
+
+    Without this, asking for ``dataset_file="datasets/dataset_erp_ft_high.pth"``
+    with ``regenerate_dataset=True`` directly on :func:`prepare_erp_dataset`
+    would silently overwrite that file with a fresh *complete* 10-160 Hz
+    dataset (generation has no concept of bands), destroying its "high band
+    only" meaning. This function keeps "regenerate the data" and "which
+    frequency band to train on" as two independent concerns: a fresh master
+    dataset also refreshes both band files, keeping them consistent with it
+    and with each other, without ever writing an unsplit dataset under a
+    band filename.
+    """
+    if frequency_band not in VALID_FREQUENCY_BANDS:
+        raise ValueError(
+            f"frequency_band must be one of {sorted(VALID_FREQUENCY_BANDS)}."
+        )
+    band_file = low_file if frequency_band == "low" else high_file
+
+    master_exists = Path(master_dataset_file).exists()
+    band_exists = Path(band_file).exists()
+
+    if regenerate_dataset or not master_exists:
+        n_generate = num_samples if num_generate is None else int(num_generate)
+        if n_generate < 3:
+            raise ValueError("num_generate must be at least 3.")
+        if verbose:
+            reason = "regenerate_dataset=True" if regenerate_dataset else "master file missing"
+            print(f"Regenerating the COMPLETE ERP dataset first ({reason}): {master_dataset_file}")
+        master = ERPDataset(num_samples=n_generate, num_res=num_res, seed=seed)
+        master.generate(save=True, filename=master_dataset_file, verbose=verbose)
+        split_dataset_by_frequency(
+            source_file=master_dataset_file,
+            low_file=low_file,
+            high_file=high_file,
+            split_frequency_hz=split_frequency_hz,
+            margin_hz=margin_hz,
+            verbose=verbose,
+        )
+    elif not band_exists:
+        if verbose:
+            print(f"{band_file} not found; splitting it from the existing {master_dataset_file}.")
+        split_dataset_by_frequency(
+            source_file=master_dataset_file,
+            low_file=low_file,
+            high_file=high_file,
+            split_frequency_hz=split_frequency_hz,
+            margin_hz=margin_hz,
+            verbose=verbose,
+        )
+
+    return prepare_erp_dataset(
+        num_samples=num_samples,
+        input_mode=input_mode,
+        batch_size=batch_size,
+        num_res=num_res,
+        dataset_file=band_file,
+        regenerate_dataset=False,
+        num_generate=None,
+        seed=seed,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        preprocessing_state=preprocessing_state,
+        verbose=verbose,
+    )
+
+
 def split_dataset_by_frequency(
     source_file: str = DEFAULT_DATASET_FILE,
     low_file: str = "datasets/dataset_erp_ft_low.pth",
@@ -1038,6 +1141,8 @@ def split_dataset_by_frequency(
 __all__ = [
     "ERPDataset",
     "split_dataset_by_frequency",
+    "prepare_erp_dataset_band",
+    "VALID_FREQUENCY_BANDS",
     "prepare_erp_dataset",
     "normalize_configuration_array",
     "normalize_frequency_array",

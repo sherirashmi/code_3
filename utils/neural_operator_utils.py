@@ -39,6 +39,7 @@ from .erp_dataset import (
     normalize_erp_array,
     normalize_frequency_array,
     prepare_erp_dataset,
+    prepare_erp_dataset_band,
 )
 from utils.physics import freqs, num_res as default_num_res
 from .plotting import (
@@ -391,21 +392,58 @@ def prepare_operator_data(
     preprocessing_state: Mapping[str, object] | None = None,
     num_workers: int = 0,
     verbose: bool = True,
+    frequency_band: str | None = None,
+    master_dataset_file: str = DEFAULT_DATASET_FILE,
+    low_dataset_file: str = "datasets/dataset_erp_ft_low.pth",
+    high_dataset_file: str = "datasets/dataset_erp_ft_high.pth",
+    split_frequency_hz: float | None = None,
+    split_margin_hz: float = 5.0,
 ):
-    """Prepare the common ERP data and configuration-level spectrum loaders."""
-    dataset, _ = prepare_erp_dataset(
-        num_samples=num_configurations,
-        input_mode="multi_res",
-        batch_size=max(64, batch_size),
-        num_res=num_res,
-        dataset_file=dataset_file,
-        regenerate_dataset=regenerate_dataset,
-        num_generate=num_generate,
-        seed=seed,
-        preprocessing_state=preprocessing_state,
-        num_workers=0,
-        verbose=verbose,
-    )
+    """Prepare the common ERP data and configuration-level spectrum loaders.
+
+    ``frequency_band`` (``"low"``, ``"high"``, or ``None`` for the ordinary
+    unsplit path) routes through :func:`prepare_erp_dataset_band` instead of
+    :func:`prepare_erp_dataset` directly. That keeps ``regenerate_dataset``
+    safe to use with a frequency-band file: regeneration always rebuilds
+    the *complete* dataset at ``master_dataset_file`` first, then re-splits
+    it into ``low_dataset_file``/``high_dataset_file``, and only after that
+    loads the requested band -- rather than ``dataset_file`` pointing at a
+    band file and regeneration silently overwriting it with an unsplit,
+    full-spectrum dataset.
+    """
+    if frequency_band is not None:
+        dataset, _ = prepare_erp_dataset_band(
+            num_samples=num_configurations,
+            frequency_band=frequency_band,
+            input_mode="multi_res",
+            batch_size=max(64, batch_size),
+            num_res=num_res,
+            master_dataset_file=master_dataset_file,
+            low_file=low_dataset_file,
+            high_file=high_dataset_file,
+            split_frequency_hz=split_frequency_hz,
+            margin_hz=split_margin_hz,
+            regenerate_dataset=regenerate_dataset,
+            num_generate=num_generate,
+            seed=seed,
+            preprocessing_state=preprocessing_state,
+            num_workers=0,
+            verbose=verbose,
+        )
+    else:
+        dataset, _ = prepare_erp_dataset(
+            num_samples=num_configurations,
+            input_mode="multi_res",
+            batch_size=max(64, batch_size),
+            num_res=num_res,
+            dataset_file=dataset_file,
+            regenerate_dataset=regenerate_dataset,
+            num_generate=num_generate,
+            seed=seed,
+            preprocessing_state=preprocessing_state,
+            num_workers=0,
+            verbose=verbose,
+        )
     loaders = build_spectrum_loaders(
         dataset,
         batch_size=batch_size,
@@ -921,14 +959,32 @@ def run_operator_experiment(
     plots_dir: str | Path | None = None,
     num_evaluation_plots: int = 5,
     evaluate_after_training: bool = False,
+    frequency_band: str | None = None,
+    master_dataset_file: str = DEFAULT_DATASET_FILE,
+    low_dataset_file: str = "datasets/dataset_erp_ft_low.pth",
+    high_dataset_file: str = "datasets/dataset_erp_ft_high.pth",
+    split_frequency_hz: float | None = None,
+    split_margin_hz: float = 5.0,
 ) -> dict[str, object]:
-    """Train, evaluate, or predict with one operator architecture."""
+    """Train, evaluate, or predict with one operator architecture.
+
+    ``frequency_band`` (``"low"``, ``"high"``, or ``None``) trains/evaluates
+    on only that frequency sub-band -- see ``prepare_operator_data`` for why
+    this keeps ``regenerate_dataset`` safe with band files instead of
+    silently overwriting one with an unsplit full-spectrum dataset. When
+    set and ``checkpoint_file`` isn't given explicitly, the checkpoint
+    filename includes the band (``models/{name}_{band}_erp.pth``) so a
+    low-band and high-band model for the same architecture don't overwrite
+    each other's checkpoint.
+    """
     action = str(action).lower().strip()
     if action not in {"train", "evaluate", "predict"}:
         raise ValueError("action must be 'train', 'evaluate', or 'predict'.")
 
     seed_everything(seed)
-    checkpoint_file = checkpoint_file or f"models/{operator_name.lower()}_erp.pth"
+    if checkpoint_file is None:
+        suffix = f"_{frequency_band}" if frequency_band is not None else ""
+        checkpoint_file = f"models/{operator_name.lower()}{suffix}_erp.pth"
 
     if action == "train":
         dataset, loaders = prepare_operator_data(
@@ -940,6 +996,12 @@ def run_operator_experiment(
             seed=seed,
             num_workers=num_workers,
             verbose=True,
+            frequency_band=frequency_band,
+            master_dataset_file=master_dataset_file,
+            low_dataset_file=low_dataset_file,
+            high_dataset_file=high_dataset_file,
+            split_frequency_hz=split_frequency_hz,
+            split_margin_hz=split_margin_hz,
         )
         model = build_model(num_res=dataset.num_res, **dict(model_config)).to(device)
         print(f"{operator_name} trainable parameters: {parameter_count(model):,}")
@@ -999,6 +1061,12 @@ def run_operator_experiment(
         preprocessing_state=preprocessing_state,
         num_workers=num_workers,
         verbose=True,
+        frequency_band=frequency_band,
+        master_dataset_file=master_dataset_file,
+        low_dataset_file=low_dataset_file,
+        high_dataset_file=high_dataset_file,
+        split_frequency_hz=split_frequency_hz,
+        split_margin_hz=split_margin_hz,
     )
     model = build_model(num_res=dataset.num_res, **saved_config).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -1074,6 +1142,13 @@ def make_operator_runner(
         plots_dir: str | Path | None = None,
         num_evaluation_plots: int = 5,
         evaluate_after_training: bool = False,
+        frequency_band: str | None = None,
+        master_dataset_file: str = DEFAULT_DATASET_FILE,
+        low_dataset_file: str = "datasets/dataset_erp_ft_low.pth",
+        high_dataset_file: str = "datasets/dataset_erp_ft_high.pth",
+        split_frequency_hz: float | None = None,
+        split_margin_hz: float = 5.0,
+        checkpoint_file: str | None = None,
     ) -> dict[str, object]:
         return run_operator_experiment(
             operator_name=operator_name,
@@ -1088,6 +1163,13 @@ def make_operator_runner(
             regenerate_dataset=regenerate_dataset,
             seed=seed,
             configuration=configuration,
+            frequency_band=frequency_band,
+            master_dataset_file=master_dataset_file,
+            low_dataset_file=low_dataset_file,
+            high_dataset_file=high_dataset_file,
+            split_frequency_hz=split_frequency_hz,
+            split_margin_hz=split_margin_hz,
+            checkpoint_file=checkpoint_file,
             plot=plot,
             save_plots=save_plots,
             plots_dir=plots_dir,
