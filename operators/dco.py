@@ -8,27 +8,12 @@ import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
+    FrequencyRefinement1d,
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
     run_operator_experiment,
 )
-
-
-class FrequencyRefinement1d(nn.Module):
-    """Residual local frequency mixer used to sharpen neighboring ERP points."""
-
-    def __init__(self, width: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-        )
-        self.norm = nn.GroupNorm(1, width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.silu(self.norm(x + self.net(x)))
 
 
 class DCO(nn.Module):

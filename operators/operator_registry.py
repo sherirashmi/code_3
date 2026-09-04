@@ -115,7 +115,13 @@ OPERATORS = {
         operator_name="SIREN_NO",
         build_model=build_siren,
         model_config=SIREN_MODEL_CONFIG,
-        epochs=250,
+        # Same epoch budget as every other operator so the comparison isn't
+        # confounded by extra training time (was 250 vs. everyone else's 200).
+        # lr stays lower than the shared 5e-4 default: sine layers are known
+        # to need a smaller learning rate than smooth activations for stable
+        # optimization (Sitzmann et al., SIREN) -- this is a documented,
+        # architecture-intrinsic need, not an unfair training-budget edge.
+        epochs=200,
         lr=2e-4,
     ),
     "8": _make_spec(

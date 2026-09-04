@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
+    FrequencyRefinement1d,
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
@@ -29,20 +30,6 @@ class FiLMResidualBlock(nn.Module):
         gamma = 1.0 + 0.20 * torch.tanh(gamma)
         beta = 0.10 * beta
         return F.silu(gamma * h + beta)
-
-
-class FrequencyRefinement1d(nn.Module):
-    def __init__(self, width: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-        )
-        self.norm = nn.GroupNorm(1, width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.silu(self.norm(x + self.net(x)))
 
 
 class DNO(nn.Module):

@@ -16,9 +16,16 @@ from utils.neural_operator_utils import (
 
 
 class MultiLevelHaarWaveletBlock1d(nn.Module):
-    """Learned multi-scale Haar analysis/mixing/synthesis residual block."""
+    """Learned multi-scale Haar analysis/mixing/synthesis residual block.
 
-    def __init__(self, width: int, levels: int = 3) -> None:
+    ``dropout`` counters the same overfitting pattern seen with FNO: WNO
+    reaches a very low training loss but its validation loss plateaus well
+    above DCO/DNO/GNO, since the many learned per-level conv filters give it
+    enough capacity to fit each training configuration's wavelet
+    coefficients closely without that precision generalizing.
+    """
+
+    def __init__(self, width: int, levels: int = 3, dropout: float = 0.0) -> None:
         super().__init__()
         if levels <= 0:
             raise ValueError("levels must be positive.")
@@ -32,6 +39,7 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
         self.coarse_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         inv_sqrt2 = 1.0 / math.sqrt(2.0)
@@ -73,7 +81,7 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
             reconstructed[..., 1::2] = odd
             current = reconstructed[..., : original_lengths[level]]
 
-        return F.gelu(self.norm(x + current + self.local(x)))
+        return self.dropout(F.gelu(self.norm(x + current + self.local(x))))
 
 
 class WNO(nn.Module):
@@ -87,6 +95,7 @@ class WNO(nn.Module):
         levels: int = 3,
         config_hidden: int = 128,
         query_dim: int = 48,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -102,7 +111,10 @@ class WNO(nn.Module):
         )
         self.lift = nn.Linear(width + query_dim + 1, width)
         self.blocks = nn.ModuleList(
-            [MultiLevelHaarWaveletBlock1d(width, levels=levels) for _ in range(depth)]
+            [
+                MultiLevelHaarWaveletBlock1d(width, levels=levels, dropout=dropout)
+                for _ in range(depth)
+            ]
         )
         self.project = nn.Sequential(
             nn.Linear(width, width),
@@ -130,6 +142,7 @@ DEFAULT_MODEL_CONFIG = {
     "levels": 3,
     "config_hidden": 128,
     "query_dim": 48,
+    "dropout": 0.1,
 }
 
 

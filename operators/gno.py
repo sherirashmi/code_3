@@ -8,20 +8,28 @@ import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
+    FrequencyRefinement1d,
     physics_aware_resonator_features,
     run_operator_experiment,
 )
 
 
 class GraphMessageLayer(nn.Module):
-    """Complete-graph message passing with geometric/frequency edge features."""
+    """Complete-graph message passing with geometric/frequency edge features.
 
-    def __init__(self, width: int) -> None:
+    ``dropout`` fights the late-training validation upturn GNO shows: with
+    only ``num_res=3`` nodes a complete graph has very few distinct edges to
+    learn from, so the message/update MLPs have more than enough capacity to
+    memorize per-configuration shortcuts once the easy gains are exhausted.
+    """
+
+    def __init__(self, width: int, dropout: float = 0.0) -> None:
         super().__init__()
         # hi, hj, relative [f_t,x,y], xy distance, |delta f_t|.
         self.message = MLP([2 * width + 5, width, width], activation=nn.SiLU)
         self.update = MLP([2 * width, width, width], activation=nn.SiLU)
         self.norm = nn.LayerNorm(width)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, h: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
         b, n, width = h.shape
@@ -40,21 +48,7 @@ class GraphMessageLayer(nn.Module):
             aggregate = torch.zeros_like(h)
 
         delta = self.update(torch.cat((h, aggregate), dim=-1))
-        return F.silu(self.norm(h + delta))
-
-
-class FrequencyRefinement1d(nn.Module):
-    def __init__(self, width: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv1d(width, width, kernel_size=3, padding=1),
-        )
-        self.norm = nn.GroupNorm(1, width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.silu(self.norm(x + self.net(x)))
+        return self.dropout(F.silu(self.norm(h + delta)))
 
 
 class GNO(nn.Module):
@@ -67,13 +61,16 @@ class GNO(nn.Module):
         depth: int = 3,
         frequency_dim: int = 64,
         modal_harmonics: int = 4,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         self.modal_harmonics = int(modal_harmonics)
         node_input_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.node_lift = MLP([node_input_dim, width, width], activation=nn.SiLU)
-        self.layers = nn.ModuleList([GraphMessageLayer(width) for _ in range(depth)])
+        self.layers = nn.ModuleList(
+            [GraphMessageLayer(width, dropout=dropout) for _ in range(depth)]
+        )
         self.frequency_encoder = MLP(
             [1, frequency_dim, frequency_dim], activation=nn.SiLU
         )
@@ -83,6 +80,7 @@ class GNO(nn.Module):
             [query_input_dim, width, width, width], activation=nn.SiLU
         )
         self.attention_score = MLP([width, width // 2, 1], activation=nn.SiLU)
+        self.attention_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(width)
         self.output = MLP([width, width // 2, 1], activation=nn.SiLU)
 
@@ -118,6 +116,7 @@ class GNO(nn.Module):
         )
         kernel_values = self.query_kernel(pair)
         weights = torch.softmax(self.attention_score(kernel_values), dim=2)
+        weights = self.attention_dropout(weights)
         integral = (weights * kernel_values).sum(dim=2)
         integral = self.frequency_refinement(integral.transpose(1, 2)).transpose(1, 2)
         return self.output(integral)
@@ -132,6 +131,7 @@ DEFAULT_MODEL_CONFIG = {
     "depth": 3,
     "frequency_dim": 64,
     "modal_harmonics": 4,
+    "dropout": 0.1,
 }
 
 

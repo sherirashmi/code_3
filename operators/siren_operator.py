@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from utils.neural_operator_utils import (
+    FrequencyRefinement1d,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
     run_operator_experiment,
@@ -100,6 +101,13 @@ class SIRENOperator(nn.Module):
                 )
             )
         self.layers = nn.ModuleList(layers)
+        # Every other operator in this project mixes neighboring frequency
+        # samples somewhere (a local conv "refinement" stage); a plain SIREN
+        # predicts each query frequency independently. Adding the same shared
+        # refinement block here (as a residual on top of the sine stack) gives
+        # SIREN parity with the rest rather than leaving it the only
+        # purely-pointwise architecture in the comparison.
+        self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
         self.output = nn.Linear(hidden_dim, 1)
 
         with torch.no_grad():
@@ -113,6 +121,7 @@ class SIRENOperator(nn.Module):
         h = torch.cat((frequency, query_features), dim=-1)
         for layer in self.layers:
             h = layer(h, context)
+        h = self.frequency_refinement(h.transpose(1, 2)).transpose(1, 2)
         return self.output(h)
 
 

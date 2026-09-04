@@ -7,7 +7,12 @@ import math
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import MLP, ResonatorSetEncoder, run_operator_experiment
+from utils.neural_operator_utils import (
+    MLP,
+    FrequencyRefinement1d,
+    ResonatorSetEncoder,
+    run_operator_experiment,
+)
 
 
 class FourierFrequencyEncoder(nn.Module):
@@ -30,12 +35,24 @@ class FourierFrequencyEncoder(nn.Module):
 
 
 class DON(nn.Module):
-    """Physics-aware DeepONet with a configuration-modulated Fourier trunk.
+    """Physics-aware, multi-term DeepONet with a configuration-modulated Fourier trunk.
 
-    The classical branch/trunk inner product is retained, but the trunk receives
-    multi-scale Fourier frequency features and is gently modulated by the full
-    resonator configuration.  This makes moving and narrow resonances easier to
-    represent than with a single fixed low-rank frequency basis.
+    The classical branch/trunk inner product is retained as the operator's core
+    mechanism (branch encodes the resonator configuration, trunk encodes the
+    query frequency, combined by inner product) so this stays a recognizable
+    DeepONet rather than converging onto DCO/DNO. Two additions give it the same
+    tools every other operator in this project already had, closing an
+    unintentional capacity/feature gap rather than changing what a DeepONet is:
+
+    1. ``num_terms`` independent branch/trunk basis pairs are summed (a
+       stacked/POD-style DeepONet) instead of one. A single shared basis is a
+       low-rank map from configuration to spectrum; summing several raises the
+       effective rank so multiple, independently-positioned narrow resonances
+       no longer have to share one global basis.
+    2. A small residual local-frequency refinement stage (the same
+       ``FrequencyRefinement1d`` block DCO/DNO/GNO/STO use) sharpens the
+       branch/trunk output after combination. Every other architecture mixes
+       neighboring frequency samples somewhere; plain DeepONet never did.
     """
 
     def __init__(
@@ -45,9 +62,15 @@ class DON(nn.Module):
         context_dim: int = 160,
         basis_dim: int = 256,
         fourier_bands: int = 6,
+        num_terms: int = 4,
+        refine_width: int = 64,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        self.num_terms = int(num_terms)
+        self.basis_dim = int(basis_dim)
+        stacked_dim = self.num_terms * self.basis_dim
+
         self.frequency_features = FourierFrequencyEncoder(fourier_bands)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=hidden_dim,
@@ -55,30 +78,48 @@ class DON(nn.Module):
             output_dim=context_dim,
         )
         self.branch_head = MLP(
-            [context_dim, hidden_dim, basis_dim], activation=nn.SiLU
+            [context_dim, hidden_dim, stacked_dim], activation=nn.SiLU
         )
         self.trunk = MLP(
-            [self.frequency_features.output_dim, hidden_dim, hidden_dim, basis_dim],
+            [self.frequency_features.output_dim, hidden_dim, hidden_dim, stacked_dim],
             activation=nn.SiLU,
         )
         self.trunk_modulation = MLP(
-            [context_dim, hidden_dim, 2 * basis_dim], activation=nn.SiLU
+            [context_dim, hidden_dim, 2 * stacked_dim], activation=nn.SiLU
         )
+        # Learned convex combination over terms keeps the sum on the same
+        # scale as a single-term DeepONet regardless of num_terms.
+        self.term_logits = nn.Parameter(torch.zeros(self.num_terms))
         self.bias = nn.Parameter(torch.zeros(1))
         self.scale = math.sqrt(float(basis_dim))
 
-    def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        context = self.configuration_encoder(configuration)
-        branch = self.branch_head(context)[:, None, :]  # (B,1,P)
+        self.refine_lift = nn.Linear(1, refine_width)
+        self.frequency_refinement = FrequencyRefinement1d(refine_width)
+        self.refine_project = nn.Linear(refine_width, 1)
 
-        trunk = self.trunk(self.frequency_features(frequency))  # (B,F,P)
+    def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
+        batch, n_freq, _ = frequency.shape
+        context = self.configuration_encoder(configuration)
+        branch = self.branch_head(context).view(
+            batch, 1, self.num_terms, self.basis_dim
+        )
+
+        trunk = self.trunk(self.frequency_features(frequency))  # (B,F,T*P)
         gamma, beta = self.trunk_modulation(context).chunk(2, dim=-1)
         gamma = 1.0 + 0.25 * torch.tanh(gamma[:, None, :])
         beta = 0.10 * beta[:, None, :]
-        trunk = gamma * trunk + beta
+        trunk = (gamma * trunk + beta).view(
+            batch, n_freq, self.num_terms, self.basis_dim
+        )
 
-        output = (branch * trunk).sum(dim=-1, keepdim=True) / self.scale
-        return output + self.bias
+        term_output = (branch * trunk).sum(dim=-1) / self.scale  # (B,F,T)
+        term_weight = torch.softmax(self.term_logits, dim=0)
+        base_output = (term_output * term_weight).sum(dim=-1, keepdim=True) + self.bias
+
+        refined = self.refine_lift(base_output).transpose(1, 2)
+        refined = self.frequency_refinement(refined)
+        refined = self.refine_project(refined.transpose(1, 2))
+        return base_output + refined
 
 
 def build_model(num_res: int, **kwargs) -> DON:
@@ -90,6 +131,8 @@ DEFAULT_MODEL_CONFIG = {
     "context_dim": 160,
     "basis_dim": 256,
     "fourier_bands": 6,
+    "num_terms": 4,
+    "refine_width": 64,
 }
 
 

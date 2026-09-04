@@ -47,17 +47,26 @@ class SpectralConv1d(nn.Module):
 
 
 class FNOBlock1d(nn.Module):
-    """Global Fourier mixing plus local kernel-3 peak refinement."""
+    """Global Fourier mixing plus local kernel-3 peak refinement.
 
-    def __init__(self, width: int, modes: int) -> None:
+    ``dropout`` fights the overfitting FNO otherwise shows on this dataset:
+    training loss reaches the lowest value of any architecture here while
+    validation loss plateaus well above DCO/DNO and drifts back up late in
+    training — the retained Fourier modes give it enough global capacity to
+    fit each training spectrum's coefficients fairly exactly without that
+    capacity transferring to held-out configurations.
+    """
+
+    def __init__(self, width: int, modes: int, dropout: float = 0.0) -> None:
         super().__init__()
         self.spectral = SpectralConv1d(width, width, modes)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = x + self.spectral(x) + self.local(x)
-        return F.gelu(self.norm(y))
+        return self.dropout(F.gelu(self.norm(y)))
 
 
 class FNO(nn.Module):
@@ -72,6 +81,7 @@ class FNO(nn.Module):
         config_hidden: int = 128,
         query_dim: int = 48,
         padding: int = 8,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -87,7 +97,9 @@ class FNO(nn.Module):
             output_dim=query_dim,
         )
         self.lift = nn.Linear(width + query_dim + 1, width)
-        self.blocks = nn.ModuleList([FNOBlock1d(width, modes) for _ in range(depth)])
+        self.blocks = nn.ModuleList(
+            [FNOBlock1d(width, modes, dropout=dropout) for _ in range(depth)]
+        )
         self.project = nn.Sequential(
             nn.Linear(width, width),
             nn.GELU(),
@@ -121,6 +133,7 @@ DEFAULT_MODEL_CONFIG = {
     "config_hidden": 128,
     "query_dim": 48,
     "padding": 8,
+    "dropout": 0.1,
 }
 
 

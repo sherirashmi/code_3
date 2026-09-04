@@ -98,6 +98,28 @@ class ResidualMLPBlock(nn.Module):
         return self.activation(self.norm(x + self.net(x)))
 
 
+class FrequencyRefinement1d(nn.Module):
+    """Shared residual local frequency mixer used to sharpen ERP peaks.
+
+    Every operator uses this exact module for its final cross-frequency
+    mixing stage, so no architecture gets a stronger or weaker "peak
+    sharpening" tool than any other purely as an implementation accident.
+    Operates on ``(batch, width, n_freq)`` feature maps.
+    """
+
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(width, width, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv1d(width, width, kernel_size=3, padding=1),
+        )
+        self.norm = nn.GroupNorm(1, width)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.silu(self.norm(x + self.net(x)))
+
+
 def physics_aware_resonator_features(
     configuration: torch.Tensor,
     harmonics: int = 4,
@@ -941,6 +963,7 @@ def make_operator_runner(
 __all__ = [
     "MLP",
     "ResidualMLPBlock",
+    "FrequencyRefinement1d",
     "physics_aware_resonator_features",
     "ResonatorSetEncoder",
     "ResonanceQueryEncoder",

@@ -18,7 +18,7 @@ from utils.neural_operator_utils import (
 class DetuningCrossAttention(nn.Module):
     """Multi-head frequency-to-resonator attention with learned detuning bias."""
 
-    def __init__(self, width: int, heads: int) -> None:
+    def __init__(self, width: int, heads: int, dropout: float = 0.0) -> None:
         super().__init__()
         if width % heads != 0:
             raise ValueError("width must be divisible by heads.")
@@ -31,6 +31,7 @@ class DetuningCrossAttention(nn.Module):
         self.out_proj = nn.Linear(width, width)
         # raw [f_t,x,y], query f, delta, |delta| -> one bias per head
         self.bias_net = MLP([6, width // 2, heads], activation=nn.SiLU)
+        self.attn_dropout = nn.Dropout(dropout)
 
     def forward(
         self,
@@ -55,6 +56,7 @@ class DetuningCrossAttention(nn.Module):
         bias_features = torch.cat((raw, query_f, delta, delta.abs()), dim=-1)
         bias = self.bias_net(bias_features).permute(0, 3, 1, 2)
         attention = torch.softmax(score + bias, dim=-1)
+        attention = self.attn_dropout(attention)
 
         attended = torch.einsum("bhfn,bhnd->bhfd", attention, v)
         attended = attended.transpose(1, 2).contiguous().view(b, f, self.width)
@@ -85,6 +87,7 @@ class SetTransformerOperator(nn.Module):
         depth: int = 2,
         ff_dim: int = 256,
         modal_harmonics: int = 4,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -95,14 +98,18 @@ class SetTransformerOperator(nn.Module):
             d_model=width,
             nhead=heads,
             dim_feedforward=ff_dim,
-            dropout=0.0,
+            # Was hard-coded to 0.0: with only num_res=3 resonator tokens,
+            # self/cross-attention has more than enough capacity to overfit
+            # once the easy gains are exhausted (visible as validation loss
+            # rising again in the second half of training).
+            dropout=dropout,
             activation="gelu",
             batch_first=True,
             norm_first=False,
         )
         self.encoder = nn.TransformerEncoder(layer, num_layers=depth)
         self.frequency_query = MLP([1, width, width], activation=nn.SiLU)
-        self.cross_attention = DetuningCrossAttention(width, heads)
+        self.cross_attention = DetuningCrossAttention(width, heads, dropout=dropout)
         self.cross_norm = nn.LayerNorm(width)
         self.frequency_mixer = FrequencyMixer(width)
         self.output = MLP([width, width, width // 2, 1], activation=nn.SiLU)
@@ -129,6 +136,7 @@ DEFAULT_MODEL_CONFIG = {
     "depth": 2,
     "ff_dim": 256,
     "modal_harmonics": 4,
+    "dropout": 0.1,
 }
 
 
