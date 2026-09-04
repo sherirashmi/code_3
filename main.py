@@ -98,6 +98,40 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
         print("Please enter y or n.")
 
 
+def _parse_operator_selection(raw: str) -> list[dict[str, object]] | None:
+    """Parse a comma/space-separated operator-number string, e.g. "2,4,5".
+
+    Blank input means "all operators" (returns None, so callers can fall
+    back to the full registry). Order and duplicates in ``raw`` are
+    preserved as given (minus exact repeats) so "5,2,5" trains STO then
+    DON, not DON then STO twice. Returns None on any invalid token so the
+    caller can re-prompt; never raises.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+    tokens = [t for t in raw.replace(",", " ").split() if t]
+    invalid = [t for t in tokens if t not in OPERATORS]
+    if invalid:
+        return None
+    seen: set[str] = set()
+    ordered_keys = [t for t in tokens if not (t in seen or seen.add(t))]
+    return [OPERATORS[key] for key in ordered_keys]
+
+
+def _prompt_operator_selection(prompt: str) -> list[dict[str, object]]:
+    """Prompt for which operators to include; blank selects every operator."""
+    menu = ", ".join(f"{key}={spec['short']}" for key, spec in OPERATORS.items())
+    while True:
+        raw = input(f"{prompt} [blank = all -- {menu}]: ")
+        selected = _parse_operator_selection(raw)
+        if raw.strip() and selected is None:
+            valid = ", ".join(OPERATORS)
+            print(f"Unrecognized operator number(s) in '{raw.strip()}'. Valid keys: {valid}")
+            continue
+        return selected if selected is not None else list(OPERATORS.values())
+
+
 def _prompt_configuration(num_res: int) -> np.ndarray:
     """Read one raw configuration in [f_t, x, y] order."""
     configuration = np.empty((num_res, 3), dtype=np.float32)
@@ -206,24 +240,36 @@ def _print_comparison_table(rows: list[dict[str, object]]) -> None:
 
 def train_all_models(
     *,
+    operator_specs: list[dict[str, object]] | None = None,
     num_configurations: int = 500,
     batch_size: int = 16,
     dataset_file: str = DATASET_FILE,
     regenerate_dataset: bool = False,
     seed: int = SEED,
 ) -> dict[str, object]:
-    """Train and evaluate every registered operator sequentially.
+    """Train and evaluate the given operators sequentially (default: all of them).
+
+    ``operator_specs`` is a list of registry spec dicts (``OPERATORS[key]``
+    values); pass e.g. ``[OPERATORS["2"], OPERATORS["4"], OPERATORS["5"]]``
+    to train only DNO/GNO/STO instead of the full lineup. Defaults to every
+    registered operator when omitted, matching the previous "always train
+    all" behavior.
 
     This workflow is deliberately non-interactive for Matplotlib: every plot is
     saved to ``plots/<operator>/`` and immediately closed. No ``plt.show()`` is
     called, so training proceeds continuously without waiting for plot windows.
     """
+    specs = operator_specs if operator_specs is not None else list(OPERATORS.values())
+    if not specs:
+        raise ValueError("operator_specs must not be empty.")
+
     comparison_rows: list[dict[str, object]] = []
     all_model_plot_data: dict[str, dict[str, np.ndarray]] = {}
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 76)
-    print("TRAIN + EVALUATE ALL ERP NEURAL OPERATORS")
+    print("TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
+    print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
     print(f"Dataset        : {dataset_file}")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
@@ -234,7 +280,7 @@ def train_all_models(
     print("Interactive plots: disabled for uninterrupted batch training")
     print("=" * 76)
 
-    for model_index, spec in enumerate(OPERATORS.values()):
+    for model_index, spec in enumerate(specs):
         epochs = int(spec["epochs"])
         learning_rate = float(spec["lr"])
         regenerate_this_model = bool(regenerate_dataset and model_index == 0)
@@ -426,13 +472,18 @@ def _print_multi_seed_summary(
 
 def train_all_models_multi_seed(
     *,
+    operator_specs: list[dict[str, object]] | None = None,
     seeds: list[int] | None = None,
     num_configurations: int = 500,
     batch_size: int = 16,
     dataset_file: str = DATASET_FILE,
     regenerate_dataset: bool = False,
 ) -> dict[str, object]:
-    """Train + evaluate every operator across multiple seeds; report mean +/- std.
+    """Train + evaluate the given operators (default: all) across multiple
+    seeds; report mean +/- std.
+
+    ``operator_specs`` is a list of registry spec dicts (``OPERATORS[key]``
+    values); pass a subset to restrict the sweep to just those operators.
 
     Every run in this sweep disables plotting (``plot=False, save_plots=False``)
     so it never overwrites the single-seed diagnostic plots ``train_all_models``
@@ -447,17 +498,21 @@ def train_all_models_multi_seed(
     count (e.g. 10000 for the default generated dataset) so the same
     configuration subset is used regardless of seed.
     """
+    specs = operator_specs if operator_specs is not None else list(OPERATORS.values())
+    if not specs:
+        raise ValueError("operator_specs must not be empty.")
     if seeds is None:
         seeds = [727, 1000, 2024]
     if not seeds:
         raise ValueError("seeds must be a non-empty list.")
 
     per_operator_runs: dict[str, list[dict[str, float]]] = {
-        spec["short"]: [] for spec in OPERATORS.values()
+        spec["short"]: [] for spec in specs
     }
 
     print("\n" + "=" * 76)
-    print("MULTI-SEED TRAIN + EVALUATE ALL ERP NEURAL OPERATORS")
+    print("MULTI-SEED TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
+    print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
     print(f"Seeds          : {seeds}")
     print(f"Dataset        : {dataset_file}")
     print(f"Configurations : {num_configurations}")
@@ -466,7 +521,7 @@ def train_all_models_multi_seed(
     print("=" * 76)
 
     for seed_index, seed in enumerate(seeds):
-        for model_index, spec in enumerate(OPERATORS.values()):
+        for model_index, spec in enumerate(specs):
             epochs = int(spec["epochs"])
             learning_rate = float(spec["lr"])
             regenerate_this_run = bool(
@@ -522,6 +577,9 @@ def train_all_models_multi_seed(
 
 def main_all_models_multi_seed():
     """Interactive input collection for the multi-seed fairness sweep."""
+    operator_specs = _prompt_operator_selection(
+        "Which operators to include (e.g. 2,4,5)"
+    )
     num_configurations = _prompt_int(
         "Number of configurations to use for every model/seed",
         default=500,
@@ -537,6 +595,7 @@ def main_all_models_multi_seed():
     print(f"Using seeds: {seeds}")
 
     return train_all_models_multi_seed(
+        operator_specs=operator_specs,
         seeds=seeds,
         num_configurations=num_configurations,
         batch_size=batch_size,
@@ -554,6 +613,9 @@ def main_all_models():
             f"lr={float(spec['lr']):g}"
         )
 
+    operator_specs = _prompt_operator_selection(
+        "Which operators to train (e.g. 2,4,5)"
+    )
     num_configurations = _prompt_int(
         "Number of configurations to use for every model",
         default=5000,
@@ -573,6 +635,7 @@ def main_all_models():
     print("No figures will be displayed during all-model training.")
 
     return train_all_models(
+        operator_specs=operator_specs,
         num_configurations=num_configurations,
         batch_size=batch_size,
         dataset_file=DATASET_FILE,
