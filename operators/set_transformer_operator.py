@@ -144,25 +144,29 @@ def build_model(num_res: int, **kwargs) -> SetTransformerOperator:
     return SetTransformerOperator(num_res=num_res, **kwargs)
 
 
-# width tuned to the shared ~550K-parameter budget (was 128 -> ~525K, already
-# close; nudged up slightly and kept a multiple of heads=4).
+# width/ff_dim scaled down from the ~550K-matched config to the project's
+# new ~110K budget (was width=132 -> ~554K), found via direct integer search
+# rather than a single scale factor since width must stay divisible by
+# heads=4 (kept unchanged at 4).
 DEFAULT_MODEL_CONFIG = {
-    "width": 132,
+    "width": 56,
     "heads": 4,
     "depth": 2,
-    "ff_dim": 256,
+    "ff_dim": 144,
     "modal_harmonics": 4,
     "dropout": 0.1,
     "activation": "gelu",
 }
 
 # Search space for random_search_operator(): explores STO's own knobs at a
-# fixed (parameter-matched) width=132. heads must evenly divide width, so
-# only divisors of 132 are offered.
+# fixed (parameter-matched) width=56. heads must evenly divide width, so
+# only divisors of 56 are offered (56 = 2^3 * 7; NOT divisible by 6, unlike
+# the old width=132 -- a stale [2,4,6] here would crash the search the first
+# time it sampled heads=6).
 SEARCH_SPACE = {
-    "heads": [2, 4, 6],
+    "heads": [2, 4, 8],
     "depth": [2, 3, 4],
-    "ff_dim": [192, 256, 320],
+    "ff_dim": [108, 144, 180],
     "dropout": [0.0, 0.05, 0.1, 0.15],
     "activation": ["gelu", "silu", "relu"],
 }

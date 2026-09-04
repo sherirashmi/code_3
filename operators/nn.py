@@ -17,7 +17,7 @@ in this project was equalized to have (see the fairness pass):
 
 so any accuracy gap between NN and DON/DNO/DCO/FNO/WNO/GNO/STO/SIREN
 reflects architecture, not access to different inputs. Its capacity is
-matched to the same ~550K-parameter budget the other 8 operators were
+matched to the same ~110K-parameter budget the other 8 operators were
 tuned to for the same reason.
 """
 
@@ -94,13 +94,13 @@ def build_model(num_res: int, **kwargs) -> NN:
     return NN(num_res=num_res, **kwargs)
 
 
-# hidden_dim/depth tuned to land at the same ~550K-parameter budget every
-# other operator in this project is matched to.
+# All size dimensions scaled down proportionally from the ~550K-matched
+# config to the project's new ~110K budget (was hidden_dim=191 -> ~549K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 191,
+    "hidden_dim": 85,
     "depth": 6,
-    "context_dim": 128,
-    "query_dim": 64,
+    "context_dim": 57,
+    "query_dim": 28,
     "dropout": 0.1,
     "activation": "relu",
 }
@@ -112,8 +112,8 @@ DEFAULT_MODEL_CONFIG = {
 # anything relative to the smoother activations everyone else uses.
 SEARCH_SPACE = {
     "depth": [4, 6, 8, 10],
-    "context_dim": [96, 128, 160],
-    "query_dim": [48, 64, 96],
+    "context_dim": [42, 56, 70],
+    "query_dim": [21, 28, 42],
     "dropout": [0.0, 0.05, 0.1, 0.15],
     "activation": ["relu", "gelu", "silu", "tanh"],
 }

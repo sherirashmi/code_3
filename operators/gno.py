@@ -138,12 +138,12 @@ def build_model(num_res: int, **kwargs) -> GNO:
     return GNO(num_res=num_res, **kwargs)
 
 
-# width tuned to the shared ~550K-parameter budget (was 128 -> ~498K, already
-# close; nudged up slightly to land in the same band as the other 7 models).
+# All size dimensions scaled down proportionally from the ~550K-matched
+# config to the project's new ~110K budget (was width=135 -> ~552K).
 DEFAULT_MODEL_CONFIG = {
-    "width": 135,
+    "width": 60,
     "depth": 3,
-    "frequency_dim": 64,
+    "frequency_dim": 28,
     "modal_harmonics": 4,
     "dropout": 0.1,
     "activation": "silu",
@@ -153,7 +153,7 @@ DEFAULT_MODEL_CONFIG = {
 # fixed (parameter-matched) width.
 SEARCH_SPACE = {
     "depth": [2, 3, 4],
-    "frequency_dim": [48, 64, 96],
+    "frequency_dim": [21, 28, 42],
     "dropout": [0.0, 0.05, 0.1, 0.15],
     "activation": ["silu", "gelu", "mish"],
 }

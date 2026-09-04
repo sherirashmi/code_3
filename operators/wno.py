@@ -148,13 +148,14 @@ def build_model(num_res: int, **kwargs) -> WNO:
     return WNO(num_res=num_res, **kwargs)
 
 
-# width tuned to the shared ~550K-parameter budget (was 96 -> ~1.01M params).
+# All size dimensions scaled down proportionally from the ~550K-matched
+# config to the project's new ~110K budget (was width=68 -> ~551K).
 DEFAULT_MODEL_CONFIG = {
-    "width": 68,
+    "width": 30,
     "depth": 4,
     "levels": 3,
-    "config_hidden": 128,
-    "query_dim": 48,
+    "config_hidden": 57,
+    "query_dim": 22,
     "dropout": 0.1,
     "activation": "gelu",
 }

@@ -84,12 +84,13 @@ def build_model(num_res: int, **kwargs) -> DCO:
     return DCO(num_res=num_res, **kwargs)
 
 
-# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~407K).
+# All size dimensions scaled down proportionally from the ~550K-matched
+# config to the project's new ~110K budget (was hidden_dim=153 -> ~553K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 153,
-    "branch_dim": 128,
-    "trunk_dim": 128,
-    "query_dim": 64,
+    "hidden_dim": 67,
+    "branch_dim": 56,
+    "trunk_dim": 56,
+    "query_dim": 28,
     "depth": 4,
     "dropout": 0.0,
     "activation": "silu",
@@ -100,9 +101,9 @@ DEFAULT_MODEL_CONFIG = {
 # across architectures separately.
 SEARCH_SPACE = {
     "depth": [3, 4, 5, 6],
-    "branch_dim": [96, 128, 160],
-    "trunk_dim": [96, 128, 160],
-    "query_dim": [48, 64, 96],
+    "branch_dim": [42, 56, 70],
+    "trunk_dim": [42, 56, 70],
+    "query_dim": [21, 28, 42],
     "dropout": [0.0, 0.05, 0.1],
     "activation": ["silu", "gelu", "tanh"],
 }

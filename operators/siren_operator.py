@@ -64,20 +64,29 @@ class SIRENOperator(nn.Module):
         hidden_dim: int = 128,
         depth: int = 4,
         omega_0: float = 20.0,
+        config_hidden: int = 128,
+        query_hidden: int = 64,
     ) -> None:
         super().__init__()
         if depth <= 0:
             raise ValueError("depth must be positive.")
         self.num_res = int(num_res)
         self.omega_0 = float(omega_0)
+        # config_hidden/query_hidden were hardcoded at 128/64 here regardless
+        # of any other size parameter -- a real fixed floor that made SIREN
+        # unable to reach a smaller parameter budget purely by shrinking
+        # context_dim/query_dim/hidden_dim, unlike every other architecture
+        # in this project (whose ResonatorSetEncoder/ResonanceQueryEncoder
+        # calls already tie their internal width to a scalable parameter).
+        # Exposing them keeps SIREN consistent with the rest.
         self.configuration_encoder = ResonatorSetEncoder(
-            hidden_dim=128,
-            element_dim=128,
+            hidden_dim=config_hidden,
+            element_dim=config_hidden,
             output_dim=context_dim,
         )
         self.resonance_query = ResonanceQueryEncoder(
-            hidden_dim=64,
-            element_dim=64,
+            hidden_dim=query_hidden,
+            element_dim=query_hidden,
             output_dim=query_dim,
         )
 
@@ -129,11 +138,16 @@ def build_model(num_res: int, **kwargs) -> SIRENOperator:
     return SIRENOperator(num_res=num_res, **kwargs)
 
 
-# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~392K).
+# All size dimensions -- including config_hidden/query_hidden, now that
+# they're real parameters instead of hardcoded 128/64 -- scaled down
+# proportionally from the ~550K-matched config to the project's new ~110K
+# budget (was hidden_dim=170 -> ~549K).
 DEFAULT_MODEL_CONFIG = {
-    "context_dim": 128,
-    "query_dim": 32,
-    "hidden_dim": 170,
+    "context_dim": 57,
+    "query_dim": 14,
+    "hidden_dim": 75,
+    "config_hidden": 57,
+    "query_hidden": 28,
     "depth": 4,
     "omega_0": 20.0,
 }
@@ -145,7 +159,7 @@ DEFAULT_MODEL_CONFIG = {
 SEARCH_SPACE = {
     "omega_0": [10.0, 20.0, 30.0],
     "depth": [3, 4, 5, 6],
-    "query_dim": [24, 32, 48],
+    "query_dim": [11, 14, 21],
 }
 
 

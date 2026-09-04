@@ -109,12 +109,13 @@ def build_model(num_res: int, **kwargs) -> DNO:
     return DNO(num_res=num_res, **kwargs)
 
 
-# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~584K).
+# All size dimensions scaled down proportionally from the ~550K-matched
+# config to the project's new ~110K budget (was hidden_dim=123 -> ~584K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 123,
-    "context_dim": 128,
-    "frequency_dim": 64,
-    "query_dim": 64,
+    "hidden_dim": 54,
+    "context_dim": 57,
+    "frequency_dim": 28,
+    "query_dim": 28,
     "depth": 4,
     "dropout": 0.0,
     "activation": "silu",
@@ -124,9 +125,9 @@ DEFAULT_MODEL_CONFIG = {
 # fixed (parameter-matched) hidden_dim.
 SEARCH_SPACE = {
     "depth": [3, 4, 5, 6],
-    "context_dim": [96, 128, 160],
-    "frequency_dim": [48, 64, 96],
-    "query_dim": [48, 64, 96],
+    "context_dim": [42, 56, 70],
+    "frequency_dim": [21, 28, 42],
+    "query_dim": [21, 28, 42],
     "dropout": [0.0, 0.05, 0.1],
     "activation": ["silu", "gelu", "tanh"],
 }
