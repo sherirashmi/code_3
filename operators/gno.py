@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
     physics_aware_resonator_features,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -23,12 +23,19 @@ class GraphMessageLayer(nn.Module):
     memorize per-configuration shortcuts once the easy gains are exhausted.
     """
 
-    def __init__(self, width: int, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        width: int,
+        dropout: float = 0.0,
+        activation: str | type[nn.Module] = "silu",
+    ) -> None:
         super().__init__()
+        activation_cls = resolve_activation(activation)
         # hi, hj, relative [f_t,x,y], xy distance, |delta f_t|.
-        self.message = MLP([2 * width + 5, width, width], activation=nn.SiLU)
-        self.update = MLP([2 * width, width, width], activation=nn.SiLU)
+        self.message = MLP([2 * width + 5, width, width], activation=activation_cls)
+        self.update = MLP([2 * width, width, width], activation=activation_cls)
         self.norm = nn.LayerNorm(width)
+        self.activation = activation_cls()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, h: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
@@ -48,7 +55,7 @@ class GraphMessageLayer(nn.Module):
             aggregate = torch.zeros_like(h)
 
         delta = self.update(torch.cat((h, aggregate), dim=-1))
-        return self.dropout(F.silu(self.norm(h + delta)))
+        return self.dropout(self.activation(self.norm(h + delta)))
 
 
 class GNO(nn.Module):
@@ -62,27 +69,32 @@ class GNO(nn.Module):
         frequency_dim: int = 64,
         modal_harmonics: int = 4,
         dropout: float = 0.1,
+        activation: str | type[nn.Module] = "silu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         self.modal_harmonics = int(modal_harmonics)
+        activation_cls = resolve_activation(activation)
         node_input_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
-        self.node_lift = MLP([node_input_dim, width, width], activation=nn.SiLU)
+        self.node_lift = MLP([node_input_dim, width, width], activation=activation_cls)
         self.layers = nn.ModuleList(
-            [GraphMessageLayer(width, dropout=dropout) for _ in range(depth)]
+            [
+                GraphMessageLayer(width, dropout=dropout, activation=activation_cls)
+                for _ in range(depth)
+            ]
         )
         self.frequency_encoder = MLP(
-            [1, frequency_dim, frequency_dim], activation=nn.SiLU
+            [1, frequency_dim, frequency_dim], activation=activation_cls
         )
         # node, raw resonator, frequency embedding, query f, delta, |delta|, delta^2
         query_input_dim = width + 3 + frequency_dim + 4
         self.query_kernel = MLP(
-            [query_input_dim, width, width, width], activation=nn.SiLU
+            [query_input_dim, width, width, width], activation=activation_cls
         )
-        self.attention_score = MLP([width, width // 2, 1], activation=nn.SiLU)
+        self.attention_score = MLP([width, width // 2, 1], activation=activation_cls)
         self.attention_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(width)
-        self.output = MLP([width, width // 2, 1], activation=nn.SiLU)
+        self.output = MLP([width, width // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         node_features = physics_aware_resonator_features(
@@ -134,6 +146,7 @@ DEFAULT_MODEL_CONFIG = {
     "frequency_dim": 64,
     "modal_harmonics": 4,
     "dropout": 0.1,
+    "activation": "silu",
 }
 
 # Search space for random_search_operator(): explores GNO's own knobs at a
@@ -142,6 +155,7 @@ SEARCH_SPACE = {
     "depth": [2, 3, 4],
     "frequency_dim": [48, 64, 96],
     "dropout": [0.0, 0.05, 0.1, 0.15],
+    "activation": ["silu", "gelu", "mish"],
 }
 
 

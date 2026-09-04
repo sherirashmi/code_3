@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from utils.neural_operator_utils import (
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -25,7 +26,13 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
     coefficients closely without that precision generalizing.
     """
 
-    def __init__(self, width: int, levels: int = 3, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        width: int,
+        levels: int = 3,
+        dropout: float = 0.0,
+        activation: str | type[nn.Module] = "gelu",
+    ) -> None:
         super().__init__()
         if levels <= 0:
             raise ValueError("levels must be positive.")
@@ -39,6 +46,7 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
         self.coarse_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
+        self.activation = resolve_activation(activation)()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -60,12 +68,12 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
             low = (even + odd) * inv_sqrt2
             high = (even - odd) * inv_sqrt2
 
-            low = F.gelu(self.low_mix[level](low))
-            high = F.gelu(self.high_mix[level](high))
+            low = self.activation(self.low_mix[level](low))
+            high = self.activation(self.high_mix[level](high))
             details.append(high)
             current = low
 
-        current = F.gelu(self.coarse_mix(current))
+        current = self.activation(self.coarse_mix(current))
 
         for level in reversed(range(self.levels)):
             high = details[level]
@@ -81,7 +89,7 @@ class MultiLevelHaarWaveletBlock1d(nn.Module):
             reconstructed[..., 1::2] = odd
             current = reconstructed[..., : original_lengths[level]]
 
-        return self.dropout(F.gelu(self.norm(x + current + self.local(x))))
+        return self.dropout(self.activation(self.norm(x + current + self.local(x))))
 
 
 class WNO(nn.Module):
@@ -96,9 +104,11 @@ class WNO(nn.Module):
         config_hidden: int = 128,
         query_dim: int = 48,
         dropout: float = 0.1,
+        activation: str | type[nn.Module] = "gelu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        activation_cls = resolve_activation(activation)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=config_hidden,
             element_dim=config_hidden,
@@ -112,13 +122,15 @@ class WNO(nn.Module):
         self.lift = nn.Linear(width + query_dim + 1, width)
         self.blocks = nn.ModuleList(
             [
-                MultiLevelHaarWaveletBlock1d(width, levels=levels, dropout=dropout)
+                MultiLevelHaarWaveletBlock1d(
+                    width, levels=levels, dropout=dropout, activation=activation_cls
+                )
                 for _ in range(depth)
             ]
         )
         self.project = nn.Sequential(
             nn.Linear(width, width),
-            nn.GELU(),
+            activation_cls(),
             nn.Linear(width, 1),
         )
 
@@ -144,6 +156,7 @@ DEFAULT_MODEL_CONFIG = {
     "config_hidden": 128,
     "query_dim": 48,
     "dropout": 0.1,
+    "activation": "gelu",
 }
 
 # Search space for random_search_operator(): explores WNO's own knobs at a
@@ -152,6 +165,7 @@ SEARCH_SPACE = {
     "levels": [2, 3, 4],
     "depth": [3, 4, 5],
     "dropout": [0.0, 0.05, 0.1, 0.15],
+    "activation": ["gelu", "silu"],
 }
 
 

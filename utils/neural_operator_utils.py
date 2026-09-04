@@ -56,6 +56,41 @@ from .support import device, seed_everything
 # ==================================================
 
 
+# Registry of activation choices every operator's own backbone can select
+# from (the shared ResonatorSetEncoder/ResonanceQueryEncoder/
+# FrequencyRefinement1d blocks keep their own fixed activations -- those are
+# common "same information" tooling every architecture is equalized to have,
+# not part of what makes one architecture different from another).
+ACTIVATIONS: dict[str, type[nn.Module]] = {
+    "relu": nn.ReLU,
+    "gelu": nn.GELU,
+    "silu": nn.SiLU,
+    "tanh": nn.Tanh,
+    "mish": nn.Mish,
+}
+
+
+def resolve_activation(activation: str | type[nn.Module]) -> type[nn.Module]:
+    """Resolve an activation choice to its ``nn.Module`` subclass.
+
+    Accepts either a name registered in ``ACTIVATIONS`` (the form stored in
+    ``DEFAULT_MODEL_CONFIG``/``SEARCH_SPACE`` so checkpoints and search
+    trials stay plain-data serializable) or an ``nn.Module`` subclass passed
+    straight through, so existing call sites that already pass a class
+    (e.g. ``nn.SiLU``) keep working unchanged.
+    """
+    if isinstance(activation, str):
+        key = activation.lower().strip()
+        if key not in ACTIVATIONS:
+            raise ValueError(
+                f"Unknown activation '{activation}'. Choose one of: {sorted(ACTIVATIONS)}"
+            )
+        return ACTIVATIONS[key]
+    if isinstance(activation, type) and issubclass(activation, nn.Module):
+        return activation
+    raise TypeError("activation must be a registered name or an nn.Module subclass.")
+
+
 class MLP(nn.Module):
     """Compact fully connected network."""
 
@@ -1066,6 +1101,8 @@ def make_operator_runner(
 
 
 __all__ = [
+    "ACTIVATIONS",
+    "resolve_activation",
     "MLP",
     "ResidualMLPBlock",
     "FrequencyRefinement1d",

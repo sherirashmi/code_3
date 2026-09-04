@@ -11,6 +11,7 @@ from utils.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -53,6 +54,11 @@ class DON(nn.Module):
        ``FrequencyRefinement1d`` block DCO/DNO/GNO/STO use) sharpens the
        branch/trunk output after combination. Every other architecture mixes
        neighboring frequency samples somewhere; plain DeepONet never did.
+
+    ``activation`` defaults to ``Tanh`` (not the ``SiLU`` most other
+    operators here use) to match the original DeepONet paper (Lu et al.),
+    which uses bounded activations in the branch/trunk nets to keep the
+    basis functions well-conditioned for the inner-product combination.
     """
 
     def __init__(
@@ -64,12 +70,14 @@ class DON(nn.Module):
         fourier_bands: int = 6,
         num_terms: int = 4,
         refine_width: int = 64,
+        activation: str | type[nn.Module] = "tanh",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         self.num_terms = int(num_terms)
         self.basis_dim = int(basis_dim)
         stacked_dim = self.num_terms * self.basis_dim
+        activation_cls = resolve_activation(activation)
 
         self.frequency_features = FourierFrequencyEncoder(fourier_bands)
         self.configuration_encoder = ResonatorSetEncoder(
@@ -78,14 +86,14 @@ class DON(nn.Module):
             output_dim=context_dim,
         )
         self.branch_head = MLP(
-            [context_dim, hidden_dim, stacked_dim], activation=nn.SiLU
+            [context_dim, hidden_dim, stacked_dim], activation=activation_cls
         )
         self.trunk = MLP(
             [self.frequency_features.output_dim, hidden_dim, hidden_dim, stacked_dim],
-            activation=nn.SiLU,
+            activation=activation_cls,
         )
         self.trunk_modulation = MLP(
-            [context_dim, hidden_dim, 2 * stacked_dim], activation=nn.SiLU
+            [context_dim, hidden_dim, 2 * stacked_dim], activation=activation_cls
         )
         # Learned convex combination over terms keeps the sum on the same
         # scale as a single-term DeepONet regardless of num_terms.
@@ -137,6 +145,7 @@ DEFAULT_MODEL_CONFIG = {
     "fourier_bands": 6,
     "num_terms": 4,
     "refine_width": 64,
+    "activation": "tanh",
 }
 
 # Search space for random_search_operator(): explores DON's own knobs at a
@@ -146,6 +155,7 @@ SEARCH_SPACE = {
     "num_terms": [2, 3, 4, 6],
     "fourier_bands": [4, 6, 8],
     "refine_width": [32, 64, 96],
+    "activation": ["tanh", "silu", "gelu"],
 }
 
 

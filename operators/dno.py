@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
@@ -12,6 +11,7 @@ from utils.neural_operator_utils import (
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -19,10 +19,18 @@ from utils.neural_operator_utils import (
 class FiLMResidualBlock(nn.Module):
     """Residual MLP block modulated by configuration/query conditioning."""
 
-    def __init__(self, width: int, condition_dim: int, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        width: int,
+        condition_dim: int,
+        dropout: float = 0.0,
+        activation: str | type[nn.Module] = "silu",
+    ) -> None:
         super().__init__()
-        self.block = ResidualMLPBlock(width)
+        activation_cls = resolve_activation(activation)
+        self.block = ResidualMLPBlock(width, activation=activation_cls)
         self.film = nn.Linear(condition_dim, 2 * width)
+        self.activation = activation_cls()
         # Default 0.0 preserves DNO's existing (already strong) behavior;
         # non-zero only used by the hyperparameter search harness.
         self.dropout = nn.Dropout(dropout)
@@ -30,9 +38,12 @@ class FiLMResidualBlock(nn.Module):
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         h = self.block(x)
         gamma, beta = self.film(condition).chunk(2, dim=-1)
+        # This tanh is the FiLM gate's own bounding function (keeps gamma in
+        # a controlled range), not the architecture's activation choice --
+        # left fixed regardless of `activation`.
         gamma = 1.0 + 0.20 * torch.tanh(gamma)
         beta = 0.10 * beta
-        return self.dropout(F.silu(gamma * h + beta))
+        return self.dropout(self.activation(gamma * h + beta))
 
 
 class DNO(nn.Module):
@@ -47,16 +58,18 @@ class DNO(nn.Module):
         query_dim: int = 64,
         depth: int = 4,
         dropout: float = 0.0,
+        activation: str | type[nn.Module] = "silu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        activation_cls = resolve_activation(activation)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=hidden_dim,
             element_dim=hidden_dim,
             output_dim=context_dim,
         )
         self.frequency_encoder = MLP(
-            [1, frequency_dim, frequency_dim], activation=nn.SiLU
+            [1, frequency_dim, frequency_dim], activation=activation_cls
         )
         self.resonance_query = ResonanceQueryEncoder(
             hidden_dim=query_dim,
@@ -64,15 +77,18 @@ class DNO(nn.Module):
             output_dim=query_dim,
         )
         self.lift = nn.Linear(context_dim + frequency_dim + query_dim, hidden_dim)
+        self.lift_activation = activation_cls()
         condition_dim = context_dim + query_dim
         self.blocks = nn.ModuleList(
             [
-                FiLMResidualBlock(hidden_dim, condition_dim, dropout=dropout)
+                FiLMResidualBlock(
+                    hidden_dim, condition_dim, dropout=dropout, activation=activation_cls
+                )
                 for _ in range(depth)
             ]
         )
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=nn.SiLU)
+        self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         context_global = self.configuration_encoder(configuration)
@@ -80,7 +96,7 @@ class DNO(nn.Module):
         freq = self.frequency_encoder(frequency)
         query = self.resonance_query(configuration, frequency)
 
-        h = F.silu(self.lift(torch.cat((context, freq, query), dim=-1)))
+        h = self.lift_activation(self.lift(torch.cat((context, freq, query), dim=-1)))
         condition = torch.cat((context, query), dim=-1)
         for block in self.blocks:
             h = block(h, condition)
@@ -101,6 +117,7 @@ DEFAULT_MODEL_CONFIG = {
     "query_dim": 64,
     "depth": 4,
     "dropout": 0.0,
+    "activation": "silu",
 }
 
 # Search space for random_search_operator(): explores DNO's own knobs at a
@@ -111,6 +128,7 @@ SEARCH_SPACE = {
     "frequency_dim": [48, 64, 96],
     "query_dim": [48, 64, 96],
     "dropout": [0.0, 0.05, 0.1],
+    "activation": ["silu", "gelu", "tanh"],
 }
 
 

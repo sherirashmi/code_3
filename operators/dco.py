@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
@@ -12,12 +11,21 @@ from utils.neural_operator_utils import (
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
 
 class DCO(nn.Module):
-    """DeepCat operator with explicit resonance-query features and local mixing."""
+    """DeepCat operator with explicit resonance-query features and local mixing.
+
+    ``activation`` drives every one of DCO's own layers (trunk, lift,
+    residual blocks, output) uniformly. Default "silu" matches what the
+    trunk/output MLPs already used; the residual blocks previously
+    defaulted to Tanh (an inherited default from the shared
+    ``ResidualMLPBlock`` class, not a deliberate DCO-specific choice) and
+    are now unified onto the same activation for internal consistency.
+    """
 
     def __init__(
         self,
@@ -28,30 +36,36 @@ class DCO(nn.Module):
         query_dim: int = 64,
         depth: int = 4,
         dropout: float = 0.0,
+        activation: str | type[nn.Module] = "silu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        activation_cls = resolve_activation(activation)
         self.branch = ResonatorSetEncoder(
             hidden_dim=hidden_dim,
             element_dim=hidden_dim,
             output_dim=branch_dim,
         )
-        self.trunk = MLP([1, hidden_dim, trunk_dim], activation=nn.SiLU)
+        self.trunk = MLP([1, hidden_dim, trunk_dim], activation=activation_cls)
         self.resonance_query = ResonanceQueryEncoder(
             hidden_dim=query_dim,
             element_dim=query_dim,
             output_dim=query_dim,
         )
         self.lift = nn.Linear(branch_dim + trunk_dim + query_dim, hidden_dim)
+        self.lift_activation = activation_cls()
         self.blocks = nn.ModuleList(
-            [ResidualMLPBlock(hidden_dim) for _ in range(depth)]
+            [
+                ResidualMLPBlock(hidden_dim, activation=activation_cls)
+                for _ in range(depth)
+            ]
         )
         # Default 0.0 preserves DCO's existing (already strong) behavior;
         # non-zero only used by the hyperparameter search harness, kept here
         # so every architecture shares the same tunable dimension.
         self.block_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=nn.SiLU)
+        self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         branch = self.branch(configuration)[:, None, :]
@@ -59,7 +73,7 @@ class DCO(nn.Module):
         trunk = self.trunk(frequency)
         query = self.resonance_query(configuration, frequency)
 
-        h = F.silu(self.lift(torch.cat((branch, trunk, query), dim=-1)))
+        h = self.lift_activation(self.lift(torch.cat((branch, trunk, query), dim=-1)))
         for block in self.blocks:
             h = self.block_dropout(block(h))
         h = self.frequency_refinement(h.transpose(1, 2)).transpose(1, 2)
@@ -78,6 +92,7 @@ DEFAULT_MODEL_CONFIG = {
     "query_dim": 64,
     "depth": 4,
     "dropout": 0.0,
+    "activation": "silu",
 }
 
 # Search space for random_search_operator(): explores DCO's own knobs at a
@@ -89,6 +104,7 @@ SEARCH_SPACE = {
     "trunk_dim": [96, 128, 160],
     "query_dim": [48, 64, 96],
     "dropout": [0.0, 0.05, 0.1],
+    "activation": ["silu", "gelu", "tanh"],
 }
 
 

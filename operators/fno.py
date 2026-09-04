@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from utils.neural_operator_utils import (
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -57,16 +58,23 @@ class FNOBlock1d(nn.Module):
     capacity transferring to held-out configurations.
     """
 
-    def __init__(self, width: int, modes: int, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        width: int,
+        modes: int,
+        dropout: float = 0.0,
+        activation: str | type[nn.Module] = "gelu",
+    ) -> None:
         super().__init__()
         self.spectral = SpectralConv1d(width, width, modes)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
+        self.activation = resolve_activation(activation)()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = x + self.spectral(x) + self.local(x)
-        return self.dropout(F.gelu(self.norm(y)))
+        return self.dropout(self.activation(self.norm(y)))
 
 
 class FNO(nn.Module):
@@ -82,10 +90,12 @@ class FNO(nn.Module):
         query_dim: int = 48,
         padding: int = 8,
         dropout: float = 0.1,
+        activation: str | type[nn.Module] = "gelu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         self.padding = int(padding)
+        activation_cls = resolve_activation(activation)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=config_hidden,
             element_dim=config_hidden,
@@ -98,11 +108,14 @@ class FNO(nn.Module):
         )
         self.lift = nn.Linear(width + query_dim + 1, width)
         self.blocks = nn.ModuleList(
-            [FNOBlock1d(width, modes, dropout=dropout) for _ in range(depth)]
+            [
+                FNOBlock1d(width, modes, dropout=dropout, activation=activation_cls)
+                for _ in range(depth)
+            ]
         )
         self.project = nn.Sequential(
             nn.Linear(width, width),
-            nn.GELU(),
+            activation_cls(),
             nn.Linear(width, 1),
         )
 
@@ -137,6 +150,7 @@ DEFAULT_MODEL_CONFIG = {
     "query_dim": 48,
     "padding": 8,
     "dropout": 0.1,
+    "activation": "gelu",
 }
 
 # Search space for random_search_operator(): explores FNO's own knobs at a
@@ -146,6 +160,7 @@ SEARCH_SPACE = {
     "depth": [3, 4, 5],
     "padding": [4, 8, 12],
     "dropout": [0.0, 0.05, 0.1, 0.15],
+    "activation": ["gelu", "silu"],
 }
 
 

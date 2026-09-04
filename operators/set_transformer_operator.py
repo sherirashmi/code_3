@@ -6,11 +6,11 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from utils.neural_operator_utils import (
     MLP,
     physics_aware_resonator_features,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -18,7 +18,13 @@ from utils.neural_operator_utils import (
 class DetuningCrossAttention(nn.Module):
     """Multi-head frequency-to-resonator attention with learned detuning bias."""
 
-    def __init__(self, width: int, heads: int, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        width: int,
+        heads: int,
+        dropout: float = 0.0,
+        activation: str | type[nn.Module] = "silu",
+    ) -> None:
         super().__init__()
         if width % heads != 0:
             raise ValueError("width must be divisible by heads.")
@@ -30,7 +36,7 @@ class DetuningCrossAttention(nn.Module):
         self.v_proj = nn.Linear(width, width)
         self.out_proj = nn.Linear(width, width)
         # raw [f_t,x,y], query f, delta, |delta| -> one bias per head
-        self.bias_net = MLP([6, width // 2, heads], activation=nn.SiLU)
+        self.bias_net = MLP([6, width // 2, heads], activation=resolve_activation(activation))
         self.attn_dropout = nn.Dropout(dropout)
 
     def forward(
@@ -66,14 +72,15 @@ class DetuningCrossAttention(nn.Module):
 class FrequencyMixer(nn.Module):
     """Memory-efficient local/dilated frequency interaction after cross-attention."""
 
-    def __init__(self, width: int) -> None:
+    def __init__(self, width: int, activation: str | type[nn.Module] = "gelu") -> None:
         super().__init__()
         self.local = nn.Conv1d(width, width, kernel_size=5, padding=2)
         self.dilated = nn.Conv1d(width, width, kernel_size=3, padding=2, dilation=2)
         self.norm = nn.GroupNorm(1, width)
+        self.activation = resolve_activation(activation)()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.gelu(self.norm(x + self.local(x) + self.dilated(x)))
+        return self.activation(self.norm(x + self.local(x) + self.dilated(x)))
 
 
 class SetTransformerOperator(nn.Module):
@@ -88,12 +95,14 @@ class SetTransformerOperator(nn.Module):
         ff_dim: int = 256,
         modal_harmonics: int = 4,
         dropout: float = 0.1,
+        activation: str | type[nn.Module] = "gelu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         self.modal_harmonics = int(modal_harmonics)
+        activation_cls = resolve_activation(activation)
         node_input_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
-        self.node_lift = MLP([node_input_dim, width, width], activation=nn.SiLU)
+        self.node_lift = MLP([node_input_dim, width, width], activation=activation_cls)
         layer = nn.TransformerEncoderLayer(
             d_model=width,
             nhead=heads,
@@ -103,16 +112,21 @@ class SetTransformerOperator(nn.Module):
             # once the easy gains are exhausted (visible as validation loss
             # rising again in the second half of training).
             dropout=dropout,
-            activation="gelu",
+            # nn.TransformerEncoderLayer accepts a Callable[[Tensor],Tensor]
+            # in addition to the "relu"/"gelu" strings, so an instantiated
+            # activation module works for any choice, not just those two.
+            activation=activation_cls(),
             batch_first=True,
             norm_first=False,
         )
         self.encoder = nn.TransformerEncoder(layer, num_layers=depth)
-        self.frequency_query = MLP([1, width, width], activation=nn.SiLU)
-        self.cross_attention = DetuningCrossAttention(width, heads, dropout=dropout)
+        self.frequency_query = MLP([1, width, width], activation=activation_cls)
+        self.cross_attention = DetuningCrossAttention(
+            width, heads, dropout=dropout, activation=activation_cls
+        )
         self.cross_norm = nn.LayerNorm(width)
-        self.frequency_mixer = FrequencyMixer(width)
-        self.output = MLP([width, width, width // 2, 1], activation=nn.SiLU)
+        self.frequency_mixer = FrequencyMixer(width, activation=activation_cls)
+        self.output = MLP([width, width, width // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         node_features = physics_aware_resonator_features(
@@ -139,6 +153,7 @@ DEFAULT_MODEL_CONFIG = {
     "ff_dim": 256,
     "modal_harmonics": 4,
     "dropout": 0.1,
+    "activation": "gelu",
 }
 
 # Search space for random_search_operator(): explores STO's own knobs at a
@@ -149,6 +164,7 @@ SEARCH_SPACE = {
     "depth": [2, 3, 4],
     "ff_dim": [192, 256, 320],
     "dropout": [0.0, 0.05, 0.1, 0.15],
+    "activation": ["gelu", "silu", "relu"],
 }
 
 

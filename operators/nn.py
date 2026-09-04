@@ -30,6 +30,7 @@ from utils.neural_operator_utils import (
     FrequencyRefinement1d,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    resolve_activation,
     run_operator_experiment,
 )
 
@@ -45,11 +46,13 @@ class NN(nn.Module):
         context_dim: int = 128,
         query_dim: int = 64,
         dropout: float = 0.0,
+        activation: str | type[nn.Module] = "relu",
     ) -> None:
         super().__init__()
         if depth <= 0:
             raise ValueError("depth must be positive.")
         self.num_res = int(num_res)
+        activation_cls = resolve_activation(activation)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=context_dim,
             element_dim=context_dim,
@@ -65,7 +68,7 @@ class NN(nn.Module):
         in_dim = context_dim + query_dim + 1
         for _ in range(depth):
             layers.append(nn.Linear(in_dim, hidden_dim))
-            layers.append(nn.ReLU())
+            layers.append(activation_cls())
             layers.append(nn.Dropout(dropout))
             in_dim = hidden_dim
         self.mlp = nn.Sequential(*layers)
@@ -99,15 +102,20 @@ DEFAULT_MODEL_CONFIG = {
     "context_dim": 128,
     "query_dim": 64,
     "dropout": 0.1,
+    "activation": "relu",
 }
 
 # Search space for random_search_operator(): explores NN's own knobs at a
-# fixed (parameter-matched) hidden_dim.
+# fixed (parameter-matched) hidden_dim. "relu" stays the default (the point
+# of this baseline is to be the textbook-plain architecture) but is included
+# here so the search can empirically check whether that choice costs it
+# anything relative to the smoother activations everyone else uses.
 SEARCH_SPACE = {
     "depth": [4, 6, 8, 10],
     "context_dim": [96, 128, 160],
     "query_dim": [48, 64, 96],
     "dropout": [0.0, 0.05, 0.1, 0.15],
+    "activation": ["relu", "gelu", "silu", "tanh"],
 }
 
 
