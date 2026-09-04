@@ -126,13 +126,26 @@ def build_model(num_res: int, **kwargs) -> DON:
     return DON(num_res=num_res, **kwargs)
 
 
+# hidden_dim tuned to land close to the ~550K-parameter budget every
+# architecture in this project is now matched to (see param_count.py-derived
+# search in the fairness pass) so cross-architecture comparisons aren't
+# confounded by wildly different parameter counts (was 128 -> ~703K params).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
+    "hidden_dim": 101,
     "context_dim": 160,
     "basis_dim": 256,
     "fourier_bands": 6,
     "num_terms": 4,
     "refine_width": 64,
+}
+
+# Search space for random_search_operator(): explores DON's own knobs at a
+# fixed (parameter-matched) hidden_dim.
+SEARCH_SPACE = {
+    "basis_dim": [128, 192, 256, 320],
+    "num_terms": [2, 3, 4, 6],
+    "fourier_bands": [4, 6, 8],
+    "refine_width": [32, 64, 96],
 }
 
 

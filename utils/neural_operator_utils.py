@@ -19,7 +19,9 @@ blocks, full-spectrum loaders, training/evaluation and checkpoint workflows.
 from __future__ import annotations
 
 import copy
+import gc
 import math
+import random
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
@@ -757,6 +759,109 @@ def load_operator_checkpoint(filename: str) -> dict[str, object]:
 # ==================================================
 
 
+def random_search_operator(
+    *,
+    operator_name: str,
+    build_model: Callable[..., nn.Module],
+    search_space: Mapping[str, Sequence[object]],
+    fixed_config: Mapping[str, object] | None = None,
+    lr_choices: Sequence[float] = (1e-4, 2e-4, 5e-4, 1e-3),
+    num_trials: int = 15,
+    search_epochs: int = 60,
+    num_configurations: int = 500,
+    batch_size: int = 16,
+    dataset_file: str = DEFAULT_DATASET_FILE,
+    regenerate_dataset: bool = False,
+    seed: int = 727,
+    weight_decay: float = 1e-4,
+    slope_weight: float = 0.5,
+    trial_seed_offset: int = 10_000,
+) -> dict[str, object]:
+    """Random-search one operator's own hyperparameters against validation loss.
+
+    Fixes the shared data split/normalization once (same ``seed`` used for
+    ordinary training), then trains ``num_trials`` sampled configs for a
+    reduced ``search_epochs`` budget and selects by validation loss only --
+    the test split is never touched here, so search results can't leak into
+    the final reported test metrics. Retrain the winning config at the full
+    epoch budget afterward (e.g. via ``run_operator_experiment``) to get a
+    number that belongs in the ALL_MODELS comparison.
+
+    ``search_space`` maps a constructor keyword to a list of candidate
+    values (e.g. ``{"depth": [3, 4, 5]}``); one value per key is sampled
+    uniformly at random per trial. ``fixed_config`` holds any other
+    constructor kwargs constant across all trials (typically the
+    parameter-matched ``width``/``hidden_dim`` from ``DEFAULT_MODEL_CONFIG``,
+    so the search explores an architecture's own knobs at a capacity already
+    equalized against the other operators, rather than re-opening the
+    capacity question during tuning).
+    """
+    if num_trials <= 0:
+        raise ValueError("num_trials must be positive.")
+    if search_epochs <= 0:
+        raise ValueError("search_epochs must be positive.")
+
+    fixed_config = dict(fixed_config) if fixed_config else {}
+    rng = random.Random(seed)
+
+    dataset, loaders = prepare_operator_data(
+        num_configurations=num_configurations,
+        batch_size=batch_size,
+        dataset_file=dataset_file,
+        regenerate_dataset=regenerate_dataset,
+        seed=seed,
+        verbose=False,
+    )
+
+    trials: list[dict[str, object]] = []
+    for trial_index in range(num_trials):
+        trial_seed = seed + trial_seed_offset + trial_index
+        seed_everything(trial_seed)
+
+        sampled_config = {key: rng.choice(list(values)) for key, values in search_space.items()}
+        lr = rng.choice(list(lr_choices))
+        model_config = {**fixed_config, **sampled_config}
+
+        model = build_model(num_res=dataset.num_res, **model_config).to(device)
+        _, history = train_operator(
+            model,
+            loaders,
+            epochs=search_epochs,
+            lr=lr,
+            weight_decay=weight_decay,
+            slope_weight=slope_weight,
+            plot=False,
+            save_plots=False,
+            operator_name=f"{operator_name}_search",
+        )
+        best_val = min(history["val"])
+        trials.append({"config": sampled_config, "lr": lr, "best_val_loss": best_val})
+        print(
+            f"[{operator_name} search] trial {trial_index + 1}/{num_trials}: "
+            f"val={best_val:.6e} lr={lr:g} config={sampled_config}"
+        )
+
+        del model, history
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    trials.sort(key=lambda t: t["best_val_loss"])
+    best = trials[0]
+    print(
+        f"[{operator_name} search] best: val={best['best_val_loss']:.6e} "
+        f"lr={best['lr']:g} config={best['config']}"
+    )
+
+    return {
+        "operator_name": operator_name,
+        "fixed_config": fixed_config,
+        "trials": trials,
+        "best": best,
+        "best_model_config": {**fixed_config, **best["config"]},
+    }
+
+
 def run_operator_experiment(
     *,
     operator_name: str,
@@ -977,6 +1082,7 @@ __all__ = [
     "parameter_count",
     "save_operator_checkpoint",
     "load_operator_checkpoint",
+    "random_search_operator",
     "run_operator_experiment",
     "make_operator_runner",
 ]

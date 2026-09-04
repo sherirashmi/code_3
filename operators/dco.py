@@ -27,6 +27,7 @@ class DCO(nn.Module):
         trunk_dim: int = 128,
         query_dim: int = 64,
         depth: int = 4,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -45,6 +46,10 @@ class DCO(nn.Module):
         self.blocks = nn.ModuleList(
             [ResidualMLPBlock(hidden_dim) for _ in range(depth)]
         )
+        # Default 0.0 preserves DCO's existing (already strong) behavior;
+        # non-zero only used by the hyperparameter search harness, kept here
+        # so every architecture shares the same tunable dimension.
+        self.block_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
         self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=nn.SiLU)
 
@@ -56,7 +61,7 @@ class DCO(nn.Module):
 
         h = F.silu(self.lift(torch.cat((branch, trunk, query), dim=-1)))
         for block in self.blocks:
-            h = block(h)
+            h = self.block_dropout(block(h))
         h = self.frequency_refinement(h.transpose(1, 2)).transpose(1, 2)
         return self.output(h)
 
@@ -65,12 +70,25 @@ def build_model(num_res: int, **kwargs) -> DCO:
     return DCO(num_res=num_res, **kwargs)
 
 
+# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~407K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
+    "hidden_dim": 153,
     "branch_dim": 128,
     "trunk_dim": 128,
     "query_dim": 64,
     "depth": 4,
+    "dropout": 0.0,
+}
+
+# Search space for random_search_operator(): explores DCO's own knobs at a
+# fixed (parameter-matched) hidden_dim, since capacity is already equalized
+# across architectures separately.
+SEARCH_SPACE = {
+    "depth": [3, 4, 5, 6],
+    "branch_dim": [96, 128, 160],
+    "trunk_dim": [96, 128, 160],
+    "query_dim": [48, 64, 96],
+    "dropout": [0.0, 0.05, 0.1],
 }
 
 

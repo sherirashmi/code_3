@@ -130,13 +130,25 @@ def build_model(num_res: int, **kwargs) -> SetTransformerOperator:
     return SetTransformerOperator(num_res=num_res, **kwargs)
 
 
+# width tuned to the shared ~550K-parameter budget (was 128 -> ~525K, already
+# close; nudged up slightly and kept a multiple of heads=4).
 DEFAULT_MODEL_CONFIG = {
-    "width": 128,
+    "width": 132,
     "heads": 4,
     "depth": 2,
     "ff_dim": 256,
     "modal_harmonics": 4,
     "dropout": 0.1,
+}
+
+# Search space for random_search_operator(): explores STO's own knobs at a
+# fixed (parameter-matched) width=132. heads must evenly divide width, so
+# only divisors of 132 are offered.
+SEARCH_SPACE = {
+    "heads": [2, 4, 6],
+    "depth": [2, 3, 4],
+    "ff_dim": [192, 256, 320],
+    "dropout": [0.0, 0.05, 0.1, 0.15],
 }
 
 

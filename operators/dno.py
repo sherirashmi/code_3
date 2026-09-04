@@ -19,17 +19,20 @@ from utils.neural_operator_utils import (
 class FiLMResidualBlock(nn.Module):
     """Residual MLP block modulated by configuration/query conditioning."""
 
-    def __init__(self, width: int, condition_dim: int) -> None:
+    def __init__(self, width: int, condition_dim: int, dropout: float = 0.0) -> None:
         super().__init__()
         self.block = ResidualMLPBlock(width)
         self.film = nn.Linear(condition_dim, 2 * width)
+        # Default 0.0 preserves DNO's existing (already strong) behavior;
+        # non-zero only used by the hyperparameter search harness.
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         h = self.block(x)
         gamma, beta = self.film(condition).chunk(2, dim=-1)
         gamma = 1.0 + 0.20 * torch.tanh(gamma)
         beta = 0.10 * beta
-        return F.silu(gamma * h + beta)
+        return self.dropout(F.silu(gamma * h + beta))
 
 
 class DNO(nn.Module):
@@ -43,6 +46,7 @@ class DNO(nn.Module):
         frequency_dim: int = 64,
         query_dim: int = 64,
         depth: int = 4,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -62,7 +66,10 @@ class DNO(nn.Module):
         self.lift = nn.Linear(context_dim + frequency_dim + query_dim, hidden_dim)
         condition_dim = context_dim + query_dim
         self.blocks = nn.ModuleList(
-            [FiLMResidualBlock(hidden_dim, condition_dim) for _ in range(depth)]
+            [
+                FiLMResidualBlock(hidden_dim, condition_dim, dropout=dropout)
+                for _ in range(depth)
+            ]
         )
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
         self.output = MLP([hidden_dim, hidden_dim // 2, 1], activation=nn.SiLU)
@@ -86,12 +93,24 @@ def build_model(num_res: int, **kwargs) -> DNO:
     return DNO(num_res=num_res, **kwargs)
 
 
+# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~584K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 128,
+    "hidden_dim": 123,
     "context_dim": 128,
     "frequency_dim": 64,
     "query_dim": 64,
     "depth": 4,
+    "dropout": 0.0,
+}
+
+# Search space for random_search_operator(): explores DNO's own knobs at a
+# fixed (parameter-matched) hidden_dim.
+SEARCH_SPACE = {
+    "depth": [3, 4, 5, 6],
+    "context_dim": [96, 128, 160],
+    "frequency_dim": [48, 64, 96],
+    "query_dim": [48, 64, 96],
+    "dropout": [0.0, 0.05, 0.1],
 }
 
 

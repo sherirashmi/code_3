@@ -129,12 +129,23 @@ def build_model(num_res: int, **kwargs) -> SIRENOperator:
     return SIRENOperator(num_res=num_res, **kwargs)
 
 
+# hidden_dim tuned to the shared ~550K-parameter budget (was 128 -> ~392K).
 DEFAULT_MODEL_CONFIG = {
     "context_dim": 128,
     "query_dim": 32,
-    "hidden_dim": 128,
+    "hidden_dim": 170,
     "depth": 4,
     "omega_0": 20.0,
+}
+
+# Search space for random_search_operator(): explores SIREN's own knobs at a
+# fixed (parameter-matched) hidden_dim. omega_0 is the most sensitive SIREN
+# hyperparameter (Sitzmann et al.) so it's included even though it wasn't
+# swept before.
+SEARCH_SPACE = {
+    "omega_0": [10.0, 20.0, 30.0],
+    "depth": [3, 4, 5, 6],
+    "query_dim": [24, 32, 48],
 }
 
 

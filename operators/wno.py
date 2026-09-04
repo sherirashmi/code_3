@@ -136,13 +136,22 @@ def build_model(num_res: int, **kwargs) -> WNO:
     return WNO(num_res=num_res, **kwargs)
 
 
+# width tuned to the shared ~550K-parameter budget (was 96 -> ~1.01M params).
 DEFAULT_MODEL_CONFIG = {
-    "width": 96,
+    "width": 68,
     "depth": 4,
     "levels": 3,
     "config_hidden": 128,
     "query_dim": 48,
     "dropout": 0.1,
+}
+
+# Search space for random_search_operator(): explores WNO's own knobs at a
+# fixed (parameter-matched) width.
+SEARCH_SPACE = {
+    "levels": [2, 3, 4],
+    "depth": [3, 4, 5],
+    "dropout": [0.0, 0.05, 0.1, 0.15],
 }
 
 

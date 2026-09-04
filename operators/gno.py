@@ -126,12 +126,22 @@ def build_model(num_res: int, **kwargs) -> GNO:
     return GNO(num_res=num_res, **kwargs)
 
 
+# width tuned to the shared ~550K-parameter budget (was 128 -> ~498K, already
+# close; nudged up slightly to land in the same band as the other 7 models).
 DEFAULT_MODEL_CONFIG = {
-    "width": 128,
+    "width": 135,
     "depth": 3,
     "frequency_dim": 64,
     "modal_harmonics": 4,
     "dropout": 0.1,
+}
+
+# Search space for random_search_operator(): explores GNO's own knobs at a
+# fixed (parameter-matched) width.
+SEARCH_SPACE = {
+    "depth": [2, 3, 4],
+    "frequency_dim": [48, 64, 96],
+    "dropout": [0.0, 0.05, 0.1, 0.15],
 }
 
 

@@ -126,14 +126,26 @@ def build_model(num_res: int, **kwargs) -> FNO:
     return FNO(num_res=num_res, **kwargs)
 
 
+# width tuned to the shared ~550K-parameter budget (was 64 -> ~1.20M params).
+# modes stays 64: it indexes retained rfft modes along the frequency-query
+# sequence axis, independent of channel width, so it isn't rescaled here.
 DEFAULT_MODEL_CONFIG = {
-    "width": 64,
+    "width": 41,
     "modes": 64,
     "depth": 4,
     "config_hidden": 128,
     "query_dim": 48,
     "padding": 8,
     "dropout": 0.1,
+}
+
+# Search space for random_search_operator(): explores FNO's own knobs at a
+# fixed (parameter-matched) width.
+SEARCH_SPACE = {
+    "modes": [32, 48, 64, 80],
+    "depth": [3, 4, 5],
+    "padding": [4, 8, 12],
+    "dropout": [0.0, 0.05, 0.1, 0.15],
 }
 
 

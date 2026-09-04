@@ -144,6 +144,7 @@ def _print_operator_menu() -> None:
     for key, spec in OPERATORS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
     print("9. Train and evaluate ALL models")
+    print("10. Train and evaluate ALL models across multiple seeds (fairness check)")
     print("=" * 52)
 
 
@@ -372,6 +373,177 @@ def train_all_models(
     }
 
 
+# ==================================================
+# Multi-seed all-model workflow (fairness check)
+# ==================================================
+
+_MULTI_SEED_METRICS = [
+    ("rmse", "rmse", ".6f"),
+    ("mae", "mae", ".6f"),
+    ("r2_score", "r2", ".6f"),
+    ("pearson_correlation", "pearson_global", ".6f"),
+    ("mean_spectrum_pearson_correlation", "pearson_mean", ".6f"),
+    ("peak_frequency_mae_hz", "peak_frequency_mae_hz", ".4f"),
+    ("peak_amplitude_mae_db", "peak_amplitude_mae_db", ".6f"),
+]
+
+
+def _print_multi_seed_summary(
+    summary: dict[str, dict[str, dict[str, float]]], seeds: list[int]
+) -> None:
+    """Print a mean +/- std comparison table across seeds, one row per model."""
+    header_cells = ["Model"] + [
+        f"{full_key} mean+/-std" for full_key, _, _ in _MULTI_SEED_METRICS
+    ]
+    rows: list[list[str]] = []
+    for short, metrics in summary.items():
+        row = [short]
+        for _, short_key, fmt in _MULTI_SEED_METRICS:
+            stats = metrics[short_key]
+            row.append(
+                f"{format(stats['mean'], fmt)} +/- {format(stats['std'], fmt)}"
+            )
+        rows.append(row)
+
+    widths = [
+        max(len(header_cells[idx]), *(len(row[idx]) for row in rows))
+        for idx in range(len(header_cells))
+    ]
+    header_line = " | ".join(
+        header_cells[idx].ljust(widths[idx]) for idx in range(len(header_cells))
+    )
+    separator = "-+-".join("-" * width for width in widths)
+
+    print("\n" + "=" * len(header_line))
+    print(f"MULTI-SEED COMPARISON (seeds={seeds})")
+    print("=" * len(header_line))
+    print(header_line)
+    print(separator)
+    for row in rows:
+        print(" | ".join(row[idx].ljust(widths[idx]) for idx in range(len(row))))
+    print("=" * len(header_line))
+
+
+def train_all_models_multi_seed(
+    *,
+    seeds: list[int] | None = None,
+    num_configurations: int = 500,
+    batch_size: int = 16,
+    dataset_file: str = DATASET_FILE,
+    regenerate_dataset: bool = False,
+) -> dict[str, object]:
+    """Train + evaluate every operator across multiple seeds; report mean +/- std.
+
+    Every run in this sweep disables plotting (``plot=False, save_plots=False``)
+    so it never overwrites the single-seed diagnostic plots ``train_all_models``
+    saves under ``plots/``; this workflow is metrics-only.
+
+    Note on what "seed" varies here: whenever ``num_configurations`` is
+    smaller than the raw dataset's total sample count, ``seed`` also selects
+    *which* configurations are drawn from the raw dataset (see
+    ``ERPDataset.select_configurations``), not just model init/minibatch
+    order. To isolate purely model-training variance across seeds, pass
+    ``num_configurations`` equal to the raw dataset's total configuration
+    count (e.g. 10000 for the default generated dataset) so the same
+    configuration subset is used regardless of seed.
+    """
+    if seeds is None:
+        seeds = [727, 1000, 2024]
+    if not seeds:
+        raise ValueError("seeds must be a non-empty list.")
+
+    per_operator_runs: dict[str, list[dict[str, float]]] = {
+        spec["short"]: [] for spec in OPERATORS.values()
+    }
+
+    print("\n" + "=" * 76)
+    print("MULTI-SEED TRAIN + EVALUATE ALL ERP NEURAL OPERATORS")
+    print(f"Seeds          : {seeds}")
+    print(f"Dataset        : {dataset_file}")
+    print(f"Configurations : {num_configurations}")
+    print(f"Batch size     : {batch_size}")
+    print("Plotting disabled for every run (metrics-only fairness sweep).")
+    print("=" * 76)
+
+    for seed_index, seed in enumerate(seeds):
+        for model_index, spec in enumerate(OPERATORS.values()):
+            epochs = int(spec["epochs"])
+            learning_rate = float(spec["lr"])
+            regenerate_this_run = bool(
+                regenerate_dataset and seed_index == 0 and model_index == 0
+            )
+
+            print(f"\n[seed {seed}] Training {spec['name']} ({spec['short']})")
+            result = spec["runner"](
+                action="train",
+                num_configurations=num_configurations,
+                batch_size=batch_size,
+                epochs=epochs,
+                learning_rate=learning_rate,
+                dataset_file=dataset_file,
+                regenerate_dataset=regenerate_this_run,
+                seed=seed,
+                plot=False,
+                save_plots=False,
+                evaluate_after_training=True,
+            )
+            metrics = result["metrics"]
+            per_operator_runs[spec["short"]].append(
+                {
+                    short_key: float(metrics[full_key])
+                    for full_key, short_key, _ in _MULTI_SEED_METRICS
+                }
+            )
+
+            del result, metrics
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    summary: dict[str, dict[str, dict[str, float]]] = {}
+    for short, runs in per_operator_runs.items():
+        summary[short] = {}
+        for _, short_key, _ in _MULTI_SEED_METRICS:
+            values = np.asarray([run[short_key] for run in runs], dtype=np.float64)
+            summary[short][short_key] = {
+                "mean": float(values.mean()),
+                "std": float(values.std()),
+            }
+
+    _print_multi_seed_summary(summary, seeds)
+
+    return {
+        "action": "train_all_multi_seed",
+        "seeds": list(seeds),
+        "per_operator_runs": per_operator_runs,
+        "summary": summary,
+    }
+
+
+def main_all_models_multi_seed():
+    """Interactive input collection for the multi-seed fairness sweep."""
+    num_configurations = _prompt_int(
+        "Number of configurations to use for every model/seed",
+        default=500,
+        minimum=3,
+    )
+    batch_size = _prompt_int(
+        "Batch size (complete ERP spectra per batch)",
+        default=64,
+        minimum=1,
+    )
+    num_seeds = _prompt_int("Number of seeds to average over", default=3, minimum=2)
+    seeds = [727 + 1000 * i for i in range(num_seeds)]
+    print(f"Using seeds: {seeds}")
+
+    return train_all_models_multi_seed(
+        seeds=seeds,
+        num_configurations=num_configurations,
+        batch_size=batch_size,
+        dataset_file=DATASET_FILE,
+    )
+
+
 def main_all_models():
     """Interactive input collection for the non-blocking all-model workflow."""
     print("\nAll-model training parameters")
@@ -417,11 +589,13 @@ def main_all_models():
 def main():
     """Interactive entry point for all ERP neural operators."""
     _print_operator_menu()
-    operator_choices = {**OPERATORS, "9": None}
+    operator_choices = {**OPERATORS, "9": None, "10": None}
     operator_key = _prompt_choice("Select operator/workflow: ", operator_choices)
 
     if operator_key == "9":
         return main_all_models()
+    if operator_key == "10":
+        return main_all_models_multi_seed()
 
     spec = OPERATORS[operator_key]
     _print_action_menu()
