@@ -346,11 +346,11 @@ def run_learning_rate_sweep(
 def main() -> dict[str, object]:
     """Interactive learning-rate sweep using the same operators as main.py."""
     _print_operator_menu()
-    # long_main.py sweeps one architecture at a time; "9" from main.py is not
-    # included because one global LR across different architectures is not a
-    # meaningful single hyperparameter comparison.
+    # long_main.py sweeps one architecture at a time; "10"/"11" from main.py
+    # are not included because one global LR across different architectures
+    # is not a meaningful single hyperparameter comparison.
     operator_key = _prompt_choice(
-        "Select operator to tune (1-8): ",
+        "Select operator to tune (1-9): ",
         OPERATORS,
     )
     spec = OPERATORS[operator_key]

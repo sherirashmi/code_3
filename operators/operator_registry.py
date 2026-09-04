@@ -51,6 +51,11 @@ from operators.wno import (
     DEFAULT_MODEL_CONFIG as WNO_MODEL_CONFIG,
     SEARCH_SPACE as WNO_SEARCH_SPACE,
 )
+from operators.nn import (
+    build_model as build_nn,
+    DEFAULT_MODEL_CONFIG as NN_MODEL_CONFIG,
+    SEARCH_SPACE as NN_SEARCH_SPACE,
+)
 
 
 def _make_spec(
@@ -168,6 +173,16 @@ OPERATORS = {
         build_model=build_wno,
         model_config=WNO_MODEL_CONFIG,
         search_space=WNO_SEARCH_SPACE,
+        epochs=200,
+        lr=5e-4,
+    ),
+    "9": _make_spec(
+        name="Plain Neural Network",
+        short="NN",
+        operator_name="NN",
+        build_model=build_nn,
+        model_config=NN_MODEL_CONFIG,
+        search_space=NN_SEARCH_SPACE,
         epochs=200,
         lr=5e-4,
     ),

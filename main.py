@@ -143,8 +143,8 @@ def _print_operator_menu() -> None:
     print("=" * 52)
     for key, spec in OPERATORS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
-    print("9. Train and evaluate ALL models")
-    print("10. Train and evaluate ALL models across multiple seeds (fairness check)")
+    print("10. Train and evaluate ALL models")
+    print("11. Train and evaluate ALL models across multiple seeds (fairness check)")
     print("=" * 52)
 
 
@@ -589,12 +589,12 @@ def main_all_models():
 def main():
     """Interactive entry point for all ERP neural operators."""
     _print_operator_menu()
-    operator_choices = {**OPERATORS, "9": None, "10": None}
+    operator_choices = {**OPERATORS, "10": None, "11": None}
     operator_key = _prompt_choice("Select operator/workflow: ", operator_choices)
 
-    if operator_key == "9":
-        return main_all_models()
     if operator_key == "10":
+        return main_all_models()
+    if operator_key == "11":
         return main_all_models_multi_seed()
 
     spec = OPERATORS[operator_key]
