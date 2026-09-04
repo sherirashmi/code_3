@@ -7,13 +7,7 @@ Description : Shared ERP dataset pipeline for neural operators
 
 This module is intentionally independent of any neural-network architecture.
 It generates and stores one common raw dataset using resonator features
-``[f_t, x, y]`` and exposes three model-input views:
-
-``flat_all``
-    Flattened ``[f_t, x, y]`` values for all resonators.
-
-``flat_freq``
-    Resonator tuning frequencies only: ``[f_t1, ..., f_tN]``.
+``[f_t, x, y]`` and exposes it as one model-input view:
 
 ``multi_res``
     One ``[f_t, x, y]`` triplet per resonator, shape ``(num_res, 3)``.
@@ -30,7 +24,6 @@ Typical use from any neural-operator file
 
     dataset, loaders = prepare_erp_dataset(
         num_samples=500,
-        input_mode="flat_all",
         batch_size=64,
         dataset_file="datasets/dataset_erp_ft.pth",
         regenerate_dataset=False,
@@ -73,7 +66,6 @@ from utils.solver import compute_erp_spectrum
 from utils.support import lhs_sampling, load_dataset, save_dataset
 
 
-VALID_INPUT_MODES = {"flat_all", "flat_freq", "multi_res"}
 FEATURE_NAMES = ("f_t", "x", "y")
 DATASET_SCHEMA_VERSION = 1
 DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
@@ -82,15 +74,6 @@ DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
 # ==================================================
 # Validation helpers
 # ==================================================
-
-
-def _validate_input_mode(input_mode: str) -> str:
-    input_mode = str(input_mode).lower().strip()
-    if input_mode not in VALID_INPUT_MODES:
-        raise ValueError(
-            "input_mode must be 'flat_all', 'flat_freq', or 'multi_res'."
-        )
-    return input_mode
 
 
 def _copy_split_dict(splits: Mapping[str, Sequence[int]]) -> dict[str, np.ndarray]:
@@ -202,15 +185,14 @@ class ERPDataset(Dataset):
     - ``configuration_features``: ``(n_configurations, num_res, 3)`` in ``[f_t, x, y]`` order
     - ``responses``: ``(n_configurations, n_freqs, 1)`` containing ERP in dB
 
-    ``input_mode`` only changes the branch/configuration tensor returned by
-    :meth:`__getitem__`; it never changes the saved raw dataset.
+    :meth:`__getitem__` returns the normalized configuration as one
+    ``[f_t, x, y]`` triplet per resonator, shape ``(num_res, 3)``.
     """
 
     def __init__(
         self,
         num_samples: int = 100,
         num_res: int = default_num_res,
-        input_mode: str = "flat_all",
         seed: int = 727,
     ) -> None:
         super().__init__()
@@ -221,7 +203,6 @@ class ERPDataset(Dataset):
 
         self.num_samples = int(num_samples)
         self.num_res = int(num_res)
-        self.input_mode = _validate_input_mode(input_mode)
         self.seed = int(seed)
 
         self.frequency_values = freqs.astype(np.float32, copy=True)
@@ -573,27 +554,8 @@ class ERPDataset(Dataset):
     # Input views / DataLoaders
     # --------------------------------------------------
 
-    def set_input_mode(self, input_mode: str) -> None:
-        self.input_mode = _validate_input_mode(input_mode)
-
-    def format_configuration_input(self, normalized_configuration: np.ndarray) -> np.ndarray:
-        """Convert normalized [f_t,x,y] data to the selected model-input view."""
-        if normalized_configuration.shape != (self.num_res, 3):
-            raise ValueError(
-                f"normalized_configuration must have shape ({self.num_res}, 3)."
-            )
-        if self.input_mode == "flat_all":
-            return normalized_configuration.reshape(-1).astype(np.float32, copy=False)
-        if self.input_mode == "flat_freq":
-            return normalized_configuration[:, 0].astype(np.float32, copy=False)
-        return normalized_configuration.astype(np.float32, copy=False)  # multi_res
-
     @property
     def model_input_shape(self) -> tuple[int, ...]:
-        if self.input_mode == "flat_all":
-            return (3 * self.num_res,)
-        if self.input_mode == "flat_freq":
-            return (self.num_res,)
         return (self.num_res, 3)
 
     def dataloaders(
@@ -602,7 +564,6 @@ class ERPDataset(Dataset):
         train_ratio: float = 0.8,
         val_ratio: float = 0.1,
         seed: int | None = None,
-        input_mode: str | None = None,
         num_workers: int = 0,
         pin_memory: bool | None = None,
         split_configuration_ids: Mapping[str, Sequence[int]] | None = None,
@@ -614,8 +575,6 @@ class ERPDataset(Dataset):
             raise ValueError("batch_size must be positive.")
         if num_workers < 0:
             raise ValueError("num_workers cannot be negative.")
-        if input_mode is not None:
-            self.set_input_mode(input_mode)
 
         splits = self.split_configurations(
             train_ratio=train_ratio,
@@ -708,8 +667,8 @@ class ERPDataset(Dataset):
         n_freqs = self.frequency_values.size
         configuration_idx, freq_idx = divmod(int(index), n_freqs)
 
-        configuration = self.normalize_configuration(self.configuration_features[configuration_idx])
-        configuration_input = self.format_configuration_input(configuration)
+        # normalize_configuration_array() already returns float32 (num_res, 3).
+        configuration_input = self.normalize_configuration(self.configuration_features[configuration_idx])
         frequency = np.asarray(
             [self.normalize_frequency(self.frequency_values[freq_idx])],
             dtype=np.float32,
@@ -752,7 +711,6 @@ class ERPDataset(Dataset):
                 float(self.frequency_values.max()),
             ),
             "feature_names": list(FEATURE_NAMES),
-            "input_mode": self.input_mode,
             "model_input_shape": self.model_input_shape,
             "target_shape": (1,),
             "total_configuration_frequency_samples": len(self),
@@ -775,7 +733,6 @@ class ERPDataset(Dataset):
 def prepare_erp_dataset(
     num_samples: int = 100,
     *,
-    input_mode: str = "flat_all",
     batch_size: int = 64,
     num_res: int = default_num_res,
     dataset_file: str = DEFAULT_DATASET_FILE,
@@ -797,8 +754,6 @@ def prepare_erp_dataset(
     ----------
     num_samples:
         Number of configurations to use *after loading* the raw dataset.
-    input_mode:
-        ``flat_all``, ``flat_freq``, or ``multi_res``.
     batch_size:
         Number of configuration-frequency pairs per mini-batch.
     num_res:
@@ -821,7 +776,6 @@ def prepare_erp_dataset(
         it restores the exact source-configuration subset, split, and normalization,
         which is useful for model evaluation and fair operator comparisons.
     """
-    input_mode = _validate_input_mode(input_mode)
     num_samples = int(num_samples)
     if num_samples < 3:
         raise ValueError("num_samples must be at least 3.")
@@ -843,7 +797,6 @@ def prepare_erp_dataset(
         dataset = ERPDataset(
             num_samples=n_generate,
             num_res=num_res,
-            input_mode=input_mode,
             seed=seed,
         )
         dataset.generate(save=True, filename=dataset_file, verbose=verbose)
@@ -851,7 +804,6 @@ def prepare_erp_dataset(
         dataset = ERPDataset(
             num_samples=max(num_samples, 3),
             num_res=num_res,
-            input_mode=input_mode,
             seed=seed,
         )
         dataset.load(dataset_file)
@@ -886,7 +838,6 @@ def prepare_erp_dataset(
         train_ratio=train_ratio,
         val_ratio=val_ratio,
         seed=seed,
-        input_mode=input_mode,
         num_workers=num_workers,
         pin_memory=pin_memory,
         split_configuration_ids=restored_splits,
@@ -902,7 +853,6 @@ def prepare_erp_dataset(
         print(f"Configurations used          : {info['num_configurations']}")
         print(f"Resonators/configuration     : {info['num_res']}")
         print(f"Frequencies/configuration    : {info['num_frequencies']}")
-        print(f"Input mode            : {info['input_mode']}")
         print(f"Model input shape     : {info['model_input_shape']}")
         print(f"Target                : ERP, shape {info['target_shape']}")
         print(
@@ -929,7 +879,6 @@ def prepare_erp_dataset_band(
     num_samples: int = 100,
     *,
     frequency_band: str,
-    input_mode: str = "flat_all",
     batch_size: int = 64,
     num_res: int = default_num_res,
     master_dataset_file: str = DEFAULT_DATASET_FILE,
@@ -1009,7 +958,6 @@ def prepare_erp_dataset_band(
 
     return prepare_erp_dataset(
         num_samples=num_samples,
-        input_mode=input_mode,
         batch_size=batch_size,
         num_res=num_res,
         dataset_file=band_file,
@@ -1149,7 +1097,6 @@ __all__ = [
     "normalize_erp_array",
     "denormalize_erp_array",
     "configuration_to_resonators",
-    "VALID_INPUT_MODES",
     "FEATURE_NAMES",
     "DEFAULT_DATASET_FILE",
 ]

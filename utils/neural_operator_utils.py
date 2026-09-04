@@ -107,7 +107,7 @@ class MLP(nn.Module):
             raise ValueError("widths must contain at least two positive integers.")
 
         layers: list[nn.Module] = []
-        for i, (din, dout) in enumerate(zip(widths[:-1], widths[1:])):
+        for i, (din, dout) in enumerate(zip(widths[:-1], widths[1:], strict=True)):
             layers.append(nn.Linear(din, dout))
             if i < len(widths) - 2:
                 layers.append(activation())
@@ -415,7 +415,6 @@ def prepare_operator_data(
         dataset, _ = prepare_erp_dataset_band(
             num_samples=num_configurations,
             frequency_band=frequency_band,
-            input_mode="multi_res",
             batch_size=max(64, batch_size),
             num_res=num_res,
             master_dataset_file=master_dataset_file,
@@ -433,7 +432,6 @@ def prepare_operator_data(
     else:
         dataset, _ = prepare_erp_dataset(
             num_samples=num_configurations,
-            input_mode="multi_res",
             batch_size=max(64, batch_size),
             num_res=num_res,
             dataset_file=dataset_file,
@@ -635,7 +633,7 @@ def evaluate_operator(
     # whether each individual predicted ERP curve follows the ground-truth
     # spectral shape, rather than only measuring agreement after flattening.
     per_spectrum_pearson: list[float] = []
-    for true_spectrum, pred_spectrum in zip(true, pred):
+    for true_spectrum, pred_spectrum in zip(true, pred, strict=True):
         true_spectrum = np.asarray(true_spectrum, dtype=np.float64)
         pred_spectrum = np.asarray(pred_spectrum, dtype=np.float64)
         true_spectrum_centered = true_spectrum - np.mean(true_spectrum)
