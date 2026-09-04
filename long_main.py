@@ -145,11 +145,9 @@ def _print_lr_table(rows: list[dict[str, object]]) -> None:
         ("Peak Freq MAE (Hz)", "peak_frequency_mae_hz", ".4f"),
     ]
 
-    formatted_rows: list[list[str]] = []
-    for row in rows:
-        formatted_rows.append(
-            [format(float(row[key]), fmt) for _, key, fmt in columns]
-        )
+    formatted_rows: list[list[str]] = [
+        [format(float(row[key]), fmt) for _, key, fmt in columns] for row in rows
+    ]
 
     widths = [
         max(len(header), *(len(row[idx]) for row in formatted_rows))

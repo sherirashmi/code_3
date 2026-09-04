@@ -100,15 +100,10 @@ class SIRENOperator(nn.Module):
                 omega_0=omega_0,
             )
         ]
-        for _ in range(depth - 1):
-            layers.append(
-                ModulatedSineLayer(
-                    hidden_dim,
-                    hidden_dim,
-                    context_dim,
-                    omega_0=omega_0,
-                )
-            )
+        layers.extend(
+            ModulatedSineLayer(hidden_dim, hidden_dim, context_dim, omega_0=omega_0)
+            for _ in range(depth - 1)
+        )
         self.layers = nn.ModuleList(layers)
         # Every other operator in this project mixes neighboring frequency
         # samples somewhere (a local conv "refinement" stage); a plain SIREN

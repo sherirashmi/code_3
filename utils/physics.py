@@ -120,10 +120,11 @@ def phi_mn(m: int, n: int, x: np.ndarray | float, y: np.ndarray | float) -> np.n
 
 
 def modal_table(nx_modes: int, ny_modes: int) -> np.ndarray:
-    modes_list: list[list[float]] = []
-    for m in range(1, nx_modes + 1):
-        for n in range(1, ny_modes + 1):
-            modes_list.append([float(np.real(omega_mn(m, n))), float(m), float(n)])
+    modes_list: list[list[float]] = [
+        [float(np.real(omega_mn(m, n))), float(m), float(n)]
+        for m in range(1, nx_modes + 1)
+        for n in range(1, ny_modes + 1)
+    ]
     return np.asarray(sorted(modes_list, key=lambda row: row[0]), dtype=np.float64)
 
 
