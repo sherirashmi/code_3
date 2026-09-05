@@ -511,9 +511,11 @@ def train_all_models_multi_seed(
     ``operator_specs`` is a list of registry spec dicts (``OPERATORS[key]``
     values); pass a subset to restrict the sweep to just those operators.
 
-    Every run in this sweep disables plotting (``plot=False, save_plots=False``)
-    so it never overwrites the single-seed diagnostic plots ``train_all_models``
-    saves under ``plots/``; this workflow is metrics-only.
+    Same plot set as ``train_all_models`` (loss curve, 5 spectrum-comparison
+    configs, prediction-vs-ground-truth) is saved for every (seed, operator)
+    run, under ``plots/seed_<seed>/<operator>/`` -- namespaced per seed so
+    seeds never overwrite each other's plots or the single-seed diagnostic
+    plots ``train_all_models`` saves directly under ``plots/<operator>/``.
 
     Note on what "seed" varies here: whenever ``num_configurations`` is
     smaller than the raw dataset's total sample count, ``seed`` also selects
@@ -543,7 +545,7 @@ def train_all_models_multi_seed(
     print(f"Dataset        : {FREQUENCY_BAND_FILES.get(frequency_band, dataset_file)}")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
-    print("Plotting disabled for every run (metrics-only fairness sweep).")
+    print(f"Plots folder   : {PLOTS_DIR.resolve()}/seed_<seed>/<operator>/")
     print("=" * 76)
 
     for seed_index, seed in enumerate(seeds):
@@ -575,6 +577,31 @@ def train_all_models_multi_seed(
                     short_key: float(metrics[full_key])
                     for full_key, short_key, _ in _MULTI_SEED_METRICS
                 }
+            )
+
+            seed_plots_dir = PLOTS_DIR / f"seed_{seed}"
+            saved_plot_dir = save_operator_experiment_plots(
+                spec["short"],
+                history=result["history"],
+                metrics=metrics,
+                frequency_values=result["dataset"].frequency_values,
+                plots_dir=seed_plots_dir,
+                num_configurations=5,
+                show=False,
+            )
+            expected_plot_count = 2 + min(5, int(np.asarray(metrics["targets"]).shape[0]))
+            actual_plot_count = sum(
+                1 for path in saved_plot_dir.glob("*.png") if path.stat().st_size > 0
+            )
+            if actual_plot_count < expected_plot_count:
+                raise RuntimeError(
+                    f"{spec['short']} (seed {seed}) plot verification failed: expected "
+                    f"at least {expected_plot_count} PNG files in {saved_plot_dir}, "
+                    f"found {actual_plot_count}."
+                )
+            print(
+                f"{spec['short']} (seed {seed}) plot verification passed: "
+                f"{actual_plot_count} PNG file(s) in {saved_plot_dir.resolve()}"
             )
 
             del result, metrics
