@@ -147,16 +147,6 @@ DEFAULT_MODEL_CONFIG = {
     "omega_0": 20.0,
 }
 
-# Search space for random_search_operator(): explores SIREN's own knobs at a
-# fixed (parameter-matched) hidden_dim. omega_0 is the most sensitive SIREN
-# hyperparameter (Sitzmann et al.) so it's included even though it wasn't
-# swept before.
-SEARCH_SPACE = {
-    "omega_0": [10.0, 20.0, 30.0],
-    "depth": [3, 4, 5, 6],
-    "query_dim": [11, 14, 21],
-}
-
 
 def main(
     action: str = "train",

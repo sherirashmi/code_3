@@ -158,19 +158,6 @@ DEFAULT_MODEL_CONFIG = {
     "activation": "gelu",
 }
 
-# Search space for random_search_operator(): explores STO's own knobs at a
-# fixed (parameter-matched) width=56. heads must evenly divide width, so
-# only divisors of 56 are offered (56 = 2^3 * 7; NOT divisible by 6, unlike
-# the old width=132 -- a stale [2,4,6] here would crash the search the first
-# time it sampled heads=6).
-SEARCH_SPACE = {
-    "heads": [2, 4, 8],
-    "depth": [2, 3, 4],
-    "ff_dim": [108, 144, 180],
-    "dropout": [0.0, 0.05, 0.1, 0.15],
-    "activation": ["gelu", "silu", "relu"],
-}
-
 
 def main(
     action: str = "train",

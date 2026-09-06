@@ -105,19 +105,6 @@ DEFAULT_MODEL_CONFIG = {
     "activation": "relu",
 }
 
-# Search space for random_search_operator(): explores NN's own knobs at a
-# fixed (parameter-matched) hidden_dim. "relu" stays the default (the point
-# of this baseline is to be the textbook-plain architecture) but is included
-# here so the search can empirically check whether that choice costs it
-# anything relative to the smoother activations everyone else uses.
-SEARCH_SPACE = {
-    "depth": [4, 6, 8, 10],
-    "context_dim": [42, 56, 70],
-    "query_dim": [21, 28, 42],
-    "dropout": [0.0, 0.05, 0.1, 0.15],
-    "activation": ["relu", "gelu", "silu", "tanh"],
-}
-
 
 def main(
     action: str = "train",

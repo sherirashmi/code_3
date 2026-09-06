@@ -149,16 +149,6 @@ DEFAULT_MODEL_CONFIG = {
     "activation": "tanh",
 }
 
-# Search space for random_search_operator(): explores DON's own knobs at a
-# fixed (parameter-matched) hidden_dim.
-SEARCH_SPACE = {
-    "basis_dim": [56, 84, 112, 140],
-    "num_terms": [2, 3, 4, 6],
-    "fourier_bands": [4, 6, 8],
-    "refine_width": [14, 28, 42],
-    "activation": ["tanh", "silu", "gelu"],
-}
-
 
 def main(
     action: str = "train",

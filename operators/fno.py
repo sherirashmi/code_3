@@ -156,16 +156,6 @@ DEFAULT_MODEL_CONFIG = {
     "activation": "gelu",
 }
 
-# Search space for random_search_operator(): explores FNO's own knobs at a
-# fixed (parameter-matched) width.
-SEARCH_SPACE = {
-    "modes": [17, 26, 35, 44],
-    "depth": [3, 4, 5],
-    "padding": [4, 8, 12],
-    "dropout": [0.0, 0.05, 0.1, 0.15],
-    "activation": ["gelu", "silu"],
-}
-
 
 def main(
     action: str = "train",

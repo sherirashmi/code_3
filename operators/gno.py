@@ -149,15 +149,6 @@ DEFAULT_MODEL_CONFIG = {
     "activation": "silu",
 }
 
-# Search space for random_search_operator(): explores GNO's own knobs at a
-# fixed (parameter-matched) width.
-SEARCH_SPACE = {
-    "depth": [2, 3, 4],
-    "frequency_dim": [21, 28, 42],
-    "dropout": [0.0, 0.05, 0.1, 0.15],
-    "activation": ["silu", "gelu", "mish"],
-}
-
 
 def main(
     action: str = "train",
