@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader, Dataset
 from .erp_dataset import (
     DEFAULT_DATASET_FILE,
     configuration_to_resonators,
+    denormalize_configuration_array,
     denormalize_erp_array,
     normalize_configuration_array,
     normalize_erp_array,
@@ -550,9 +551,11 @@ def evaluate_operator(
     model.eval()
     pred_batches: list[np.ndarray] = []
     true_batches: list[np.ndarray] = []
+    configuration_batches: list[np.ndarray] = []
 
     with torch.inference_mode():
         for configuration, frequency, target in loaders["test"]:
+            configuration_batches.append(configuration.numpy())
             configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
             frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
             prediction = model(configuration, frequency)
@@ -563,6 +566,9 @@ def evaluate_operator(
     true_norm = np.concatenate(true_batches, axis=0)[..., 0]
     pred = denormalize_erp_array(pred_norm, norm_params)
     true = denormalize_erp_array(true_norm, norm_params)
+    configurations = denormalize_configuration_array(
+        np.concatenate(configuration_batches, axis=0), norm_params
+    )
 
     error = pred - true
     mse = float(np.mean(error**2))
@@ -653,6 +659,7 @@ def evaluate_operator(
                 true[i],
                 pred[i],
                 title=f"{operator_name} - test configuration {i + 1}",
+                configuration=configurations[i],
                 save_path=(
                     plot_dir / f"erp_spectrum_test_config_{i + 1:02d}.png"
                     if plot_dir
@@ -684,6 +691,7 @@ def evaluate_operator(
         "peak_amplitude_mae_db": peak_amplitude_mae,
         "predictions": pred,
         "targets": true,
+        "configurations": configurations,
         "plot_directory": str(plot_dir) if plot_dir is not None else None,
     }
 
@@ -743,6 +751,7 @@ def predict_erp_spectrum(
                 ground_truth,
                 prediction,
                 title=f"{operator_name} - ERP spectrum prediction",
+                configuration=configuration,
                 save_path=(plot_dir / "prediction_spectrum.png") if plot_dir else None,
                 show=plot,
             )

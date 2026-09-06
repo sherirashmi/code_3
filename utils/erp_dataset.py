@@ -111,6 +111,25 @@ def normalize_configuration_array(
     return values
 
 
+def denormalize_configuration_array(
+    configuration: np.ndarray,
+    norm_params: Mapping[str, object],
+) -> np.ndarray:
+    """Inverse of :func:`normalize_configuration_array`; returns raw [f_t,x,y]."""
+    values = np.asarray(configuration, dtype=np.float32).copy()
+    num_res = int(norm_params["num_res"])
+    if values.shape[-2:] != (num_res, 3):
+        raise ValueError(
+            f"configuration must end with shape ({num_res}, 3) in [f_t,x,y] order."
+        )
+    values[..., 0] = (
+        values[..., 0] * float(norm_params["f_t_std"]) + float(norm_params["f_t_mean"])
+    )
+    values[..., 1] *= float(norm_params["Lx"])
+    values[..., 2] *= float(norm_params["Ly"])
+    return values
+
+
 def normalize_frequency_array(
     frequency: np.ndarray | float,
     norm_params: Mapping[str, object],
@@ -870,6 +889,7 @@ __all__ = [
     "ERPDataset",
     "prepare_erp_dataset",
     "normalize_configuration_array",
+    "denormalize_configuration_array",
     "normalize_frequency_array",
     "normalize_erp_array",
     "denormalize_erp_array",

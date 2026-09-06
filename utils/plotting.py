@@ -13,7 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.physics import Lx, Ly, X_grid, Y_grid, modes, phi_mn
+from utils.physics import Lx, Ly, X_grid, Y_grid, modes, phi_mn, xf, yf
 
 DEFAULT_PLOTS_DIR = Path.cwd() / "plots"
 
@@ -98,20 +98,78 @@ def plot_loss_curves(
 # ==================================================
 
 
+def _mark_resonator_tuning_lines(ax, configuration: np.ndarray) -> None:
+    """Draw one red dotted vertical line per resonator at its tuning frequency."""
+    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 3)
+    for i, (f_t, _x, _y) in enumerate(configuration):
+        ax.axvline(
+            f_t,
+            color="red",
+            ls=":",
+            lw=1.5,
+            alpha=0.85,
+            zorder=0,
+            label="Resonator f_t" if i == 0 else None,
+        )
+
+
+def _draw_plate_layout(ax, configuration: np.ndarray) -> None:
+    """Draw the plate outline with resonator and force positions."""
+    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 3)
+
+    ax.add_patch(
+        plt.Rectangle((0, 0), Lx, Ly, fill=False, edgecolor="black", lw=1.5)
+    )
+    ax.scatter([xf], [yf], marker="*", s=180, color="cyan", edgecolors="black",
+               linewidths=0.8, zorder=3, label="Force F0")
+    ax.scatter(configuration[:, 1], configuration[:, 2], marker="o", s=90,
+               color="crimson", edgecolors="black", linewidths=0.8, zorder=3,
+               label="Resonator")
+    for f_t, x, y in configuration:
+        ax.annotate(
+            f"{f_t:.1f} Hz",
+            (x, y),
+            textcoords="offset points",
+            xytext=(6, 6),
+            fontsize=8,
+        )
+
+    pad_x, pad_y = 0.05 * Lx, 0.05 * Ly
+    ax.set_xlim(-pad_x, Lx + pad_x)
+    ax.set_ylim(-pad_y, Ly + pad_y)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_title("Resonator layout on plate")
+    ax.legend(loc="upper right", fontsize=8)
+
+
 def plot_erp(
     freq_values: np.ndarray,
     erp: np.ndarray,
     title: str = "ERP Spectrum",
     *,
+    configuration: np.ndarray | None = None,
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(freq_values, erp, lw=2)
+    if configuration is not None:
+        fig, (ax, ax_plate) = plt.subplots(
+            1, 2, figsize=(14, 5.5), gridspec_kw={"width_ratios": [1.6, 1]}
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.plot(freq_values, erp, lw=2, label="ERP")
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("ERP (dB)")
     ax.set_title(title)
     ax.grid(True)
+
+    if configuration is not None:
+        _mark_resonator_tuning_lines(ax, configuration)
+        _draw_plate_layout(ax_plate, configuration)
+    ax.legend()
     fig.tight_layout()
     _finalize_figure(fig, save_path=save_path, show=show)
 
@@ -122,6 +180,7 @@ def plot_erp_comparison(
     pred_curve: np.ndarray,
     *,
     title: str | None = None,
+    configuration: np.ndarray | None = None,
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> None:
@@ -130,13 +189,23 @@ def plot_erp_comparison(
     mse = np.mean((true_curve - pred_curve) ** 2)
     mae = np.mean(np.abs(true_curve - pred_curve))
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    if configuration is not None:
+        fig, (ax, ax_plate) = plt.subplots(
+            1, 2, figsize=(15, 6), gridspec_kw={"width_ratios": [1.6, 1]}
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
     ax.plot(freq_values, true_curve, lw=3, label="Ground Truth")
     ax.plot(freq_values, pred_curve, "--", lw=2, label="Prediction")
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("ERP (dB)")
     ax.set_title(title or f"MSE = {mse:.3f} | MAE = {mae:.3f}")
     ax.grid(True)
+
+    if configuration is not None:
+        _mark_resonator_tuning_lines(ax, configuration)
+        _draw_plate_layout(ax_plate, configuration)
     ax.legend()
     fig.tight_layout()
     _finalize_figure(fig, save_path=save_path, show=show)
@@ -404,6 +473,10 @@ def save_operator_experiment_plots(
                 "Evaluation arrays must have shape (n_configurations, n_frequencies)."
             )
 
+        configurations = metrics.get("configurations")
+        if configurations is not None:
+            configurations = np.asarray(configurations)
+
         n_to_plot = min(max(int(num_configurations), 0), true.shape[0])
         for i in range(n_to_plot):
             plot_erp_comparison(
@@ -411,6 +484,7 @@ def save_operator_experiment_plots(
                 true[i],
                 pred[i],
                 title=f"{operator_name} - test configuration {i + 1}",
+                configuration=configurations[i] if configurations is not None else None,
                 save_path=plot_dir / f"erp_spectrum_test_config_{i + 1:02d}.png",
                 show=show,
             )
@@ -429,11 +503,13 @@ def save_operator_experiment_plots(
         freq = np.asarray(prediction["frequencies"], dtype=np.float64)
         pred = np.asarray(prediction["prediction"])
         ground_truth = prediction.get("ground_truth")
+        prediction_configuration = prediction.get("configuration")
         if ground_truth is None:
             plot_erp(
                 freq,
                 pred,
                 title=f"{operator_name} - predicted ERP spectrum",
+                configuration=prediction_configuration,
                 save_path=plot_dir / "prediction_spectrum.png",
                 show=show,
             )
@@ -443,6 +519,7 @@ def save_operator_experiment_plots(
                 np.asarray(ground_truth),
                 pred,
                 title=f"{operator_name} - solver vs neural-operator ERP spectrum",
+                configuration=prediction_configuration,
                 save_path=plot_dir / "prediction_spectrum.png",
                 show=show,
             )
