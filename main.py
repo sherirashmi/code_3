@@ -30,9 +30,6 @@ from utils.plotting import (
 
 
 DATASET_FILE = DEFAULT_DATASET_FILE
-LOW_DATASET_FILE = "datasets/dataset_erp_ft_low.pth"
-HIGH_DATASET_FILE = "datasets/dataset_erp_ft_high.pth"
-FREQUENCY_BAND_FILES = {None: DATASET_FILE, "low": LOW_DATASET_FILE, "high": HIGH_DATASET_FILE}
 SEED = 727
 PLOTS_DIR = DEFAULT_PLOTS_DIR
 PLOT_PIPELINE_VERSION = "main-direct-save-v5"
@@ -133,26 +130,6 @@ def _prompt_operator_selection(prompt: str) -> list[dict[str, object]]:
             print(f"Unrecognized operator number(s) in '{raw.strip()}'. Valid keys: {valid}")
             continue
         return selected if selected is not None else list(OPERATORS.values())
-
-
-def _prompt_frequency_band() -> str | None:
-    """Prompt for which frequency-band dataset to train/evaluate/predict on.
-
-    Returns ``None`` for the full spectrum, or ``"low"``/``"high"`` -- the
-    same values ``frequency_band`` on ``run_operator_experiment()`` accepts.
-    Passing ``None`` through unchanged keeps the existing full-dataset
-    behavior; passing "low"/"high" routes through
-    ``prepare_erp_dataset_band()`` instead, which also makes
-    ``regenerate_dataset`` safe (it always rebuilds the *complete* dataset
-    first, then re-splits, rather than overwriting a band file with an
-    unsplit one -- see the docstring on that function for why that matters).
-    """
-    print("\nDataset frequency band")
-    print(f"1. Full spectrum (10-160 Hz)      -- {DATASET_FILE}")
-    print(f"2. Low band only  (below the plate's first structural mode) -- {LOW_DATASET_FILE}")
-    print(f"3. High band only (at/above the plate's first structural mode) -- {HIGH_DATASET_FILE}")
-    choice = _prompt_choice("Select dataset [1/2/3]: ", {"1": None, "2": None, "3": None})
-    return {"1": None, "2": "low", "3": "high"}[choice]
 
 
 def _prompt_configuration(num_res: int) -> np.ndarray:
@@ -269,7 +246,6 @@ def train_all_models(
     dataset_file: str = DATASET_FILE,
     regenerate_dataset: bool = False,
     seed: int = SEED,
-    frequency_band: str | None = None,
 ) -> dict[str, object]:
     """Train and evaluate the given operators sequentially (default: all of them).
 
@@ -294,7 +270,7 @@ def train_all_models(
     print("\n" + "=" * 76)
     print("TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
     print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
-    print(f"Dataset        : {FREQUENCY_BAND_FILES.get(frequency_band, dataset_file)}")
+    print(f"Dataset        : {dataset_file}")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
     print(f"Seed           : {seed}")
@@ -328,7 +304,6 @@ def train_all_models(
             plots_dir=PLOTS_DIR,
             num_evaluation_plots=5,
             evaluate_after_training=True,
-            frequency_band=frequency_band,
         )
 
         history = result["history"]
@@ -503,7 +478,6 @@ def train_all_models_multi_seed(
     batch_size: int = 16,
     dataset_file: str = DATASET_FILE,
     regenerate_dataset: bool = False,
-    frequency_band: str | None = None,
 ) -> dict[str, object]:
     """Train + evaluate the given operators (default: all) across multiple
     seeds; report mean +/- std.
@@ -542,7 +516,7 @@ def train_all_models_multi_seed(
     print("MULTI-SEED TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
     print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
     print(f"Seeds          : {seeds}")
-    print(f"Dataset        : {FREQUENCY_BAND_FILES.get(frequency_band, dataset_file)}")
+    print(f"Dataset        : {dataset_file}")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
     print(f"Plots folder   : {PLOTS_DIR.resolve()}/seed_<seed>/<operator>/")
@@ -569,7 +543,6 @@ def train_all_models_multi_seed(
                 plot=False,
                 save_plots=False,
                 evaluate_after_training=True,
-                frequency_band=frequency_band,
             )
             metrics = result["metrics"]
             per_operator_runs[spec["short"]].append(
@@ -647,7 +620,6 @@ def main_all_models_multi_seed():
     num_seeds = _prompt_int("Number of seeds to average over", default=3, minimum=2)
     seeds = [727 + 1000 * i for i in range(num_seeds)]
     print(f"Using seeds: {seeds}")
-    frequency_band = _prompt_frequency_band()
 
     return train_all_models_multi_seed(
         operator_specs=operator_specs,
@@ -655,7 +627,6 @@ def main_all_models_multi_seed():
         num_configurations=num_configurations,
         batch_size=batch_size,
         dataset_file=DATASET_FILE,
-        frequency_band=frequency_band,
     )
 
 
@@ -686,7 +657,6 @@ def main_all_models():
         "Regenerate and overwrite the ERP dataset before training",
         default=False,
     )
-    frequency_band = _prompt_frequency_band()
 
     print(f"All figures will be saved under: {PLOTS_DIR}")
     print("No figures will be displayed during all-model training.")
@@ -698,7 +668,6 @@ def main_all_models():
         dataset_file=DATASET_FILE,
         regenerate_dataset=regenerate_dataset,
         seed=SEED,
-        frequency_band=frequency_band,
     )
 
 
@@ -722,12 +691,11 @@ def main():
     _print_action_menu()
     action = ACTIONS[_prompt_choice("Select operation: ", ACTIONS)]
     runner = spec["runner"]
-    frequency_band = _prompt_frequency_band()
 
     print("\n" + "=" * 68)
     print(f"Operator : {spec['name']} ({spec['short']})")
     print(f"Action   : {action}")
-    print(f"Dataset  : {FREQUENCY_BAND_FILES[frequency_band]}")
+    print(f"Dataset  : {DATASET_FILE}")
     print(f"Seed     : {SEED}")
     print(f"Plots    : {PLOTS_DIR}")
     print("=" * 68)
@@ -769,7 +737,6 @@ def main():
             plots_dir=PLOTS_DIR,
             num_evaluation_plots=5,
             evaluate_after_training=True,
-            frequency_band=frequency_band,
         )
 
         saved_plot_dir = save_operator_experiment_plots(
@@ -799,7 +766,6 @@ def main():
             save_plots=False,
             plots_dir=PLOTS_DIR,
             num_evaluation_plots=5,
-            frequency_band=frequency_band,
         )
         saved_plot_dir = save_operator_experiment_plots(
             spec["short"],
@@ -831,7 +797,6 @@ def main():
         plot=False,
         save_plots=False,
         plots_dir=PLOTS_DIR,
-        frequency_band=frequency_band,
     )
     saved_plot_dir = save_operator_experiment_plots(
         spec["short"],
