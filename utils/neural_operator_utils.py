@@ -157,7 +157,7 @@ class FrequencyRefinement1d(nn.Module):
 
 def physics_aware_resonator_features(
     configuration: torch.Tensor,
-    harmonics: int = 4,
+    harmonics: int = 10,
 ) -> torch.Tensor:
     """Augment normalized ``[f_t, x, y]`` with plate-inspired sine features.
 
@@ -200,7 +200,7 @@ class ResonatorSetEncoder(nn.Module):
         hidden_dim: int = 128,
         element_dim: int = 128,
         output_dim: int = 128,
-        modal_harmonics: int = 4,
+        modal_harmonics: int = 10,
     ) -> None:
         super().__init__()
         if int(feature_dim) != 3:
@@ -244,7 +244,7 @@ class ResonanceQueryEncoder(nn.Module):
         hidden_dim: int = 64,
         element_dim: int = 64,
         output_dim: int = 64,
-        modal_harmonics: int = 4,
+        modal_harmonics: int = 10,
     ) -> None:
         super().__init__()
         self.modal_harmonics = int(modal_harmonics)
