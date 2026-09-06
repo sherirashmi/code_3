@@ -563,16 +563,42 @@ def train_operator(
             line_search_fn="strong_wolfe",
         )
 
+        # Each optimizer.step() call below can invoke this closure many times
+        # internally (strong-Wolfe line search re-evaluates the *entire*
+        # training set repeatedly) before returning -- with no output in
+        # between, one step over a large dataset can silently take minutes,
+        # which is indistinguishable from a hang. Printing every evaluation
+        # (overwriting the same line) keeps the process visibly alive.
+        closure_calls = 0
+
         def closure() -> torch.Tensor:
+            nonlocal closure_calls
+            closure_calls += 1
             lbfgs_optimizer.zero_grad(set_to_none=True)
             prediction = model(train_configuration, train_frequency)
             loss = erp_spectrum_loss(prediction, train_target, slope_weight=slope_weight)
             loss.backward()
+            print(
+                f"  L-BFGS step {step + 1:4d}/{lbfgs_epochs} "
+                f"(evaluating full training set, call {closure_calls:3d}) | "
+                f"loss={loss.item():.6e}",
+                end="\r",
+                flush=True,
+            )
             return loss
 
+        n_train = int(train_configuration.shape[0])
+        print(
+            f"Starting L-BFGS phase: {lbfgs_epochs} step(s), full training set of "
+            f"{n_train} configurations per evaluation, up to {lbfgs_max_iter} "
+            "internal line-search iterations per step. This can take a while on "
+            "large datasets -- progress prints below as each evaluation completes."
+        )
         model.train()
         for step in range(lbfgs_epochs):
+            closure_calls = 0
             train_loss = float(lbfgs_optimizer.step(closure).detach())
+            print()  # end the in-place progress line before the summary below
             history["train"].append(train_loss)
 
             model.eval()
