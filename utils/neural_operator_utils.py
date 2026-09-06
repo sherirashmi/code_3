@@ -431,6 +431,30 @@ def erp_spectrum_loss(
     return mse + float(slope_weight) * F.mse_loss(dp, dt)
 
 
+def _full_batch_tensors(
+    loader: DataLoader,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Concatenate every batch a loader yields into one full-batch tensor triple.
+
+    L-BFGS needs a fixed objective across its internal line-search
+    evaluations within one ``step()`` call; a shuffled mini-batch loader
+    would hand it a different loss function each time it re-evaluates the
+    closure, which breaks its curvature estimate. Using the loader's own
+    collation (rather than reaching into dataset internals) keeps this
+    consistent with how ``train``/``val`` batches are built everywhere else.
+    """
+    configurations, frequencies, targets = [], [], []
+    for configuration, frequency, target in loader:
+        configurations.append(configuration)
+        frequencies.append(frequency)
+        targets.append(target)
+    return (
+        torch.cat(configurations, dim=0).to(device, dtype=torch.float32),
+        torch.cat(frequencies, dim=0).to(device, dtype=torch.float32),
+        torch.cat(targets, dim=0).to(device, dtype=torch.float32),
+    )
+
+
 def train_operator(
     model: nn.Module,
     loaders: Mapping[str, DataLoader],
@@ -439,14 +463,30 @@ def train_operator(
     lr: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    lbfgs_epochs: int = 0,
+    lbfgs_max_iter: int = 20,
+    lbfgs_history_size: int = 10,
     plot: bool = True,
     save_plots: bool = True,
     operator_name: str = "operator",
     plots_dir: str | Path | None = None,
 ) -> tuple[nn.Module, dict[str, list[float]]]:
-    """Train a common-API neural operator and retain best-validation weights."""
+    """Train a common-API neural operator and retain best-validation weights.
+
+    ``lbfgs_epochs`` (default 0, disabled) appends a full-batch L-BFGS
+    fine-tuning phase after the ordinary AdamW+cosine-schedule loop -- the
+    standard "Adam then L-BFGS polish" recipe from physics-informed/
+    scientific-ML training. Each of the ``lbfgs_epochs`` outer steps calls
+    ``optimizer.step(closure)`` once (internally up to ``lbfgs_max_iter``
+    strong-Wolfe line-search iterations against the *entire* training set,
+    not a mini-batch), and both phases share the same best-validation-loss
+    checkpointing, so the final restored weights are whichever phase
+    actually reached the lower validation loss.
+    """
     if epochs <= 0:
         raise ValueError("epochs must be positive.")
+    if lbfgs_epochs < 0:
+        raise ValueError("lbfgs_epochs cannot be negative.")
 
     model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -508,6 +548,50 @@ def train_operator(
             f"epoch {epoch + 1:4d}/{epochs} | "
             f"train={train_loss:.6e} | val={val_loss:.6e}"
         )
+
+    if lbfgs_epochs > 0:
+        train_configuration, train_frequency, train_target = _full_batch_tensors(
+            loaders["train"]
+        )
+        val_configuration, val_frequency, val_target = _full_batch_tensors(loaders["val"])
+
+        lbfgs_optimizer = torch.optim.LBFGS(
+            model.parameters(),
+            lr=1.0,
+            max_iter=lbfgs_max_iter,
+            history_size=lbfgs_history_size,
+            line_search_fn="strong_wolfe",
+        )
+
+        def closure() -> torch.Tensor:
+            lbfgs_optimizer.zero_grad(set_to_none=True)
+            prediction = model(train_configuration, train_frequency)
+            loss = erp_spectrum_loss(prediction, train_target, slope_weight=slope_weight)
+            loss.backward()
+            return loss
+
+        model.train()
+        for step in range(lbfgs_epochs):
+            train_loss = float(lbfgs_optimizer.step(closure).detach())
+            history["train"].append(train_loss)
+
+            model.eval()
+            with torch.inference_mode():
+                val_prediction = model(val_configuration, val_frequency)
+                val_loss = float(
+                    erp_spectrum_loss(val_prediction, val_target, slope_weight=slope_weight)
+                )
+            model.train()
+            history["val"].append(val_loss)
+
+            if val_loss < best_val:
+                best_val = val_loss
+                best_state = copy.deepcopy(model.state_dict())
+
+            print(
+                f"L-BFGS step {step + 1:4d}/{lbfgs_epochs} | "
+                f"train={train_loss:.6e} | val={val_loss:.6e}"
+            )
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -811,6 +895,9 @@ def run_operator_experiment(
     learning_rate: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    lbfgs_epochs: int = 0,
+    lbfgs_max_iter: int = 20,
+    lbfgs_history_size: int = 10,
     dataset_file: str = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
@@ -853,6 +940,9 @@ def run_operator_experiment(
             lr=learning_rate,
             weight_decay=weight_decay,
             slope_weight=slope_weight,
+            lbfgs_epochs=lbfgs_epochs,
+            lbfgs_max_iter=lbfgs_max_iter,
+            lbfgs_history_size=lbfgs_history_size,
             plot=plot,
             save_plots=save_plots,
             operator_name=operator_name,
@@ -968,6 +1058,7 @@ def make_operator_runner(
         batch_size: int = 16,
         epochs: int = default_epochs,
         learning_rate: float = default_learning_rate,
+        lbfgs_epochs: int = 0,
         dataset_file: str = DEFAULT_DATASET_FILE,
         regenerate_dataset: bool = False,
         seed: int = 727,
@@ -988,6 +1079,7 @@ def make_operator_runner(
             batch_size=batch_size,
             epochs=epochs,
             learning_rate=learning_rate,
+            lbfgs_epochs=lbfgs_epochs,
             dataset_file=dataset_file,
             regenerate_dataset=regenerate_dataset,
             seed=seed,

@@ -98,6 +98,20 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
         print("Please enter y or n.")
 
 
+def _prompt_lbfgs_epochs() -> int:
+    """Ask whether to run an L-BFGS full-batch fine-tuning phase after AdamW."""
+    if not _prompt_yes_no(
+        "Run an L-BFGS fine-tuning phase after AdamW training", default=False
+    ):
+        return 0
+    return _prompt_int(
+        "Number of L-BFGS steps (each does an internal strong-Wolfe line search "
+        "over the full training set)",
+        default=20,
+        minimum=1,
+    )
+
+
 def _parse_operator_selection(raw: str) -> list[dict[str, object]] | None:
     """Parse a comma/space-separated operator-number string, e.g. "2,4,5".
 
@@ -245,6 +259,7 @@ def train_all_models(
     dataset_file: str = DATASET_FILE,
     regenerate_dataset: bool = False,
     seed: int = SEED,
+    lbfgs_epochs: int = 0,
 ) -> dict[str, object]:
     """Train and evaluate the given operators sequentially (default: all of them).
 
@@ -274,6 +289,7 @@ def train_all_models(
     print(f"Batch size     : {batch_size}")
     print(f"Seed           : {seed}")
     print(f"Regenerate     : {regenerate_dataset}")
+    print(f"L-BFGS steps   : {lbfgs_epochs} (after AdamW; 0 = disabled)")
     print(f"Plots folder   : {PLOTS_DIR.resolve()}")
     print(f"Plot pipeline  : {PLOT_PIPELINE_VERSION}")
     print("Interactive plots: disabled for uninterrupted batch training")
@@ -295,6 +311,7 @@ def train_all_models(
             batch_size=batch_size,
             epochs=epochs,
             learning_rate=learning_rate,
+            lbfgs_epochs=lbfgs_epochs,
             dataset_file=dataset_file,
             regenerate_dataset=regenerate_this_model,
             seed=seed,
@@ -445,6 +462,7 @@ def main_all_models():
         "Regenerate and overwrite the ERP dataset before training",
         default=False,
     )
+    lbfgs_epochs = _prompt_lbfgs_epochs()
 
     print(f"All figures will be saved under: {PLOTS_DIR}")
     print("No figures will be displayed during all-model training.")
@@ -456,6 +474,7 @@ def main_all_models():
         dataset_file=DATASET_FILE,
         regenerate_dataset=regenerate_dataset,
         seed=SEED,
+        lbfgs_epochs=lbfgs_epochs,
     )
 
 
@@ -502,6 +521,7 @@ def main():
         regenerate_dataset = _prompt_yes_no(
             "Regenerate and overwrite the ERP dataset before training", default=False
         )
+        lbfgs_epochs = _prompt_lbfgs_epochs()
         show_plot = _prompt_yes_no(
             "Also display the saved training and evaluation plots", default=False
         )
@@ -515,6 +535,7 @@ def main():
             batch_size=batch_size,
             epochs=epochs,
             learning_rate=learning_rate,
+            lbfgs_epochs=lbfgs_epochs,
             dataset_file=DATASET_FILE,
             regenerate_dataset=regenerate_dataset,
             seed=SEED,
