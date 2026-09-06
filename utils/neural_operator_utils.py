@@ -431,30 +431,6 @@ def erp_spectrum_loss(
     return mse + float(slope_weight) * F.mse_loss(dp, dt)
 
 
-def _full_batch_tensors(
-    loader: DataLoader,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Concatenate every batch a loader yields into one full-batch tensor triple.
-
-    L-BFGS needs a fixed objective across its internal line-search
-    evaluations within one ``step()`` call; a shuffled mini-batch loader
-    would hand it a different loss function each time it re-evaluates the
-    closure, which breaks its curvature estimate. Using the loader's own
-    collation (rather than reaching into dataset internals) keeps this
-    consistent with how ``train``/``val`` batches are built everywhere else.
-    """
-    configurations, frequencies, targets = [], [], []
-    for configuration, frequency, target in loader:
-        configurations.append(configuration)
-        frequencies.append(frequency)
-        targets.append(target)
-    return (
-        torch.cat(configurations, dim=0).to(device, dtype=torch.float32),
-        torch.cat(frequencies, dim=0).to(device, dtype=torch.float32),
-        torch.cat(targets, dim=0).to(device, dtype=torch.float32),
-    )
-
-
 def train_operator(
     model: nn.Module,
     loaders: Mapping[str, DataLoader],
@@ -550,11 +526,6 @@ def train_operator(
         )
 
     if lbfgs_epochs > 0:
-        train_configuration, train_frequency, train_target = _full_batch_tensors(
-            loaders["train"]
-        )
-        val_configuration, val_frequency, val_target = _full_batch_tensors(loaders["val"])
-
         lbfgs_optimizer = torch.optim.LBFGS(
             model.parameters(),
             lr=1.0,
@@ -565,34 +536,55 @@ def train_operator(
 
         # Each optimizer.step() call below can invoke this closure many times
         # internally (strong-Wolfe line search re-evaluates the *entire*
-        # training set repeatedly) before returning -- with no output in
-        # between, one step over a large dataset can silently take minutes,
-        # which is indistinguishable from a hang. Printing every evaluation
-        # (overwriting the same line) keeps the process visibly alive.
+        # training set repeatedly) before returning. The closure walks the
+        # training set in the same mini-batches as the AdamW loop above and
+        # accumulates gradients across them: summing per-sample gradients
+        # this way is mathematically identical to one gradient computed from
+        # a single full-batch forward/backward pass, but keeps only one
+        # mini-batch of activations in memory at a time instead of jumping
+        # straight from batch_size=16 to the entire dataset in one shot,
+        # which was large enough to crash the process outright on a CPU
+        # machine before it ever reached the save step. With no output
+        # between internal evaluations, one step over a large dataset can
+        # still take a while, so progress prints as each evaluation completes.
         closure_calls = 0
 
         def closure() -> torch.Tensor:
             nonlocal closure_calls
             closure_calls += 1
             lbfgs_optimizer.zero_grad(set_to_none=True)
-            prediction = model(train_configuration, train_frequency)
-            loss = erp_spectrum_loss(prediction, train_target, slope_weight=slope_weight)
-            loss.backward()
+            loss_sum = 0.0
+            sample_count = 0
+            for configuration, frequency, target in loaders["train"]:
+                configuration = configuration.to(device, dtype=torch.float32)
+                frequency = frequency.to(device, dtype=torch.float32)
+                target = target.to(device, dtype=torch.float32)
+                batch = configuration.shape[0]
+                prediction = model(configuration, frequency)
+                batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                (batch_loss * batch).backward()
+                loss_sum += batch_loss.item() * batch
+                sample_count += batch
+            for parameter in model.parameters():
+                if parameter.grad is not None:
+                    parameter.grad /= sample_count
+            mean_loss = loss_sum / sample_count
             print(
                 f"  L-BFGS step {step + 1:4d}/{lbfgs_epochs} "
                 f"(evaluating full training set, call {closure_calls:3d}) | "
-                f"loss={loss.item():.6e}",
+                f"loss={mean_loss:.6e}",
                 end="\r",
                 flush=True,
             )
-            return loss
+            return torch.tensor(mean_loss, device=device)
 
-        n_train = int(train_configuration.shape[0])
+        n_train = len(loaders["train"].dataset)
         print(
             f"Starting L-BFGS phase: {lbfgs_epochs} step(s), full training set of "
-            f"{n_train} configurations per evaluation, up to {lbfgs_max_iter} "
-            "internal line-search iterations per step. This can take a while on "
-            "large datasets -- progress prints below as each evaluation completes."
+            f"{n_train} configurations per evaluation (processed in mini-batches "
+            f"to limit memory use), up to {lbfgs_max_iter} internal line-search "
+            "iterations per step. This can take a while on large datasets -- "
+            "progress prints below as each evaluation completes."
         )
         model.train()
         for step in range(lbfgs_epochs):
@@ -602,11 +594,19 @@ def train_operator(
             history["train"].append(train_loss)
 
             model.eval()
+            val_sum = 0.0
+            val_count = 0
             with torch.inference_mode():
-                val_prediction = model(val_configuration, val_frequency)
-                val_loss = float(
-                    erp_spectrum_loss(val_prediction, val_target, slope_weight=slope_weight)
-                )
+                for configuration, frequency, target in loaders["val"]:
+                    configuration = configuration.to(device, dtype=torch.float32)
+                    frequency = frequency.to(device, dtype=torch.float32)
+                    target = target.to(device, dtype=torch.float32)
+                    prediction = model(configuration, frequency)
+                    batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                    batch = configuration.shape[0]
+                    val_sum += batch_loss.item() * batch
+                    val_count += batch
+            val_loss = val_sum / max(val_count, 1)
             model.train()
             history["val"].append(val_loss)
 
