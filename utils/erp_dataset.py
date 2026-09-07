@@ -7,15 +7,21 @@ Description : Shared ERP dataset pipeline for neural operators
 
 This module is intentionally independent of any neural-network architecture.
 It generates and stores one common raw dataset using resonator features
-``[f_t, x, y]`` and exposes it as one model-input view:
+``[m, k, f_t, x, y]`` and exposes it as one model-input view:
 
 ``multi_res``
-    One ``[f_t, x, y]`` triplet per resonator, shape ``(num_res, 3)``.
+    One ``[m, k, f_t, x, y]`` quintuplet per resonator, shape ``(num_res, 5)``.
 
-The only target is ERP. Mass is never stored as a model feature; it is derived
-from ``f_t`` only when the physics solver is called:
+The only target is ERP. ``m`` (mass) and ``f_t`` (tuning frequency) are the
+two independently sampled primary quantities (LHS on both directly, so f_t
+comes out uniform); resonator stiffness is derived from them:
 
-    m = k / (2*pi*f_t)^2
+    k = m * (2*pi*f_t)^2
+
+Sampling f_t and k (or f_t and m via the old fixed-k scheme) directly instead
+would make f_t -- the quantity whose distribution actually matters for
+frequency-range coverage -- come out skewed, since f_t is a nonlinear
+(square-root-of-ratio) function of any two independently sampled inputs.
 
 Typical use from any neural-operator file
 -----------------------------------------
@@ -57,7 +63,8 @@ from utils.physics import (
     Lx,
     Ly,
     freqs,
-    k,
+    m_max,
+    m_min,
     num_res as default_num_res,
     resonator_bounds,
 )
@@ -65,8 +72,8 @@ from utils.solver import compute_erp_spectrum
 from utils.support import lhs_sampling, load_dataset, save_dataset
 
 
-FEATURE_NAMES = ("f_t", "x", "y")
-DATASET_SCHEMA_VERSION = 1
+FEATURE_NAMES = ("m", "k", "f_t", "x", "y")
+DATASET_SCHEMA_VERSION = 2
 DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
 
 
@@ -90,22 +97,29 @@ def _copy_split_dict(splits: Mapping[str, Sequence[int]]) -> dict[str, np.ndarra
 # ==================================================
 
 
+_CONFIG_ZSCORE_FIELDS = ("m", "k", "f_t", "x", "y")
+
+
 def normalize_configuration_array(
     configuration: np.ndarray,
     norm_params: Mapping[str, object],
 ) -> np.ndarray:
-    """Normalize one or more ``[..., num_res, 3]`` [f_t,x,y] configurations."""
+    """Normalize one or more ``[..., num_res, 5]`` [m,k,f_t,x,y] configurations.
+
+    Every field is independently z-scored (mean 0, std 1, statistics fit on
+    the train split only) -- there is no bounded/range-scaled field anymore,
+    since ``x``/``y`` no longer get the old ``x/Lx``, ``y/Ly`` treatment.
+    """
     values = np.asarray(configuration, dtype=np.float32).copy()
     num_res = int(norm_params["num_res"])
-    if values.shape[-2:] != (num_res, 3):
+    if values.shape[-2:] != (num_res, 5):
         raise ValueError(
-            f"configuration must end with shape ({num_res}, 3) in [f_t,x,y] order."
+            f"configuration must end with shape ({num_res}, 5) in [m,k,f_t,x,y] order."
         )
-    values[..., 0] = (
-        values[..., 0] - float(norm_params["f_t_mean"])
-    ) / float(norm_params["f_t_std"])
-    values[..., 1] /= float(norm_params["Lx"])
-    values[..., 2] /= float(norm_params["Ly"])
+    for i, name in enumerate(_CONFIG_ZSCORE_FIELDS):
+        values[..., i] = (
+            values[..., i] - float(norm_params[f"{name}_mean"])
+        ) / float(norm_params[f"{name}_std"])
     return values
 
 
@@ -113,18 +127,18 @@ def denormalize_configuration_array(
     configuration: np.ndarray,
     norm_params: Mapping[str, object],
 ) -> np.ndarray:
-    """Inverse of :func:`normalize_configuration_array`; returns raw [f_t,x,y]."""
+    """Inverse of :func:`normalize_configuration_array`; returns raw [m,k,f_t,x,y]."""
     values = np.asarray(configuration, dtype=np.float32).copy()
     num_res = int(norm_params["num_res"])
-    if values.shape[-2:] != (num_res, 3):
+    if values.shape[-2:] != (num_res, 5):
         raise ValueError(
-            f"configuration must end with shape ({num_res}, 3) in [f_t,x,y] order."
+            f"configuration must end with shape ({num_res}, 5) in [m,k,f_t,x,y] order."
         )
-    values[..., 0] = (
-        values[..., 0] * float(norm_params["f_t_std"]) + float(norm_params["f_t_mean"])
-    )
-    values[..., 1] *= float(norm_params["Lx"])
-    values[..., 2] *= float(norm_params["Ly"])
+    for i, name in enumerate(_CONFIG_ZSCORE_FIELDS):
+        values[..., i] = (
+            values[..., i] * float(norm_params[f"{name}_std"])
+            + float(norm_params[f"{name}_mean"])
+        )
     return values
 
 
@@ -167,22 +181,26 @@ def denormalize_erp_array(
 def configuration_to_resonators(
     configuration: np.ndarray,
 ) -> list[dict[str, float]]:
-    """Convert one raw ``(num_res, 3)`` [f_t,x,y] configuration for the solver."""
+    """Convert one raw ``(num_res, 5)`` [m,k,f_t,x,y] configuration for the solver.
+
+    ``m`` and ``k`` are stored directly (independently sampled at generation
+    time) rather than derived here -- ``f_t`` is carried along purely as an
+    informational/model-input field, not used by the solver itself.
+    """
     values = np.asarray(configuration, dtype=np.float64)
-    if values.ndim != 2 or values.shape[1] != 3:
-        raise ValueError("configuration must have shape (num_res, 3) in [f_t,x,y] order.")
+    if values.ndim != 2 or values.shape[1] != 5:
+        raise ValueError("configuration must have shape (num_res, 5) in [m,k,f_t,x,y] order.")
 
     resonators: list[dict[str, float]] = []
-    for f_t, x, y in values:
-        mass = k / (2.0 * np.pi * float(f_t)) ** 2
+    for m, k_i, f_t, x, y in values:
         resonators.append(
             {
                 "f_t": float(f_t),
                 "x": float(x),
                 "y": float(y),
-                "m": float(mass),
+                "m": float(m),
                 "c": 1.0,
-                "k": float(k),
+                "k": float(k_i),
             }
         )
     return resonators
@@ -198,11 +216,11 @@ class ERPDataset(Dataset):
 
     Raw storage is architecture-independent:
 
-    - ``configuration_features``: ``(n_configurations, num_res, 3)`` in ``[f_t, x, y]`` order
+    - ``configuration_features``: ``(n_configurations, num_res, 5)`` in ``[m, k, f_t, x, y]`` order
     - ``responses``: ``(n_configurations, n_freqs, 1)`` containing ERP in dB
 
     :meth:`__getitem__` returns the normalized configuration as one
-    ``[f_t, x, y]`` triplet per resonator, shape ``(num_res, 3)``.
+    ``[m, k, f_t, x, y]`` quintuplet per resonator, shape ``(num_res, 5)``.
     """
 
     def __init__(
@@ -241,9 +259,16 @@ class ERPDataset(Dataset):
         sample: np.ndarray,
         num_res: int,
     ) -> tuple[list[dict[str, float]], np.ndarray]:
-        """Convert one LHS sample ``[x,y,f_t]*N`` to solver data and features."""
-        triples = np.asarray(sample, dtype=np.float64).reshape(num_res, 3)
-        features = triples[:, [2, 0, 1]].astype(np.float32, copy=False)
+        """Convert one LHS sample ``[x,y,f_t,m]*N`` to solver data and features.
+
+        ``f_t`` and ``m`` are the two independently LHS-sampled primary
+        quantities; stiffness ``k = m*(2*pi*f_t)**2`` is derived so that the
+        resulting f_t distribution stays uniform (see module docstring).
+        """
+        quads = np.asarray(sample, dtype=np.float64).reshape(num_res, 4)
+        x, y, f_t, m = quads[:, 0], quads[:, 1], quads[:, 2], quads[:, 3]
+        k = m * (2.0 * np.pi * f_t) ** 2
+        features = np.stack([m, k, f_t, x, y], axis=1).astype(np.float32, copy=False)
         return configuration_to_resonators(features), features.copy()
 
     def generate(
@@ -261,7 +286,7 @@ class ERPDataset(Dataset):
 
         n_freqs = self.frequency_values.size
         configuration_features = np.empty(
-            (self.num_samples, self.num_res, 3), dtype=np.float32
+            (self.num_samples, self.num_res, 5), dtype=np.float32
         )
         responses = np.empty((self.num_samples, n_freqs, 1), dtype=np.float32)
 
@@ -271,9 +296,10 @@ class ERPDataset(Dataset):
                 f"Generating ERP dataset: {self.num_samples} configurations, "
                 f"{n_freqs} frequencies/configuration"
             )
-            print("Sampled variables : x, y, f_t")
-            print("Stored features   : [f_t, x, y]")
-            print("Solver-only mass  : m = k / (2*pi*f_t)^2")
+            print("Sampled variables : x, y, f_t, m  (independent LHS)")
+            print("Stored features   : [m, k, f_t, x, y]")
+            print(f"m range            : [{m_min}, {m_max}] kg")
+            print("Derived stiffness  : k = m * (2*pi*f_t)^2")
 
         # Keep console output useful for large datasets without printing every row.
         report_every = max(1, self.num_samples // 20)
@@ -314,7 +340,7 @@ class ERPDataset(Dataset):
             "schema_version": DATASET_SCHEMA_VERSION,
             "target_name": "erp",
             "feature_names": list(FEATURE_NAMES),
-            "feature_layout": "per_resonator_[f_t,x,y]",
+            "feature_layout": "per_resonator_[m,k,f_t,x,y]",
             "num_samples": self.num_samples,
             "num_res": self.num_res,
             "seed": self.seed,
@@ -322,7 +348,7 @@ class ERPDataset(Dataset):
             "configuration_features": self.configuration_features,
             "responses": self.responses,
             "plate_geometry": {"Lx": float(Lx), "Ly": float(Ly)},
-            "resonator_stiffness": float(k),
+            "resonator_mass_bounds": {"m_min": float(m_min), "m_max": float(m_max)},
         }
 
     def load(self, filename: str) -> "ERPDataset":
@@ -332,7 +358,7 @@ class ERPDataset(Dataset):
         feature_names = tuple(payload.get("feature_names", ()))
         if feature_names != FEATURE_NAMES:
             raise ValueError(
-                f"{filename} does not contain the expected [f_t, x, y] dataset. "
+                f"{filename} does not contain the expected [m, k, f_t, x, y] dataset. "
                 f"Found feature_names={feature_names or 'missing'}."
             )
         if str(payload.get("target_name", "")).lower() != "erp":
@@ -349,7 +375,7 @@ class ERPDataset(Dataset):
         )
         self.responses = np.asarray(payload["responses"], dtype=np.float32)
 
-        expected_configuration_shape = (self.num_samples, self.num_res, 3)
+        expected_configuration_shape = (self.num_samples, self.num_res, 5)
         expected_response_shape = (
             self.num_samples,
             self.frequency_values.size,
@@ -482,9 +508,11 @@ class ERPDataset(Dataset):
     ) -> dict[str, object]:
         """Fit data-dependent scaling using training configurations only.
 
-        ``f_t`` uses one shared mean/std across all resonators.  This avoids
-        artificial resonator-slot-specific scaling and makes the preprocessing
-        more suitable for set/graph/neural-operator architectures.
+        Every resonator field (``m``, ``k``, ``f_t``, ``x``, ``y``) uses one
+        shared mean/std across all resonators and is z-scored (mean 0, std 1)
+        -- there is no bounded/range-scaled field.  This avoids artificial
+        resonator-slot-specific scaling and makes the preprocessing more
+        suitable for set/graph/neural-operator architectures.
         """
         self._require_data()
 
@@ -498,57 +526,43 @@ class ERPDataset(Dataset):
         train_features = self.configuration_features[train_ids]
         train_erp = self.responses[train_ids, :, 0]
 
-        f_t_values = train_features[:, :, 0]
-        f_t_mean = np.float32(f_t_values.mean())
-        f_t_std = np.float32(max(float(f_t_values.std()), 1e-8))
-
-        # The frequency grid is common to every configuration, so this does not use
-        # target information from validation/test configurations.
-        freq_mean = np.float32(self.frequency_values.mean())
-        freq_std = np.float32(max(float(self.frequency_values.std()), 1e-8))
-
-        erp_mean = np.float32(train_erp.mean())
-        erp_std = np.float32(max(float(train_erp.std()), 1e-12))
-
         self.norm_params = {
             "feature_names": list(FEATURE_NAMES),
             "num_res": self.num_res,
-            "f_t_mean": f_t_mean,
-            "f_t_std": f_t_std,
-            "Lx": np.float32(Lx),
-            "Ly": np.float32(Ly),
-            "freq_mean": freq_mean,
-            "freq_std": freq_std,
-            "erp_mean": erp_mean,
-            "erp_std": erp_std,
         }
+        for i, name in enumerate(_CONFIG_ZSCORE_FIELDS):
+            values = train_features[:, :, i]
+            self.norm_params[f"{name}_mean"] = np.float32(values.mean())
+            self.norm_params[f"{name}_std"] = np.float32(max(float(values.std()), 1e-8))
+
+        # The frequency grid is common to every configuration, so this does not use
+        # target information from validation/test configurations.
+        self.norm_params["freq_mean"] = np.float32(self.frequency_values.mean())
+        self.norm_params["freq_std"] = np.float32(
+            max(float(self.frequency_values.std()), 1e-8)
+        )
+
+        self.norm_params["erp_mean"] = np.float32(train_erp.mean())
+        self.norm_params["erp_std"] = np.float32(max(float(train_erp.std()), 1e-12))
         return self.norm_params
 
     def set_normalization(self, norm_params: Mapping[str, object]) -> None:
         """Restore normalization previously saved with a trained model."""
-        required = {
-            "feature_names",
-            "num_res",
-            "f_t_mean",
-            "f_t_std",
-            "Lx",
-            "Ly",
-            "freq_mean",
-            "freq_std",
-            "erp_mean",
-            "erp_std",
-        }
+        required = {"feature_names", "num_res", "freq_mean", "freq_std", "erp_mean", "erp_std"}
+        for name in _CONFIG_ZSCORE_FIELDS:
+            required.add(f"{name}_mean")
+            required.add(f"{name}_std")
         missing = required.difference(norm_params)
         if missing:
             raise ValueError(f"Normalization state is missing: {sorted(missing)}")
         if tuple(norm_params["feature_names"]) != FEATURE_NAMES:
-            raise ValueError("Normalization state does not use [f_t, x, y] features.")
+            raise ValueError("Normalization state does not use [m, k, f_t, x, y] features.")
         if int(norm_params["num_res"]) != self.num_res:
             raise ValueError("Normalization num_res does not match the dataset.")
         self.norm_params = dict(norm_params)
 
     def normalize_configuration(self, configuration: np.ndarray) -> np.ndarray:
-        """Normalize one or more ``[..., num_res, 3]`` [f_t,x,y] configurations."""
+        """Normalize one or more ``[..., num_res, 5]`` [m,k,f_t,x,y] configurations."""
         self._require_normalization()
         return normalize_configuration_array(configuration, self.norm_params)
 
@@ -572,7 +586,7 @@ class ERPDataset(Dataset):
 
     @property
     def model_input_shape(self) -> tuple[int, ...]:
-        return (self.num_res, 3)
+        return (self.num_res, 5)
 
     def dataloaders(
         self,
@@ -683,7 +697,7 @@ class ERPDataset(Dataset):
         n_freqs = self.frequency_values.size
         configuration_idx, freq_idx = divmod(int(index), n_freqs)
 
-        # normalize_configuration_array() already returns float32 (num_res, 3).
+        # normalize_configuration_array() already returns float32 (num_res, 5).
         configuration_input = self.normalize_configuration(self.configuration_features[configuration_idx])
         frequency = np.asarray(
             [self.normalize_frequency(self.frequency_values[freq_idx])],
@@ -834,7 +848,7 @@ def prepare_erp_dataset(
     # choose num_samples configurations reproducibly from the raw dataset.
     if preprocessing_state is not None:
         if tuple(preprocessing_state.get("feature_names", ())) != FEATURE_NAMES:
-            raise ValueError("preprocessing_state does not use [f_t, x, y] features.")
+            raise ValueError("preprocessing_state does not use [m, k, f_t, x, y] features.")
         if int(preprocessing_state.get("num_res", -1)) != dataset.num_res:
             raise ValueError("preprocessing_state num_res does not match the dataset.")
 

@@ -21,7 +21,7 @@ import torch
 
 from utils.erp_dataset import DEFAULT_DATASET_FILE
 from operators.operator_registry import OPERATORS
-from utils.physics import Lx, Ly, fmin, fmax, k, num_res as default_num_res
+from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     DEFAULT_PLOTS_DIR,
     save_all_model_comparison_plots,
@@ -147,17 +147,24 @@ def _prompt_operator_selection(prompt: str) -> list[dict[str, object]]:
 
 
 def _prompt_configuration(num_res: int) -> np.ndarray:
-    """Read one raw configuration in [f_t, x, y] order."""
-    configuration = np.empty((num_res, 3), dtype=np.float32)
+    """Read one raw configuration in [m, k, f_t, x, y] order.
 
-    print("\nEnter resonator configuration in [f_t, x, y] form.")
+    ``m`` and ``f_t`` are the two quantities actually entered (mass and
+    tuning frequency); stiffness ``k = m*(2*pi*f_t)**2`` is derived, matching
+    how the dataset itself is generated (see utils/erp_dataset.py).
+    """
+    configuration = np.empty((num_res, 5), dtype=np.float32)
+
+    print("\nEnter resonator configuration as mass, tuning frequency, and position.")
+    print(f"Practical mass range: {m_min:g} to {m_max:g} kg")
     print(f"Allowed tuning-frequency range: {fmin:g} to {fmax:g} Hz")
     print(f"Plate range: 0 <= x <= {Lx:g} m, 0 <= y <= {Ly:g} m")
 
     for i in range(num_res):
         while True:
             try:
-                f_t = float(input(f"\nResonator {i + 1} tuning frequency f_t (Hz): ").strip())
+                m = float(input(f"\nResonator {i + 1} mass m (kg): ").strip())
+                f_t = float(input(f"Resonator {i + 1} tuning frequency f_t (Hz): ").strip())
                 x = float(input(f"Resonator {i + 1} x position (m): ").strip())
                 y = float(input(f"Resonator {i + 1} y position (m): ").strip())
             except ValueError:
@@ -171,12 +178,12 @@ def _prompt_configuration(num_res: int) -> np.ndarray:
                 print(f"Position must satisfy 0 <= x <= {Lx:g}, 0 <= y <= {Ly:g}.")
                 continue
 
-            configuration[i] = [f_t, x, y]
-            mass = k / (2.0 * np.pi * f_t) ** 2
-            print(f"Derived solver mass: {mass:.6f} kg")
+            k_val = m * (2.0 * np.pi * f_t) ** 2
+            configuration[i] = [m, k_val, f_t, x, y]
+            print(f"Derived stiffness: {k_val:.3f} N/m")
             break
 
-    print("\nConfiguration used:")
+    print("\nConfiguration used ([m, k, f_t, x, y] per resonator):")
     print(configuration)
     return configuration
 

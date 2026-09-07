@@ -31,8 +31,8 @@ class GraphMessageLayer(nn.Module):
     ) -> None:
         super().__init__()
         activation_cls = resolve_activation(activation)
-        # hi, hj, relative [f_t,x,y], xy distance, |delta f_t|.
-        self.message = MLP([2 * width + 5, width, width], activation=activation_cls)
+        # hi, hj, relative [m,k,f_t,x,y], xy distance, |delta f_t|.
+        self.message = MLP([2 * width + 7, width, width], activation=activation_cls)
         self.update = MLP([2 * width, width, width], activation=activation_cls)
         self.norm = nn.LayerNorm(width)
         self.activation = activation_cls()
@@ -43,8 +43,8 @@ class GraphMessageLayer(nn.Module):
         hi = h[:, :, None, :].expand(b, n, n, width)
         hj = h[:, None, :, :].expand(b, n, n, width)
         rel = features[:, None, :, :] - features[:, :, None, :]
-        distance = torch.linalg.vector_norm(rel[..., 1:3], dim=-1, keepdim=True)
-        ft_gap = rel[..., 0:1].abs()
+        distance = torch.linalg.vector_norm(rel[..., 3:5], dim=-1, keepdim=True)
+        ft_gap = rel[..., 2:3].abs()
         edge = torch.cat((rel, distance, ft_gap), dim=-1)
         message = self.message(torch.cat((hi, hj, edge), dim=-1))
 
@@ -75,7 +75,7 @@ class GNO(nn.Module):
         self.num_res = int(num_res)
         self.modal_harmonics = int(modal_harmonics)
         activation_cls = resolve_activation(activation)
-        node_input_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        node_input_dim = 5 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.node_lift = MLP([node_input_dim, width, width], activation=activation_cls)
         self.layers = nn.ModuleList(
             [
@@ -87,7 +87,7 @@ class GNO(nn.Module):
             [1, frequency_dim, frequency_dim], activation=activation_cls
         )
         # node, raw resonator, frequency embedding, query f, delta, |delta|, delta^2
-        query_input_dim = width + 3 + frequency_dim + 4
+        query_input_dim = width + 5 + frequency_dim + 4
         self.query_kernel = MLP(
             [query_input_dim, width, width, width], activation=activation_cls
         )
@@ -111,7 +111,7 @@ class GNO(nn.Module):
         raw = configuration[:, None, :, :].expand(b, f, n, -1)
         query_embedding = freq[:, :, None, :].expand(b, f, n, -1)
         query_frequency = frequency[:, :, None, :].expand(b, f, n, 1)
-        f_t = configuration[:, None, :, 0:1].expand(b, f, n, 1)
+        f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
         detuning = query_frequency - f_t
 
         pair = torch.cat(

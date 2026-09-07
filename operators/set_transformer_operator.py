@@ -35,8 +35,8 @@ class DetuningCrossAttention(nn.Module):
         self.k_proj = nn.Linear(width, width)
         self.v_proj = nn.Linear(width, width)
         self.out_proj = nn.Linear(width, width)
-        # raw [f_t,x,y], query f, delta, |delta| -> one bias per head
-        self.bias_net = MLP([6, width // 2, heads], activation=resolve_activation(activation))
+        # raw [m,k,f_t,x,y], query f, delta, |delta| -> one bias per head
+        self.bias_net = MLP([8, width // 2, heads], activation=resolve_activation(activation))
         self.attn_dropout = nn.Dropout(dropout)
 
     def forward(
@@ -57,7 +57,7 @@ class DetuningCrossAttention(nn.Module):
 
         raw = configuration[:, None, :, :].expand(b, f, n, -1)
         query_f = frequency[:, :, None, :].expand(b, f, n, 1)
-        f_t = configuration[:, None, :, 0:1].expand(b, f, n, 1)
+        f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
         delta = query_f - f_t
         bias_features = torch.cat((raw, query_f, delta, delta.abs()), dim=-1)
         bias = self.bias_net(bias_features).permute(0, 3, 1, 2)
@@ -101,7 +101,7 @@ class SetTransformerOperator(nn.Module):
         self.num_res = int(num_res)
         self.modal_harmonics = int(modal_harmonics)
         activation_cls = resolve_activation(activation)
-        node_input_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        node_input_dim = 5 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.node_lift = MLP([node_input_dim, width, width], activation=activation_cls)
         layer = nn.TransformerEncoderLayer(
             d_model=width,

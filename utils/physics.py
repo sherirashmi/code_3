@@ -74,14 +74,32 @@ n_freqs = freqs.size
 # Resonator Parameters
 # ==================================================
 
+# Legacy fixed stiffness -- no longer used by the main ERP dataset generator
+# (m and k are now independently sampled per resonator, see resonator_bounds
+# below), kept only for standalone scripts (e.g. others/position_dependency.py)
+# that still derive mass from a single fixed k.
 k = 584000
 num_res = 3
 
 edge_margin = 0.05
 
+# Practical tuned-mass-damper mass range: ~1-10% of the plate's own mass
+# (M_plate = rho*h*Lx*Ly ~= 9.8 kg), the standard mass-ratio guideline for a
+# lightweight vibration absorber that doesn't dominate the host structure.
+m_min = 0.1
+m_max = 1.0
+
 
 def resonator_bounds(n_res: int = num_res) -> np.ndarray:
-    """Return [x, y, f_t] bounds repeated for ``n_res`` resonators."""
+    """Return [x, y, f_t, m] bounds repeated for ``n_res`` resonators.
+
+    ``f_t`` and ``m`` are sampled as the two independent primary quantities
+    (LHS on both directly), and resonator stiffness ``k = m*(2*pi*f_t)**2``
+    is derived afterward -- sampling ``m``/``k`` directly instead would make
+    the resulting f_t distribution skewed rather than uniform, since
+    f_t = (1/2pi)*sqrt(k/m) is a nonlinear function of two independently
+    sampled quantities.
+    """
     if n_res <= 0:
         raise ValueError("n_res must be positive.")
     single = np.array(
@@ -89,6 +107,7 @@ def resonator_bounds(n_res: int = num_res) -> np.ndarray:
             [edge_margin, Lx - edge_margin],
             [edge_margin, Ly - edge_margin],
             [fmin, fmax],
+            [m_min, m_max],
         ],
         dtype=np.float64,
     )

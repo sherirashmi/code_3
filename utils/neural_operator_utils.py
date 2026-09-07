@@ -7,7 +7,7 @@ Description : Shared ERP neural-operator training/evaluation workflow
 
 All operator models use the same convention:
 
-    configuration : (batch, num_res, 3) normalized [f_t, x, y]
+    configuration : (batch, num_res, 5) normalized [m, k, f_t, x, y]
     frequency     : (batch, n_freq, 1) normalized evaluation frequencies
     output        : (batch, n_freq, 1) normalized ERP
 
@@ -159,54 +159,60 @@ def physics_aware_resonator_features(
     configuration: torch.Tensor,
     harmonics: int = 10,
 ) -> torch.Tensor:
-    """Augment normalized ``[f_t, x, y]`` with plate-inspired sine features.
+    """Augment normalized ``[m, k, f_t, x, y]`` with plate-inspired sine features.
 
-    ``x`` and ``y`` are already normalized by ``Lx`` and ``Ly`` in the common
-    preprocessing pipeline.  Therefore ``sin(m*pi*x)`` and ``sin(n*pi*y)``
-    follow the same spatial structure that appears in the plate mode shapes.
-    Low-order tensor-product terms are included so the network does not have to
-    rediscover the dominant modal spatial interactions from raw coordinates.
+    ``x`` and ``y`` are z-scored (not range-scaled) in the common
+    preprocessing pipeline, but still span the plate roughly linearly, so
+    ``sin(m*pi*x)`` and ``sin(n*pi*y)`` still follow the same spatial
+    structure that appears in the plate mode shapes. Low-order tensor-product
+    terms are included so the network does not have to rediscover the
+    dominant modal spatial interactions from raw coordinates. ``m`` and ``k``
+    are passed through unaugmented (mass ratio / coupling-strength
+    information, not spatial), alongside ``f_t`` which every architecture
+    also uses directly for resonance-detuning features.
     """
-    if configuration.ndim < 2 or configuration.shape[-1] != 3:
-        raise ValueError("configuration must end with normalized [f_t, x, y].")
+    if configuration.ndim < 2 or configuration.shape[-1] != 5:
+        raise ValueError("configuration must end with normalized [m, k, f_t, x, y].")
     if harmonics < 0:
         raise ValueError("harmonics cannot be negative.")
 
     if harmonics == 0:
         return configuration
 
-    f_t = configuration[..., 0:1]
-    x = configuration[..., 1:2]
-    y = configuration[..., 2:3]
+    m = configuration[..., 0:1]
+    k = configuration[..., 1:2]
+    f_t = configuration[..., 2:3]
+    x = configuration[..., 3:4]
+    y = configuration[..., 4:5]
 
-    x_modes = [torch.sin(math.pi * float(m) * x) for m in range(1, harmonics + 1)]
-    y_modes = [torch.sin(math.pi * float(n) * y) for n in range(1, harmonics + 1)]
+    x_modes = [torch.sin(math.pi * float(i) * x) for i in range(1, harmonics + 1)]
+    y_modes = [torch.sin(math.pi * float(j) * y) for j in range(1, harmonics + 1)]
     products = [xm * yn for xm in x_modes for yn in y_modes]
-    return torch.cat([f_t, x, y, *x_modes, *y_modes, *products], dim=-1)
+    return torch.cat([m, k, f_t, x, y, *x_modes, *y_modes, *products], dim=-1)
 
 
 class ResonatorSetEncoder(nn.Module):
     """Permutation-invariant, physics-aware encoder for resonator sets.
 
     Every resonator is embedded with shared weights, using normalized raw
-    ``[f_t,x,y]`` plus low-order plate-inspired spatial sine features.  Mean and
-    max pooling preserve permutation invariance while retaining both distributed
-    and dominant-resonator information.
+    ``[m,k,f_t,x,y]`` plus low-order plate-inspired spatial sine features.
+    Mean and max pooling preserve permutation invariance while retaining both
+    distributed and dominant-resonator information.
     """
 
     def __init__(
         self,
-        feature_dim: int = 3,
+        feature_dim: int = 5,
         hidden_dim: int = 128,
         element_dim: int = 128,
         output_dim: int = 128,
         modal_harmonics: int = 10,
     ) -> None:
         super().__init__()
-        if int(feature_dim) != 3:
-            raise ValueError("ResonatorSetEncoder expects [f_t,x,y] feature_dim=3.")
+        if int(feature_dim) != 5:
+            raise ValueError("ResonatorSetEncoder expects [m,k,f_t,x,y] feature_dim=5.")
         self.modal_harmonics = int(modal_harmonics)
-        augmented_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        augmented_dim = 5 + 2 * self.modal_harmonics + self.modal_harmonics**2
         self.element_net = MLP(
             [augmented_dim, hidden_dim, hidden_dim, element_dim],
             activation=nn.Tanh,
@@ -217,8 +223,8 @@ class ResonatorSetEncoder(nn.Module):
         )
 
     def forward(self, configuration: torch.Tensor) -> torch.Tensor:
-        if configuration.ndim != 3 or configuration.shape[-1] != 3:
-            raise ValueError("configuration must have shape (batch, num_res, 3).")
+        if configuration.ndim != 3 or configuration.shape[-1] != 5:
+            raise ValueError("configuration must have shape (batch, num_res, 5).")
         features = physics_aware_resonator_features(
             configuration, harmonics=self.modal_harmonics
         )
@@ -248,7 +254,7 @@ class ResonanceQueryEncoder(nn.Module):
     ) -> None:
         super().__init__()
         self.modal_harmonics = int(modal_harmonics)
-        resonator_dim = 3 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        resonator_dim = 5 + 2 * self.modal_harmonics + self.modal_harmonics**2
         interaction_dim = resonator_dim + 4  # f, delta, |delta|, delta^2
         self.element_net = MLP(
             [interaction_dim, hidden_dim, hidden_dim, element_dim],
@@ -264,8 +270,8 @@ class ResonanceQueryEncoder(nn.Module):
         configuration: torch.Tensor,
         frequency: torch.Tensor,
     ) -> torch.Tensor:
-        if configuration.ndim != 3 or configuration.shape[-1] != 3:
-            raise ValueError("configuration must have shape (batch, num_res, 3).")
+        if configuration.ndim != 3 or configuration.shape[-1] != 5:
+            raise ValueError("configuration must have shape (batch, num_res, 5).")
         if frequency.ndim != 3 or frequency.shape[-1] != 1:
             raise ValueError("frequency must have shape (batch, n_freq, 1).")
         if configuration.shape[0] != frequency.shape[0]:
@@ -279,7 +285,7 @@ class ResonanceQueryEncoder(nn.Module):
         resonator = resonator[:, None, :, :].expand(b, f, n, -1)
 
         query = frequency[:, :, None, :].expand(b, f, n, 1)
-        f_t = configuration[:, None, :, 0:1].expand(b, f, n, 1)
+        f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
         delta = query - f_t
         pair = torch.cat((resonator, query, delta, delta.abs(), delta.square()), dim=-1)
         h = self.element_net(pair)
@@ -820,7 +826,7 @@ def predict_erp_spectrum(
     operator_name: str = "operator",
     plots_dir: str | Path | None = None,
 ) -> dict[str, object]:
-    """Predict ERP for one raw [f_t,x,y] resonator configuration."""
+    """Predict ERP for one raw [m,k,f_t,x,y] resonator configuration."""
     configuration = np.asarray(configuration, dtype=np.float32)
     normalized_configuration = normalize_configuration_array(configuration, norm_params)
 

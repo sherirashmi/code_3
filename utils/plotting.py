@@ -100,8 +100,8 @@ def plot_loss_curves(
 
 def _mark_resonator_tuning_lines(ax, configuration: np.ndarray) -> None:
     """Draw one red dotted vertical line per resonator at its tuning frequency."""
-    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 3)
-    for i, (f_t, _x, _y) in enumerate(configuration):
+    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 5)
+    for i, (_m, _k, f_t, _x, _y) in enumerate(configuration):
         ax.axvline(
             f_t,
             color="red",
@@ -115,17 +115,17 @@ def _mark_resonator_tuning_lines(ax, configuration: np.ndarray) -> None:
 
 def _draw_plate_layout(ax, configuration: np.ndarray) -> None:
     """Draw the plate outline with resonator and force positions."""
-    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 3)
+    configuration = np.asarray(configuration, dtype=np.float64).reshape(-1, 5)
 
     ax.add_patch(
         plt.Rectangle((0, 0), Lx, Ly, fill=False, edgecolor="black", lw=1.5)
     )
     ax.scatter([xf], [yf], marker="*", s=180, color="cyan", edgecolors="black",
                linewidths=0.8, zorder=3, label="Force F0")
-    ax.scatter(configuration[:, 1], configuration[:, 2], marker="o", s=90,
+    ax.scatter(configuration[:, 3], configuration[:, 4], marker="o", s=90,
                color="crimson", edgecolors="black", linewidths=0.8, zorder=3,
                label="Resonator")
-    for f_t, x, y in configuration:
+    for _m, _k, f_t, x, y in configuration:
         ax.annotate(
             f"{f_t:.1f} Hz",
             (x, y),
