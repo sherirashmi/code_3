@@ -52,22 +52,38 @@ class MDN(nn.Module):
         std = nn.functional.softplus(log_std) + self.min_std
         return logits, mu, std
 
+    @staticmethod
+    def _mixture_log_prob(flat: torch.Tensor, logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        """``flat``: (B, D) or (B, S, D); ``logits/mu/std``: (B, K) / (B, K, D)."""
+        log_weights = torch.log_softmax(logits, dim=-1)  # (B, K)
+        if flat.dim() == 3:
+            x = flat[:, :, None, :]  # (B, S, 1, D)
+            mu_e = mu[:, None, :, :]  # (B, 1, K, D)
+            std_e = std[:, None, :, :]
+            weights_e = log_weights[:, None, :]  # (B, 1, K)
+        else:
+            x = flat[:, None, :]  # (B, 1, D)
+            mu_e, std_e, weights_e = mu, std, log_weights
+        component_log_prob = (
+            -0.5 * (((x - mu_e) / std_e) ** 2 + 2 * torch.log(std_e) + math.log(2 * math.pi))
+        ).sum(dim=-1)
+        return torch.logsumexp(weights_e + component_log_prob, dim=-1)
+
     def log_prob(self, spectrum: torch.Tensor, design: torch.Tensor) -> torch.Tensor:
         flat = flatten_configuration(design)
         logits, mu, std = self._params(spectrum)
-        log_weights = torch.log_softmax(logits, dim=-1)  # (B, K)
-        x = flat[:, None, :]  # (B, 1, D)
-        component_log_prob = (
-            -0.5 * (((x - mu) / std) ** 2 + 2 * torch.log(std) + math.log(2 * math.pi))
-        ).sum(dim=-1)  # (B, K)
-        return torch.logsumexp(log_weights + component_log_prob, dim=-1)  # (B,)
+        return self._mixture_log_prob(flat, logits, mu, std)  # (B,)
 
     def training_loss(self, spectrum: torch.Tensor, design: torch.Tensor) -> torch.Tensor:
         return -self.log_prob(spectrum, design).mean()
 
     @torch.no_grad()
-    def sample(self, spectrum: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
-        """Returns ``(B, num_samples, design_dim)`` flat normalized design samples."""
+    def sample(self, spectrum: torch.Tensor, num_samples: int = 1):
+        """Returns ``(flat_designs, log_prob)``, both ``(B, num_samples, ...)``.
+
+        ``log_prob`` is the exact mixture log-density (not just the sampled
+        component's) evaluated at each returned design.
+        """
         logits, mu, std = self._params(spectrum)
         b, k, d = mu.shape
         weights = torch.softmax(logits, dim=-1)
@@ -75,4 +91,6 @@ class MDN(nn.Module):
         mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
         std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
         eps = torch.randn_like(mu_s)
-        return mu_s + std_s * eps
+        flat = mu_s + std_s * eps  # (B, S, D)
+        log_prob = self._mixture_log_prob(flat, logits, mu, std)  # (B, S)
+        return flat, log_prob

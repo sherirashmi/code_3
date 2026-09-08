@@ -5,15 +5,35 @@ the inverse problem is genuinely non-unique (see module docstrings), so that
 would be the wrong test. Instead: sample several candidate designs per
 target spectrum from each model, run every sampled design back through a
 trained *forward* operator (the real physics-aware surrogate), and check how
-well the resulting predicted spectra match the target. That is the correct
-notion of "the inverse model works" for an ill-posed problem -- every
-sampled design should be a plausible, spectrum-consistent solution, even if
-several different samples are not identical to each other or to the
-original.
+well the resulting predicted spectra match the target.
+
+Training fixes applied here (see the per-method module docstrings for why):
+  - Cosine LR annealing for every model (was a flat LR for all 80 epochs).
+  - Best-validation-epoch checkpointing (was: whatever the last epoch
+    produced, which silently kept MDN's overfit epoch-80 weights).
+  - KL annealing for the cVAE (beta ramps up over the first few epochs
+    instead of being fixed from step 1, which is the classic cause of
+    posterior collapse -- and this model showed exactly that signature:
+    a flat loss curve and near-zero sample-to-sample diversity).
+  - Cosine noise schedule + fewer steps for the diffusion model (see
+    diffusion.py's docstring).
+
+Per-sample reporting: for MDN, Flow, and cVAE -- the three methods with a
+tractable ``log p(design | spectrum)`` -- every sampled design is reported
+with its exact log-probability under the model, plus a softmax-normalized
+"relative confidence" across that method's own samples for the same target
+(these sum to 1 and are the more directly interpretable number: "how much
+more plausible is this candidate than the others sampled for the same
+target", not an absolute probability, which a density value alone isn't).
+Diffusion has no tractable density with this simple formulation; it's
+reported instead with a spectrum-consistency score (how well the sampled
+design's forward-simulated spectrum matches the target) -- explicitly
+labeled as such, not as a probability, so the two aren't confused.
 """
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +47,7 @@ from operators.operator_registry import OPERATORS
 from utils.neural_operator_utils import load_operator_checkpoint
 from utils.erp_dataset import denormalize_erp_array
 
-from inverse_operators.common import prepare_inverse_data, save_checkpoint
+from inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
 from inverse_operators.mdn import MDN
 from inverse_operators.cvae import ConditionalVAE
 from inverse_operators.flow import ConditionalFlow
@@ -36,51 +56,84 @@ from inverse_operators.diffusion import ConditionalDiffusion
 FORWARD_OPERATOR_KEY = "5"  # GNO -- the best forward performer, used as the validation surrogate
 NUM_RES = 3
 DESIGN_DIM = NUM_RES * 5
+KL_WARMUP_EPOCHS = 30
+KL_TARGET_BETA = 0.1
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
+    best_val = float("inf")
+    best_state = None
     for epoch in range(epochs):
         model.train()
         total, n = 0.0, 0
         for spectrum, design in loaders["train"]:
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(model, spectrum, design)
+            loss = loss_fn(model, spectrum, design, epoch)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
             total += loss.item() * spectrum.shape[0]
             n += spectrum.shape[0]
         train_loss = total / n
+        scheduler.step()
 
         model.eval()
         with torch.no_grad():
             total, n = 0.0, 0
             for spectrum, design in loaders["val"]:
-                loss = loss_fn(model, spectrum, design)
+                loss = loss_fn(model, spectrum, design, epoch)
                 total += loss.item() * spectrum.shape[0]
                 n += spectrum.shape[0]
             val_loss = total / n
 
         history["train"].append(train_loss)
         history["val"].append(val_loss)
+        if val_loss < best_val:
+            best_val = val_loss
+            best_state = copy.deepcopy(model.state_dict())
         print(f"[{name}] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        print(f"[{name}] restored best-validation checkpoint (val={best_val:.4f})")
     return history
 
 
-def main(num_configurations: int = 10000, epochs: int = 60, batch_size: int = 32):
+def format_configuration(configuration: np.ndarray) -> str:
+    lines = []
+    for i, (m, k, f_t, x, y) in enumerate(configuration):
+        lines.append(f"  res{i + 1}: m={m:.3f}kg k={k:,.0f}N/m f_t={f_t:.1f}Hz x={x:.3f}m y={y:.3f}m")
+    return "\n".join(lines)
+
+
+def main(num_configurations: int = 10000, epochs: int = 150, batch_size: int = 64):
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
         dataset_file="datasets/dataset_erp_ft.pth", seed=727,
     )
     norm = dataset.norm_params
 
+    def mdn_loss(m, s, d, epoch):
+        return m.training_loss(s, d)
+
+    def cvae_loss(m, s, d, epoch):
+        beta = KL_TARGET_BETA * min(1.0, epoch / KL_WARMUP_EPOCHS)
+        return m.training_loss(s, d, beta=beta)
+
+    def flow_loss(m, s, d, epoch):
+        return m.training_loss(s, d)
+
+    def diffusion_loss(m, s, d, epoch):
+        return m.training_loss(s, d)
+
     models = {
-        "MDN": (MDN(design_dim=DESIGN_DIM, num_components=10), lambda m, s, d: m.training_loss(s, d), 1e-3),
-        "cVAE": (ConditionalVAE(design_dim=DESIGN_DIM, latent_dim=8), lambda m, s, d: m.training_loss(s, d), 1e-3),
-        "Flow": (ConditionalFlow(design_dim=DESIGN_DIM, num_layers=8, hidden=96), lambda m, s, d: m.training_loss(s, d), 5e-4),
-        "Diffusion": (ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=200, hidden=128), lambda m, s, d: m.training_loss(s, d), 1e-3),
+        "MDN": (MDN(design_dim=DESIGN_DIM, num_components=10), mdn_loss, 1e-3),
+        "cVAE": (ConditionalVAE(design_dim=DESIGN_DIM, latent_dim=8), cvae_loss, 1e-3),
+        "Flow": (ConditionalFlow(design_dim=DESIGN_DIM, num_layers=8, hidden=96), flow_loss, 5e-4),
+        "Diffusion": (ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=100, hidden=128), diffusion_loss, 1e-3),
     }
 
     histories = {}
@@ -93,8 +146,7 @@ def main(num_configurations: int = 10000, epochs: int = 60, batch_size: int = 32
         save_checkpoint(model, norm, f"models/inverse_{name.lower()}.pth")
 
     # ------------------------------------------------------------------
-    # Validation: sample designs, run them back through the forward
-    # operator, compare reconstructed spectra to the true target.
+    # Validation + per-sample reporting.
     # ------------------------------------------------------------------
     checkpoint = load_operator_checkpoint("models/gno_erp.pth")
     fwd_spec = OPERATORS[FORWARD_OPERATOR_KEY]
@@ -111,7 +163,6 @@ def main(num_configurations: int = 10000, epochs: int = 60, batch_size: int = 32
         if sum(s.shape[0] for s in test_spectrum) >= num_examples:
             break
     test_spectrum = torch.cat(test_spectrum, dim=0)[:num_examples]
-    test_design = torch.cat(test_design, dim=0)[:num_examples]
     frequency = torch.from_numpy(
         ((dataset.frequency_values - norm["freq_mean"]) / norm["freq_std"]).astype(np.float32)
     )[None, :, None].expand(num_examples, -1, -1)
@@ -119,23 +170,70 @@ def main(num_configurations: int = 10000, epochs: int = 60, batch_size: int = 32
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
 
-    fig, axes = plt.subplots(num_examples, len(models), figsize=(4.5 * len(models), 3.5 * num_examples))
+    out_dir = Path("plots/INVERSE_OPERATORS")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_lines = []
+
+    fig, axes = plt.subplots(num_examples, len(models), figsize=(4.8 * len(models), 4.2 * num_examples))
     for row in range(num_examples):
+        report_lines.append(f"\n{'=' * 90}\nExample {row + 1}\n{'=' * 90}")
         for col, name in enumerate(models):
             model = models[name][0]
             model.eval()
             with torch.no_grad():
-                flat_samples = model.sample(test_spectrum[row : row + 1], num_samples=num_samples)[0]
+                result = model.sample(test_spectrum[row : row + 1], num_samples=num_samples)
+            has_log_prob = isinstance(result, tuple)
+            flat_samples = result[0][0] if has_log_prob else result[0]
+            log_probs = result[1][0] if has_log_prob else None
+
             configuration = flat_samples.view(num_samples, NUM_RES, 5)
             freq_batch = frequency[row : row + 1].expand(num_samples, -1, -1)
             with torch.no_grad():
                 predicted = forward_model(configuration, freq_batch)
             predicted_erp = denormalize_erp_array(predicted.numpy()[..., 0], norm)
+            recon_mse = ((predicted.numpy()[..., 0] - test_spectrum[row].numpy()[None, :]) ** 2).mean(axis=1)
+
+            if has_log_prob:
+                log_probs_np = log_probs.numpy()
+                confidence = np.exp(log_probs_np - log_probs_np.max())
+                confidence = confidence / confidence.sum()
+                best_idx = int(log_probs_np.argmax())
+                score_label = "log p(design|spectrum)"
+                scores = log_probs_np
+            else:
+                # Diffusion has no tractable density; use spectrum-consistency
+                # (negative reconstruction MSE) as an explicit, differently-
+                # labeled confidence proxy instead.
+                confidence = np.exp(-recon_mse) / np.exp(-recon_mse).sum()
+                best_idx = int(recon_mse.argmin())
+                score_label = "spectrum-consistency (-MSE, NOT a probability)"
+                scores = -recon_mse
+
+            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
+
+            report_lines.append(f"\n--- {name} ({score_label}) ---")
+            for i in range(num_samples):
+                marker = " <-- best" if i == best_idx else ""
+                report_lines.append(
+                    f"sample {i + 1}: score={scores[i]:+.4f}  relative_confidence={confidence[i] * 100:5.1f}%"
+                    f"  recon_MSE={recon_mse[i]:.4f}{marker}"
+                )
+                report_lines.append(format_configuration(physical[i]))
 
             ax = axes[row, col] if num_examples > 1 else axes[col]
             for i in range(num_samples):
-                ax.plot(freq_hz, predicted_erp[i], color="#4C72B0", alpha=0.35, lw=1.2)
+                if i == best_idx:
+                    continue
+                ax.plot(freq_hz, predicted_erp[i], color="#4C72B0", alpha=0.3, lw=1.1)
+            ax.plot(freq_hz, predicted_erp[best_idx], color="#C44E52", lw=2.0, label="Best sample")
             ax.plot(freq_hz, true_erp[row], color="black", lw=2, label="Target")
+            best_conf = confidence[best_idx] * 100
+            ax.text(
+                0.02, 0.98,
+                f"best: {best_conf:.0f}% rel.\nconfidence",
+                transform=ax.transAxes, va="top", ha="left", fontsize=8,
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="gray"),
+            )
             if row == 0:
                 ax.set_title(name, fontsize=11)
             if col == 0:
@@ -146,23 +244,25 @@ def main(num_configurations: int = 10000, epochs: int = 60, batch_size: int = 32
                 ax.legend(fontsize=8)
 
     fig.suptitle(
-        f"Inverse-design validation: {num_samples} sampled designs per method, "
-        "run back through the trained forward operator (GNO)",
+        f"Inverse-design validation: {num_samples} sampled designs per method "
+        "(best-scoring highlighted red), run back through the forward operator (GNO)",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    out_dir = Path("plots/INVERSE_OPERATORS")
-    out_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_dir / "validation_reconstructions.png", dpi=150)
     plt.close(fig)
     print(f"Saved validation figure to {out_dir / 'validation_reconstructions.png'}")
+
+    report_path = out_dir / "sample_configurations_and_scores.txt"
+    report_path.write_text("\n".join(report_lines))
+    print(f"Saved per-sample configurations + scores to {report_path}")
 
     fig, ax = plt.subplots(figsize=(9, 6))
     for name, history in histories.items():
         ax.plot(history["val"], label=name, lw=2)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Validation loss (method-specific NLL/MSE, not comparable across methods)")
-    ax.set_title("Inverse model training curves")
+    ax.set_title("Inverse model training curves (post-fix: LR schedule + best-checkpoint + KL annealing + cosine diffusion schedule)")
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()

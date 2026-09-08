@@ -13,6 +13,8 @@ the target spectrum embedding.
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -65,10 +67,8 @@ class ConditionalFlow(nn.Module):
             layers.append(AffineCoupling(design_dim, embed_dim, hidden, mask))
         self.layers = nn.ModuleList(layers)
 
-    def forward(self, design: torch.Tensor, spectrum: torch.Tensor):
-        """design -> latent z, plus total log-det-Jacobian (for training)."""
-        flat = flatten_configuration(design)
-        cond = self.encoder(spectrum)
+    def _transform_flat(self, flat: torch.Tensor, cond: torch.Tensor):
+        """Already-flat design -> latent z, plus total log-det-Jacobian."""
         z = flat
         log_det_total = torch.zeros(flat.shape[0], device=flat.device)
         for layer in self.layers:
@@ -76,19 +76,34 @@ class ConditionalFlow(nn.Module):
             log_det_total = log_det_total + log_det
         return z, log_det_total
 
+    def _log_prob_flat(self, flat: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        z, log_det = self._transform_flat(flat, cond)
+        log_prior = -0.5 * (z**2).sum(dim=-1) - 0.5 * self.design_dim * math.log(2 * math.pi)
+        return log_prior + log_det
+
+    def forward(self, design: torch.Tensor, spectrum: torch.Tensor):
+        """design -> latent z, plus total log-det-Jacobian (for training)."""
+        flat = flatten_configuration(design)
+        cond = self.encoder(spectrum)
+        return self._transform_flat(flat, cond)
+
+    def log_prob(self, spectrum: torch.Tensor, design: torch.Tensor) -> torch.Tensor:
+        """Exact log p(design | spectrum) -- the change-of-variables density."""
+        flat = flatten_configuration(design)
+        cond = self.encoder(spectrum)
+        return self._log_prob_flat(flat, cond)
+
     def training_loss(self, spectrum: torch.Tensor, design: torch.Tensor) -> torch.Tensor:
-        z, log_det = self.forward(design, spectrum)
-        # Negative log-likelihood under a standard Gaussian latent prior,
-        # corrected by the change-of-variables log-det-Jacobian term.
-        log_prior = -0.5 * (z**2).sum(dim=-1) - 0.5 * self.design_dim * torch.log(
-            torch.tensor(2 * torch.pi, device=z.device)
-        )
-        log_prob = log_prior + log_det
-        return -log_prob.mean()
+        return -self.log_prob(spectrum, design).mean()
 
     @torch.no_grad()
-    def sample(self, spectrum: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
-        """Returns ``(B, num_samples, design_dim)`` flat normalized design samples."""
+    def sample(self, spectrum: torch.Tensor, num_samples: int = 1):
+        """Returns ``(flat_designs, log_prob)``, both ``(B, num_samples, ...)``.
+
+        ``log_prob`` is the exact ``log p(design | spectrum)`` of each
+        returned design under this model -- usable directly as a per-sample
+        probability/confidence score.
+        """
         b = spectrum.shape[0]
         cond = self.encoder(spectrum)
         cond = cond[:, None, :].expand(-1, num_samples, -1).reshape(b * num_samples, -1)
@@ -96,4 +111,5 @@ class ConditionalFlow(nn.Module):
         x = z
         for layer in reversed(self.layers):
             x = layer.inverse(x, cond)
-        return x.view(b, num_samples, self.design_dim)
+        log_prob = self._log_prob_flat(x, cond)
+        return x.view(b, num_samples, self.design_dim), log_prob.view(b, num_samples)

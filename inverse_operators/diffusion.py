@@ -58,12 +58,11 @@ class ConditionalDiffusion(nn.Module):
     def __init__(
         self,
         design_dim: int,
-        num_steps: int = 200,
+        num_steps: int = 100,
         embed_dim: int = 96,
         time_dim: int = 32,
         hidden: int = 128,
-        beta_start: float = 1e-4,
-        beta_end: float = 0.02,
+        cosine_s: float = 0.008,
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
@@ -72,7 +71,19 @@ class ConditionalDiffusion(nn.Module):
         self.encoder = SpectrumEncoder(embed_dim=embed_dim)
         self.denoiser = Denoiser(design_dim, embed_dim, time_dim, hidden)
 
-        betas = torch.linspace(beta_start, beta_end, num_steps)
+        # Cosine schedule (Nichol & Dhariwal, "Improved DDPM") instead of the
+        # standard linear one. A linear schedule spends most of its steps in
+        # the high-noise regime, where predicting the injected noise from an
+        # almost-pure-noise x_t is close to ill-posed by construction -- for
+        # a small design vector like this one (15 dims), that dominates the
+        # averaged training loss and can make real progress at the more
+        # useful low-noise steps look like a flat curve. Cosine spends more
+        # of the schedule in the low/medium-noise regime instead.
+        steps = num_steps + 1
+        t = torch.linspace(0, num_steps, steps) / num_steps
+        f_t = torch.cos((t + cosine_s) / (1 + cosine_s) * math.pi * 0.5) ** 2
+        alpha_bars_full = f_t / f_t[0]
+        betas = (1.0 - alpha_bars_full[1:] / alpha_bars_full[:-1]).clamp(max=0.999)
         alphas = 1.0 - betas
         alpha_bars = torch.cumprod(alphas, dim=0)
         self.register_buffer("betas", betas)
