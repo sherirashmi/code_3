@@ -26,6 +26,7 @@ from operators.siren_operator import (
 )
 from operators.wno import build_model as build_wno, DEFAULT_MODEL_CONFIG as WNO_MODEL_CONFIG
 from operators.nn import build_model as build_nn, DEFAULT_MODEL_CONFIG as NN_MODEL_CONFIG
+from operators.lno import build_model as build_lno, DEFAULT_MODEL_CONFIG as LNO_MODEL_CONFIG
 
 
 def _make_spec(
@@ -142,6 +143,15 @@ OPERATORS = {
         operator_name="NN",
         build_model=build_nn,
         model_config=NN_MODEL_CONFIG,
+        epochs=200,
+        lr=5e-4,
+    ),
+    "10": _make_spec(
+        name="Laplace Neural Operator",
+        short="LNO",
+        operator_name="LNO",
+        build_model=build_lno,
+        model_config=LNO_MODEL_CONFIG,
         epochs=200,
         lr=5e-4,
     ),
