@@ -397,6 +397,54 @@ class ERPDataset(Dataset):
         self.norm_params = None
         return self
 
+    def load_shards(self, filenames: Sequence[str]) -> "ERPDataset":
+        """Load and concatenate several same-schema dataset shards as one dataset.
+
+        Some datasets (e.g. the 100k-configuration set) are stored as
+        multiple files purely to stay under GitHub's 100MB per-file limit --
+        each shard is a normal, independently loadable dataset saved by
+        :meth:`generate`/:meth:`to_payload`, just covering a different slice
+        of configurations. This concatenates them in memory into one
+        dataset with no separate merged file ever needing to exist on disk.
+        """
+        if not filenames:
+            raise ValueError("filenames must not be empty.")
+
+        payloads = [load_dataset(f) for f in filenames]
+        first = payloads[0]
+
+        feature_names = tuple(first.get("feature_names", ()))
+        if feature_names != FEATURE_NAMES:
+            raise ValueError(
+                f"{filenames[0]} does not contain the expected [m, k, f_t, x, y] dataset. "
+                f"Found feature_names={feature_names or 'missing'}."
+            )
+        num_res = int(first["num_res"])
+        frequency_values = np.asarray(first["frequency_values"], dtype=np.float32)
+        for filename, payload in zip(filenames[1:], payloads[1:], strict=True):
+            if int(payload["num_res"]) != num_res:
+                raise ValueError(f"{filename} has a different num_res than {filenames[0]}.")
+            if not np.array_equal(
+                np.asarray(payload["frequency_values"], dtype=np.float32), frequency_values
+            ):
+                raise ValueError(f"{filename} has different frequency_values than {filenames[0]}.")
+
+        self.num_res = num_res
+        self.seed = int(first.get("seed", self.seed))
+        self.frequency_values = frequency_values
+        self.configuration_features = np.concatenate(
+            [np.asarray(p["configuration_features"], dtype=np.float32) for p in payloads], axis=0
+        )
+        self.responses = np.concatenate(
+            [np.asarray(p["responses"], dtype=np.float32) for p in payloads], axis=0
+        )
+        self.num_samples = self.configuration_features.shape[0]
+
+        self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
+        self.split_configuration_ids = None
+        self.norm_params = None
+        return self
+
     # --------------------------------------------------
     # Configuration subset and split
     # --------------------------------------------------
