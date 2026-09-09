@@ -813,7 +813,7 @@ def prepare_erp_dataset(
     *,
     batch_size: int = 64,
     num_res: int = default_num_res,
-    dataset_file: str = DEFAULT_DATASET_FILE,
+    dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
     seed: int = 727,
@@ -837,9 +837,14 @@ def prepare_erp_dataset(
     num_res:
         Number of resonators per configuration.
     dataset_file:
-        Shared raw ERP dataset file.
+        Shared raw ERP dataset file. Pass a list/tuple of filenames instead
+        of one string to load a dataset stored as multiple same-schema
+        shards (e.g. a dataset split to stay under a hosting size limit) --
+        see :meth:`ERPDataset.load_shards`. Sharded datasets are loaded
+        as-is and never auto-generated/regenerated here.
     regenerate_dataset:
-        If True, regenerate and overwrite ``dataset_file``.
+        If True, regenerate and overwrite ``dataset_file``. Not supported
+        when ``dataset_file`` is a list of shards.
     num_generate:
         Number of raw configurations to generate when creating/regenerating the file.
         If omitted, ``num_samples`` configurations are generated.
@@ -858,39 +863,55 @@ def prepare_erp_dataset(
     if num_samples < 3:
         raise ValueError("num_samples must be at least 3.")
 
-    path = Path(dataset_file)
-    should_generate = regenerate_dataset or not path.exists()
+    is_sharded = not isinstance(dataset_file, (str, Path))
 
-    if should_generate:
-        n_generate = num_samples if num_generate is None else int(num_generate)
-        if n_generate < 3:
-            raise ValueError("num_generate must be at least 3.")
-        if n_generate < num_samples and preprocessing_state is None:
-            raise ValueError("num_generate cannot be smaller than num_samples.")
-
+    if is_sharded:
+        if regenerate_dataset:
+            raise ValueError("regenerate_dataset is not supported with a sharded dataset_file.")
         if verbose:
-            reason = "regenerate_dataset=True" if regenerate_dataset else "file missing"
-            print(f"Creating raw ERP dataset ({reason}): {dataset_file}")
-
-        dataset = ERPDataset(
-            num_samples=n_generate,
-            num_res=num_res,
-            seed=seed,
-        )
-        dataset.generate(save=True, filename=dataset_file, verbose=verbose)
-    else:
-        dataset = ERPDataset(
-            num_samples=max(num_samples, 3),
-            num_res=num_res,
-            seed=seed,
-        )
-        dataset.load(dataset_file)
+            print(f"Loading sharded raw ERP dataset ({len(dataset_file)} files): {list(dataset_file)}")
+        dataset = ERPDataset(num_samples=max(num_samples, 3), num_res=num_res, seed=seed)
+        dataset.load_shards(list(dataset_file))
 
         if dataset.num_res != int(num_res):
             raise ValueError(
                 f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                 "was requested. Use a matching dataset file or regenerate it."
             )
+    else:
+        path = Path(dataset_file)
+        should_generate = regenerate_dataset or not path.exists()
+
+        if should_generate:
+            n_generate = num_samples if num_generate is None else int(num_generate)
+            if n_generate < 3:
+                raise ValueError("num_generate must be at least 3.")
+            if n_generate < num_samples and preprocessing_state is None:
+                raise ValueError("num_generate cannot be smaller than num_samples.")
+
+            if verbose:
+                reason = "regenerate_dataset=True" if regenerate_dataset else "file missing"
+                print(f"Creating raw ERP dataset ({reason}): {dataset_file}")
+
+            dataset = ERPDataset(
+                num_samples=n_generate,
+                num_res=num_res,
+                seed=seed,
+            )
+            dataset.generate(save=True, filename=dataset_file, verbose=verbose)
+        else:
+            dataset = ERPDataset(
+                num_samples=max(num_samples, 3),
+                num_res=num_res,
+                seed=seed,
+            )
+            dataset.load(dataset_file)
+
+            if dataset.num_res != int(num_res):
+                raise ValueError(
+                    f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
+                    "was requested. Use a matching dataset file or regenerate it."
+                )
 
     # Restore an exact trained preprocessing state when requested; otherwise
     # choose num_samples configurations reproducibly from the raw dataset.
@@ -925,9 +946,10 @@ def prepare_erp_dataset(
     if verbose:
         info = dataset.summary()
         split_sizes = info["split_sizes_configurations"]
+        raw_file_display = ", ".join(dataset_file) if is_sharded else str(dataset_file)
         print("=" * 68)
         print("ERP dataset ready")
-        print(f"Raw file              : {dataset_file}")
+        print(f"Raw file              : {raw_file_display}")
         print(f"Configurations used          : {info['num_configurations']}")
         print(f"Resonators/configuration     : {info['num_res']}")
         print(f"Frequencies/configuration    : {info['num_frequencies']}")
