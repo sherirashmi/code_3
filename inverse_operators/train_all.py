@@ -109,10 +109,15 @@ def format_configuration(configuration: np.ndarray) -> str:
     return "\n".join(lines)
 
 
-def main(num_configurations: int = 10000, epochs: int = 150, batch_size: int = 64):
+def main(
+    num_configurations: int = 10000,
+    epochs: int = 150,
+    batch_size: int = 64,
+    dataset_file="datasets/dataset_erp_ft.pth",
+):
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
-        dataset_file="datasets/dataset_erp_ft.pth", seed=727,
+        dataset_file=dataset_file, seed=727,
     )
     norm = dataset.norm_params
 
