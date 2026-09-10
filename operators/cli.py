@@ -143,6 +143,27 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
         print("Please enter y or n.")
 
 
+def _prompt_dataset_file() -> str | list[str]:
+    """Ask which raw dataset to train against.
+
+    Training has no existing checkpoint to recover a dataset file from (that
+    self-describing recovery only applies to evaluate/predict, see
+    run_operator_experiment), so it must be chosen explicitly -- otherwise
+    it silently defaults to the small 10k dataset even when the user asks
+    for more configurations than that file contains.
+    """
+    print("\nWhich dataset to train on?")
+    print(f"1. Default {DEFAULT_DATASET_FILE} (10,000 configurations)")
+    print(f"2. 100k-configuration dataset (sharded: {', '.join(_HUNDRED_K_DATASET_FILES)})")
+    while True:
+        raw = input("Select dataset [1]: ").strip()
+        if raw in ("", "1"):
+            return DATASET_FILE
+        if raw == "2":
+            return _HUNDRED_K_DATASET_FILES
+        print("Please enter 1 or 2.")
+
+
 def _prompt_lbfgs_epochs() -> int:
     """Ask whether to run an L-BFGS full-batch fine-tuning phase after AdamW."""
     if not _prompt_yes_no(
@@ -343,7 +364,7 @@ def train_all_models(
     operator_specs: list[dict[str, object]] | None = None,
     num_configurations: int = 500,
     batch_size: int = 16,
-    dataset_file: str = DATASET_FILE,
+    dataset_file: str | list[str] = DATASET_FILE,
     regenerate_dataset: bool = False,
     seed: int = SEED,
     lbfgs_epochs: int = 0,
@@ -544,9 +565,11 @@ def main_all_models():
     operator_specs = _prompt_operator_selection(
         "Which operators to train (e.g. 2,4,5)"
     )
+    dataset_file = _prompt_dataset_file()
+    is_sharded = isinstance(dataset_file, list)
     num_configurations = _prompt_int(
         "Number of configurations to use for every model",
-        default=5000,
+        default=100000 if is_sharded else 5000,
         minimum=3,
     )
     batch_size = _prompt_int(
@@ -558,10 +581,14 @@ def main_all_models():
         "Epochs to use for every selected operator (overrides each one's own default)",
         minimum=1,
     )
-    regenerate_dataset = _prompt_yes_no(
-        "Regenerate and overwrite the ERP dataset before training",
-        default=False,
-    )
+    if is_sharded:
+        regenerate_dataset = False
+        print("(Regenerate is not supported for the sharded 100k dataset -- skipped.)")
+    else:
+        regenerate_dataset = _prompt_yes_no(
+            "Regenerate and overwrite the ERP dataset before training",
+            default=False,
+        )
     lbfgs_epochs = _prompt_lbfgs_epochs()
 
     print(f"All figures will be saved under: {PLOTS_DIR}")
@@ -571,7 +598,7 @@ def main_all_models():
         operator_specs=operator_specs,
         num_configurations=num_configurations,
         batch_size=batch_size,
-        dataset_file=DATASET_FILE,
+        dataset_file=dataset_file,
         regenerate_dataset=regenerate_dataset,
         seed=SEED,
         lbfgs_epochs=lbfgs_epochs,
@@ -608,8 +635,12 @@ def main_forward():
     print("=" * 68)
 
     if action == "train":
+        dataset_file = _prompt_dataset_file()
+        is_sharded = isinstance(dataset_file, list)
         num_configurations = _prompt_int(
-            "Number of configurations to use", default=5000, minimum=3
+            "Number of configurations to use",
+            default=100000 if is_sharded else 5000,
+            minimum=3,
         )
         batch_size = _prompt_int(
             "Batch size (complete ERP spectra per batch)", default=16, minimum=1
@@ -620,9 +651,13 @@ def main_forward():
         learning_rate = _prompt_float(
             "Learning rate", default=float(spec["lr"]), minimum=0.0
         )
-        regenerate_dataset = _prompt_yes_no(
-            "Regenerate and overwrite the ERP dataset before training", default=False
-        )
+        if is_sharded:
+            regenerate_dataset = False
+            print("(Regenerate is not supported for the sharded 100k dataset -- skipped.)")
+        else:
+            regenerate_dataset = _prompt_yes_no(
+                "Regenerate and overwrite the ERP dataset before training", default=False
+            )
         lbfgs_epochs = _prompt_lbfgs_epochs()
         show_plot = _prompt_yes_no(
             "Also display the saved training and evaluation plots", default=False
@@ -638,7 +673,7 @@ def main_forward():
             epochs=epochs,
             learning_rate=learning_rate,
             lbfgs_epochs=lbfgs_epochs,
-            dataset_file=DATASET_FILE,
+            dataset_file=dataset_file,
             regenerate_dataset=regenerate_dataset,
             seed=SEED,
             plot=False,
