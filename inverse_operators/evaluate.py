@@ -120,7 +120,20 @@ def main(
         "datasets/dataset_erp_ft_100k_part1.pth",
         "datasets/dataset_erp_ft_100k_part2.pth",
     ),
+    model_names: list[str] | None = None,
 ):
+    """Evaluate the given inverse models (default: all of ``MODEL_BUILDERS``)
+    against ``num_test_examples`` held-out targets, solver-scored.
+
+    ``model_names`` lets a caller (e.g. the CLI's single-model workflow)
+    restrict this to just one model instead of the full cross-model
+    comparison every plot/table here was originally built for -- MAE/RMSE/
+    Pearson r/R^2 are still meaningful for one model alone, only the
+    relative-ranking framing loses its "compared to what" when there's
+    nothing else in the run.
+    """
+    active_models = {name: MODEL_BUILDERS[name] for name in (model_names or MODEL_BUILDERS)}
+
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=64,
         dataset_file=list(dataset_file), seed=727,
@@ -143,7 +156,7 @@ def main(
     print(f"Using {num_workers} worker processes for the physics solver.")
 
     with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
-        for name in MODEL_BUILDERS:
+        for name in active_models:
             print(f"Evaluating {name} ({n} targets x {num_samples} samples, actual solver) ...")
             model, _ = load_inverse_model(name)
 
@@ -236,7 +249,13 @@ def main(
     print(f"Saved {OUT_DIR / 'prediction_stats_bars.png'}")
 
     # ---- prediction vs ground truth scatter, one panel per method ----
-    fig, axes = plt.subplots(1, 4, figsize=(19, 4.8), sharex=True, sharey=True)
+    # squeeze=False keeps axes a 2D array even when only 1 model is being
+    # evaluated (the CLI's single-model workflow) -- squeeze=True (the
+    # default) collapses a 1-row-1-col grid to a bare Axes, which isn't
+    # iterable, and a 1-row-N-col grid to a 1D array either way, so
+    # indexing this consistently needs the explicit False.
+    fig, axes_grid = plt.subplots(1, len(names), figsize=(4.75 * len(names), 4.8), sharex=True, sharey=True, squeeze=False)
+    axes = axes_grid[0]
     lo = min(true_erp_db.min(), *(predictions_db[m].min() for m in names))
     hi = max(true_erp_db.max(), *(predictions_db[m].max() for m in names))
     rng = np.random.default_rng(0)

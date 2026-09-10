@@ -40,7 +40,6 @@ from inverse_operators import evaluate_design as inverse_evaluate_design
 
 
 DATASET_FILE = DEFAULT_DATASET_FILE
-INVERSE_DATASET_FILE = DEFAULT_DATASET_FILE
 
 # Stopgap for checkpoints saved before ERPDataset.preprocessing_state()
 # started recording which raw file its selected_source_ids came from (see
@@ -757,6 +756,11 @@ def main_forward():
 # ==================================================
 
 
+def _as_dataset_tuple(dataset_file) -> tuple:
+    """evaluate.py/evaluate_design.py want a tuple/list; training wants str or list."""
+    return tuple(dataset_file) if isinstance(dataset_file, (list, tuple)) else (dataset_file,)
+
+
 def main_all_inverse_models():
     """Train every inverse model, then optionally run the solver-scored evaluations."""
     print("\nAll-inverse-model training parameters")
@@ -764,8 +768,12 @@ def main_all_inverse_models():
     for spec in INVERSE_MODELS.values():
         print(f"  {spec['short']:>10s}: epochs={spec['epochs']}, lr={spec['lr']:g}")
 
+    dataset_file = _prompt_dataset_file()
+    is_sharded = isinstance(dataset_file, list)
     num_configurations = _prompt_int(
-        "Number of configurations to use", default=10000, minimum=3
+        "Number of configurations to use",
+        default=100000 if is_sharded else 10000,
+        minimum=3,
     )
     batch_size = _prompt_int(
         "Batch size (target spectra per batch)", default=64, minimum=1
@@ -782,7 +790,7 @@ def main_all_inverse_models():
         num_configurations=num_configurations,
         epochs=epochs,
         batch_size=batch_size,
-        dataset_file=INVERSE_DATASET_FILE,
+        dataset_file=dataset_file,
     )
 
     if _prompt_yes_no(
@@ -802,9 +810,7 @@ def main_all_inverse_models():
             num_test_examples=num_test_examples,
             num_samples=num_samples,
             num_configurations=num_configurations,
-            dataset_file=INVERSE_DATASET_FILE
-            if isinstance(INVERSE_DATASET_FILE, (list, tuple))
-            else (INVERSE_DATASET_FILE,),
+            dataset_file=_as_dataset_tuple(dataset_file),
         )
 
     if _prompt_yes_no(
@@ -822,15 +828,26 @@ def main_all_inverse_models():
             num_test_examples=num_test_examples,
             num_samples=num_samples,
             num_configurations=num_configurations,
-            dataset_file=INVERSE_DATASET_FILE
-            if isinstance(INVERSE_DATASET_FILE, (list, tuple))
-            else (INVERSE_DATASET_FILE,),
+            dataset_file=_as_dataset_tuple(dataset_file),
         )
 
 
 # ==================================================
 # Inverse: single-model workflow
 # ==================================================
+
+INVERSE_ACTIONS = {
+    "1": "train",
+    "2": "evaluate",
+    "3": "predict",
+}
+
+
+def _print_inverse_action_menu() -> None:
+    print("\nOperation")
+    print("1. Train")
+    print("2. Evaluate (aggregate MAE/RMSE/Pearson r/R^2 + design-parameter recovery)")
+    print("3. Predict (sample designs for one target spectrum)")
 
 
 def main_inverse():
@@ -844,39 +861,110 @@ def main_inverse():
         return main_all_inverse_models()
 
     spec = INVERSE_MODELS[key]
+    _print_inverse_action_menu()
+    action = INVERSE_ACTIONS[_prompt_choice("Select operation: ", INVERSE_ACTIONS)]
+
     print("\n" + "=" * 68)
     print(f"Model    : {spec['name']} ({spec['short']})")
-    print(f"Dataset  : {INVERSE_DATASET_FILE}")
+    print(f"Action   : {action}")
     print(f"Seed     : {SEED}")
-    print("Only 'train' is available for a single inverse model -- the")
-    print("solver-scored evaluations compare all 4 models against each")
-    print("other and live under 'Train ALL inverse models' instead.")
     print("=" * 68)
 
+    if action == "train":
+        dataset_file = _prompt_dataset_file()
+        is_sharded = isinstance(dataset_file, list)
+        num_configurations = _prompt_int(
+            "Number of configurations to use",
+            default=100000 if is_sharded else 10000,
+            minimum=3,
+        )
+        batch_size = _prompt_int(
+            "Batch size (target spectra per batch)", default=64, minimum=1
+        )
+        epochs = _prompt_int(
+            "Number of epochs", default=int(spec["epochs"]), minimum=1
+        )
+
+        model, history, dataset = train_one_inverse_model(
+            key,
+            num_configurations=num_configurations,
+            epochs=epochs,
+            batch_size=batch_size,
+            dataset_file=dataset_file,
+            seed=SEED,
+        )
+        print(
+            f"\n{spec['short']} trained: final val loss={history['val'][-1]:.4f}, "
+            f"best val loss={min(history['val']):.4f}"
+        )
+        print(f"Checkpoint saved to models/inverse_{spec['short'].lower()}.pth")
+        return {"model": model, "history": history, "dataset": dataset}
+
+    if action == "evaluate":
+        dataset_file = _prompt_dataset_file()
+        is_sharded = isinstance(dataset_file, list)
+        num_configurations = _prompt_int(
+            "Number of configurations backing the test split",
+            default=100000 if is_sharded else 10000,
+            minimum=3,
+        )
+        num_test_examples = _prompt_int(
+            "Held-out target spectra to evaluate", default=150, minimum=1
+        )
+        num_samples = _prompt_int(
+            "Samples per target (solver calls scale as examples x samples)",
+            default=8, minimum=1,
+        )
+        dataset_tuple = _as_dataset_tuple(dataset_file)
+        stats = inverse_evaluate.main(
+            num_test_examples=num_test_examples,
+            num_samples=num_samples,
+            num_configurations=num_configurations,
+            dataset_file=dataset_tuple,
+            model_names=[spec["short"]],
+        )
+        design_stats = inverse_evaluate_design.main(
+            num_test_examples=num_test_examples,
+            num_samples=num_samples,
+            num_configurations=num_configurations,
+            dataset_file=dataset_tuple,
+            model_names=[spec["short"]],
+        )
+        return {"stats": stats, "design_stats": design_stats}
+
+    # predict
+    dataset_file = _prompt_dataset_file()
+    is_sharded = isinstance(dataset_file, list)
     num_configurations = _prompt_int(
-        "Number of configurations to use", default=10000, minimum=3
+        "Number of configurations backing the test split (used for "
+        "normalization stats and, if chosen below, the test-split target)",
+        default=100000 if is_sharded else 10000,
+        minimum=3,
     )
-    batch_size = _prompt_int(
-        "Batch size (target spectra per batch)", default=64, minimum=1
+    print("\nPrediction target")
+    print("1. Enter a resonator configuration manually (its real solver-computed "
+          "ERP spectrum becomes the target to invert)")
+    print("2. Use the first spectrum from the saved test split")
+    target_choice = _prompt_choice("Select target input: ", {"1": None, "2": None})
+    configuration = (
+        _prompt_configuration(default_num_res) if target_choice == "1" else None
     )
-    epochs = _prompt_int(
-        "Number of epochs", default=int(spec["epochs"]), minimum=1
+    num_samples = _prompt_int(
+        "Number of candidate designs to sample", default=6, minimum=1
     )
 
-    model, history, dataset = train_one_inverse_model(
-        key,
+    from inverse_operators.predict import predict_one, print_report
+
+    result = predict_one(
+        spec["short"],
+        configuration=configuration,
+        num_samples=num_samples,
         num_configurations=num_configurations,
-        epochs=epochs,
-        batch_size=batch_size,
-        dataset_file=INVERSE_DATASET_FILE,
+        dataset_file=dataset_file,
         seed=SEED,
     )
-    print(
-        f"\n{spec['short']} trained: final val loss={history['val'][-1]:.4f}, "
-        f"best val loss={min(history['val']):.4f}"
-    )
-    print(f"Checkpoint saved to models/inverse_{spec['short'].lower()}.pth")
-    return {"model": model, "history": history, "dataset": dataset}
+    print_report(spec["short"], result)
+    return result
 
 
 # ==================================================

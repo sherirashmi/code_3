@@ -60,7 +60,13 @@ def main(
         "datasets/dataset_erp_ft_100k_part1.pth",
         "datasets/dataset_erp_ft_100k_part2.pth",
     ),
+    model_names: list[str] | None = None,
 ):
+    """``model_names`` restricts this to a subset of MODEL_BUILDERS (default
+    all), same rationale as evaluate.main()'s own ``model_names`` param.
+    """
+    active_models = list(model_names) if model_names else list(MODEL_BUILDERS)
+
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=64,
         dataset_file=list(dataset_file), seed=727,
@@ -89,7 +95,7 @@ def main(
     num_workers = max(1, os.cpu_count() or 1)
 
     with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
-        for name in MODEL_BUILDERS:
+        for name in active_models:
             print(f"Evaluating {name} design-parameter recovery ...")
             model, _ = load_inverse_model(name)
             with torch.no_grad():
@@ -116,7 +122,7 @@ def main(
             predictions[name] = best_physical
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    names = list(MODEL_BUILDERS)
+    names = active_models
     colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
 
     stats = {name: {} for name in names}
@@ -127,7 +133,11 @@ def main(
         "=" * 90,
     ]
 
-    fig, axes = plt.subplots(len(PARAMS), len(names), figsize=(4.4 * len(names), 4.0 * len(PARAMS)))
+    # squeeze=False: a 1-column grid (the CLI's single-model workflow)
+    # would otherwise collapse to a 1D array and break axes[row, col].
+    fig, axes = plt.subplots(
+        len(PARAMS), len(names), figsize=(4.4 * len(names), 4.0 * len(PARAMS)), squeeze=False
+    )
     for row, (short, idx, label) in enumerate(PARAMS):
         true_vals = true_physical[..., idx].ravel()  # (n*num_res,)
         lo, hi = true_vals.min(), true_vals.max()
