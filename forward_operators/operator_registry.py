@@ -9,24 +9,24 @@ Compatibility version:
 
 from __future__ import annotations
 
-from operators.neural_operator_utils import make_operator_runner
+from forward_operators.neural_operator_utils import make_operator_runner
 
-from operators.don import build_model as build_don, DEFAULT_MODEL_CONFIG as DON_MODEL_CONFIG
-from operators.dno import build_model as build_dno, DEFAULT_MODEL_CONFIG as DNO_MODEL_CONFIG
-from operators.fno import build_model as build_fno, DEFAULT_MODEL_CONFIG as FNO_MODEL_CONFIG
-from operators.dco import build_model as build_dco, DEFAULT_MODEL_CONFIG as DCO_MODEL_CONFIG
-from operators.gno import build_model as build_gno, DEFAULT_MODEL_CONFIG as GNO_MODEL_CONFIG
-from operators.set_transformer_operator import (
+from forward_operators.don import build_model as build_don, DEFAULT_MODEL_CONFIG as DON_MODEL_CONFIG
+from forward_operators.dno import build_model as build_dno, DEFAULT_MODEL_CONFIG as DNO_MODEL_CONFIG
+from forward_operators.fno import build_model as build_fno, DEFAULT_MODEL_CONFIG as FNO_MODEL_CONFIG
+from forward_operators.dco import build_model as build_dco, DEFAULT_MODEL_CONFIG as DCO_MODEL_CONFIG
+from forward_operators.gno import build_model as build_gno, DEFAULT_MODEL_CONFIG as GNO_MODEL_CONFIG
+from forward_operators.set_transformer_operator import (
     build_model as build_sto,
     DEFAULT_MODEL_CONFIG as STO_MODEL_CONFIG,
 )
-from operators.siren_operator import (
+from forward_operators.siren_operator import (
     build_model as build_siren,
     DEFAULT_MODEL_CONFIG as SIREN_MODEL_CONFIG,
 )
-from operators.wno import build_model as build_wno, DEFAULT_MODEL_CONFIG as WNO_MODEL_CONFIG
-from operators.nn import build_model as build_nn, DEFAULT_MODEL_CONFIG as NN_MODEL_CONFIG
-from operators.lno import build_model as build_lno, DEFAULT_MODEL_CONFIG as LNO_MODEL_CONFIG
+from forward_operators.wno import build_model as build_wno, DEFAULT_MODEL_CONFIG as WNO_MODEL_CONFIG
+from forward_operators.nn import build_model as build_nn, DEFAULT_MODEL_CONFIG as NN_MODEL_CONFIG
+from forward_operators.lno import build_model as build_lno, DEFAULT_MODEL_CONFIG as LNO_MODEL_CONFIG
 
 
 def _make_spec(

@@ -2,7 +2,7 @@
 
 Every inverse model here answers the same question: given a target ERP
 spectrum, what resonator configuration ([m,k,f_t,x,y] per resonator) would
-produce it? The forward problem (config -> spectrum) is what operators/
+produce it? The forward problem (config -> spectrum) is what forward_operators/
 already solves; every model in this package solves the reverse direction,
 and does it *probabilistically* -- returning a distribution over plausible
 designs rather than one point estimate, since the forward mapping is
@@ -42,7 +42,7 @@ from utils.erp_dataset import (
     normalize_configuration_array,
     normalize_erp_array,
 )
-from operators.neural_operator_utils import (
+from forward_operators.neural_operator_utils import (
     MLP,
     _configuration_features,
     _split_ids,

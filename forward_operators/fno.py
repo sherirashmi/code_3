@@ -1,14 +1,12 @@
-"""Multi-level Haar Wavelet Neural Operator (WNO) for ERP spectra."""
+"""Peak-aware 1D Fourier Neural Operator (FNO) for ERP spectra."""
 
 from __future__ import annotations
-
-import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from operators.neural_operator_utils import (
+from forward_operators.neural_operator_utils import (
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
     resolve_activation,
@@ -16,98 +14,87 @@ from operators.neural_operator_utils import (
 )
 
 
-class MultiLevelHaarWaveletBlock1d(nn.Module):
-    """Learned multi-scale Haar analysis/mixing/synthesis residual block.
+class SpectralConv1d(nn.Module):
+    """Learned convolution on retained Fourier modes."""
 
-    ``dropout`` counters the same overfitting pattern seen with FNO: WNO
-    reaches a very low training loss but its validation loss plateaus well
-    above DCO/DNO/GNO, since the many learned per-level conv filters give it
-    enough capacity to fit each training configuration's wavelet
-    coefficients closely without that precision generalizing.
+    def __init__(self, in_channels: int, out_channels: int, modes: int) -> None:
+        super().__init__()
+        self.in_channels = int(in_channels)
+        self.out_channels = int(out_channels)
+        self.modes = int(modes)
+        scale = 1.0 / max(1, in_channels * out_channels)
+        weight = scale * torch.randn(
+            in_channels, out_channels, modes, dtype=torch.cfloat
+        )
+        self.weight = nn.Parameter(weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n = x.shape[-1]
+        x_ft = torch.fft.rfft(x, dim=-1)
+        n_modes = min(self.modes, x_ft.shape[-1])
+        out_ft = torch.zeros(
+            x.shape[0],
+            self.out_channels,
+            x_ft.shape[-1],
+            device=x.device,
+            dtype=torch.cfloat,
+        )
+        out_ft[:, :, :n_modes] = torch.einsum(
+            "bim,iom->bom",
+            x_ft[:, :, :n_modes],
+            self.weight[:, :, :n_modes],
+        )
+        return torch.fft.irfft(out_ft, n=n, dim=-1)
+
+
+class FNOBlock1d(nn.Module):
+    """Global Fourier mixing plus local kernel-3 peak refinement.
+
+    ``dropout`` fights the overfitting FNO otherwise shows on this dataset:
+    training loss reaches the lowest value of any architecture here while
+    validation loss plateaus well above DCO/DNO and drifts back up late in
+    training — the retained Fourier modes give it enough global capacity to
+    fit each training spectrum's coefficients fairly exactly without that
+    capacity transferring to held-out configurations.
     """
 
     def __init__(
         self,
         width: int,
-        levels: int = 3,
+        modes: int,
         dropout: float = 0.0,
         activation: str | type[nn.Module] = "gelu",
     ) -> None:
         super().__init__()
-        if levels <= 0:
-            raise ValueError("levels must be positive.")
-        self.levels = int(levels)
-        self.low_mix = nn.ModuleList(
-            [nn.Conv1d(width, width, kernel_size=3, padding=1) for _ in range(levels)]
-        )
-        self.high_mix = nn.ModuleList(
-            [nn.Conv1d(width, width, kernel_size=3, padding=1) for _ in range(levels)]
-        )
-        self.coarse_mix = nn.Conv1d(width, width, kernel_size=3, padding=1)
+        self.spectral = SpectralConv1d(width, width, modes)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
         self.activation = resolve_activation(activation)()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        inv_sqrt2 = 1.0 / math.sqrt(2.0)
-        current = x
-        details: list[torch.Tensor] = []
-        original_lengths: list[int] = []
-
-        for level in range(self.levels):
-            original_n = current.shape[-1]
-            original_lengths.append(original_n)
-            if original_n % 2:
-                padded = F.pad(current, (0, 1), mode="replicate")
-            else:
-                padded = current
-
-            even = padded[..., 0::2]
-            odd = padded[..., 1::2]
-            low = (even + odd) * inv_sqrt2
-            high = (even - odd) * inv_sqrt2
-
-            low = self.activation(self.low_mix[level](low))
-            high = self.activation(self.high_mix[level](high))
-            details.append(high)
-            current = low
-
-        current = self.activation(self.coarse_mix(current))
-
-        for level in reversed(range(self.levels)):
-            high = details[level]
-            even = (current + high) * inv_sqrt2
-            odd = (current - high) * inv_sqrt2
-            reconstructed = torch.empty(
-                *even.shape[:-1],
-                even.shape[-1] * 2,
-                device=x.device,
-                dtype=x.dtype,
-            )
-            reconstructed[..., 0::2] = even
-            reconstructed[..., 1::2] = odd
-            current = reconstructed[..., : original_lengths[level]]
-
-        return self.dropout(self.activation(self.norm(x + current + self.local(x))))
+        y = x + self.spectral(x) + self.local(x)
+        return self.dropout(self.activation(self.norm(y)))
 
 
-class WNO(nn.Module):
-    """Physics-aware multi-level WNO with explicit resonance-query features."""
+class FNO(nn.Module):
+    """FNO with more retained modes, local mixing, padding and detuning features."""
 
     def __init__(
         self,
         num_res: int,
-        width: int = 96,
+        width: int = 64,
+        modes: int = 64,
         depth: int = 4,
-        levels: int = 3,
         config_hidden: int = 128,
         query_dim: int = 48,
+        padding: int = 8,
         dropout: float = 0.1,
         activation: str | type[nn.Module] = "gelu",
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
+        self.padding = int(padding)
         activation_cls = resolve_activation(activation)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=config_hidden,
@@ -122,9 +109,7 @@ class WNO(nn.Module):
         self.lift = nn.Linear(width + query_dim + 1, width)
         self.blocks = nn.ModuleList(
             [
-                MultiLevelHaarWaveletBlock1d(
-                    width, levels=levels, dropout=dropout, activation=activation_cls
-                )
+                FNOBlock1d(width, modes, dropout=dropout, activation=activation_cls)
                 for _ in range(depth)
             ]
         )
@@ -139,23 +124,34 @@ class WNO(nn.Module):
         context = context.expand(-1, frequency.shape[1], -1)
         query = self.resonance_query(configuration, frequency)
         x = self.lift(torch.cat((context, query, frequency), dim=-1)).transpose(1, 2)
+
+        if self.padding > 0:
+            x = F.pad(x, (self.padding, self.padding), mode="replicate")
         for block in self.blocks:
             x = block(x)
+        if self.padding > 0:
+            x = x[..., self.padding : -self.padding]
+
         return self.project(x.transpose(1, 2))
 
 
-def build_model(num_res: int, **kwargs) -> WNO:
-    return WNO(num_res=num_res, **kwargs)
+def build_model(num_res: int, **kwargs) -> FNO:
+    return FNO(num_res=num_res, **kwargs)
 
 
 # All size dimensions scaled down proportionally from the ~550K-matched
-# config to the project's new ~110K budget (was width=68 -> ~551K).
+# config to the project's new ~110K budget (was width=41 -> ~1.20M params
+# originally). modes is scaled too this time (64 -> 35): retaining 64
+# Fourier modes on a 23-channel width would be disproportionate to the
+# shrunken channel count, unlike at the ~550K budget where width was large
+# enough that modes didn't need to move with it.
 DEFAULT_MODEL_CONFIG = {
-    "width": 30,
+    "width": 23,
+    "modes": 35,
     "depth": 4,
-    "levels": 3,
-    "config_hidden": 57,
-    "query_dim": 22,
+    "config_hidden": 70,
+    "query_dim": 26,
+    "padding": 8,
     "dropout": 0.1,
     "activation": "gelu",
 }
@@ -174,7 +170,7 @@ def main(
     plot: bool = True,
 ):
     return run_operator_experiment(
-        operator_name="WNO",
+        operator_name="FNO",
         build_model=build_model,
         model_config=DEFAULT_MODEL_CONFIG,
         action=action,

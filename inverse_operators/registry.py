@@ -1,6 +1,6 @@
 """Central registry for the 4 trainable probabilistic inverse models.
 
-Mirrors ``operators/operator_registry.py``'s shape (a key -> spec dict) so
+Mirrors ``forward_operators/operator_registry.py``'s shape (a key -> spec dict) so
 the CLI can select "just MDN" or "all inverse models" the same way it
 already selects individual forward operators or "all forward operators".
 """

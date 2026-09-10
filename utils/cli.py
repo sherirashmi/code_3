@@ -4,7 +4,7 @@
 orchestration function lives here. Two top-level workflows:
 
 - **Forward** (configuration -> ERP spectrum): any single operator from
-  ``operators.operator_registry.OPERATORS``, or all of them at once.
+  ``forward_operators.operator_registry.OPERATORS``, or all of them at once.
 - **Inverse** (ERP spectrum -> resonator configuration): any single model
   from ``inverse_operators.registry.INVERSE_MODELS``, or all of them at
   once (which also offers the solver-scored aggregate evaluations built in
@@ -25,7 +25,7 @@ import numpy as np
 import torch
 
 from utils.erp_dataset import DEFAULT_DATASET_FILE
-from operators.operator_registry import OPERATORS
+from forward_operators.operator_registry import OPERATORS
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     DEFAULT_PLOTS_DIR,
@@ -44,7 +44,7 @@ INVERSE_DATASET_FILE = DEFAULT_DATASET_FILE
 
 # Stopgap for checkpoints saved before ERPDataset.preprocessing_state()
 # started recording which raw file its selected_source_ids came from (see
-# operators/neural_operator_utils.py's run_operator_experiment): models/
+# forward_operators/neural_operator_utils.py's run_operator_experiment): models/
 # {dno,dco,gno}_erp.pth on disk right now were trained on the 100k sharded
 # dataset, not the 10k DATASET_FILE every other operator's checkpoint uses,
 # and have no self-describing metadata to fall back on. Evaluate/predict for

@@ -1,7 +1,7 @@
 """Optimization-based inversion: no new network, reuse a trained forward operator.
 
 Treats an already-trained forward operator (e.g. GNO, the best performer in
-operators/) as a differentiable surrogate simulator and gradient-descends in
+forward_operators/) as a differentiable surrogate simulator and gradient-descends in
 normalized design space to match a target spectrum, starting from many
 random restarts. The spread of solutions found across restarts is a cheap,
 approximate empirical posterior -- not a real density, and not as sharp or

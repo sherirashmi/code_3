@@ -27,7 +27,7 @@ from pathlib import Path
 
 import torch
 
-from main import (
+from utils.cli import (
     DATASET_FILE,
     PLOTS_DIR,
     SEED,
@@ -36,7 +36,7 @@ from main import (
     _prompt_int,
     _prompt_yes_no,
 )
-from operators.operator_registry import OPERATORS
+from forward_operators.operator_registry import OPERATORS
 from utils.plotting import save_operator_experiment_plots
 
 
