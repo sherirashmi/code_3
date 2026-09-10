@@ -21,7 +21,7 @@ import math
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import MLP
+from operators.neural_operator_utils import MLP
 
 from .common import SpectrumEncoder, flatten_configuration
 

@@ -7,7 +7,7 @@ import math
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     MLP,
     physics_aware_resonator_features,
     resolve_activation,

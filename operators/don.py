@@ -7,7 +7,7 @@ import math
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
     ResonatorSetEncoder,
@@ -16,27 +16,8 @@ from utils.neural_operator_utils import (
 )
 
 
-class FourierFrequencyEncoder(nn.Module):
-    """Fixed multi-scale Fourier features for the normalized query frequency."""
-
-    def __init__(self, num_bands: int = 6) -> None:
-        super().__init__()
-        if num_bands <= 0:
-            raise ValueError("num_bands must be positive.")
-        scales = math.pi * (2.0 ** torch.arange(num_bands, dtype=torch.float32))
-        self.register_buffer("scales", scales)
-
-    @property
-    def output_dim(self) -> int:
-        return 1 + 2 * int(self.scales.numel())
-
-    def forward(self, frequency: torch.Tensor) -> torch.Tensor:
-        angles = frequency * self.scales
-        return torch.cat((frequency, torch.sin(angles), torch.cos(angles)), dim=-1)
-
-
 class DON(nn.Module):
-    """Physics-aware, multi-term DeepONet with a configuration-modulated Fourier trunk.
+    """Physics-aware, multi-term DeepONet with a configuration-modulated trunk.
 
     The classical branch/trunk inner product is retained as the operator's core
     mechanism (branch encodes the resonator configuration, trunk encodes the
@@ -55,6 +36,24 @@ class DON(nn.Module):
        branch/trunk output after combination. Every other architecture mixes
        neighboring frequency samples somewhere; plain DeepONet never did.
 
+    The trunk takes the raw (normalized) query frequency directly, not a
+    fixed multi-scale Fourier featurization. A prior version encoded the
+    frequency as ``[f, sin(2^i*pi*f), cos(2^i*pi*f)]`` before the trunk MLP,
+    on the assumption that would help the trunk represent narrow resonance
+    peaks -- removed because those fixed high-frequency sin/cos bands are a
+    plausible fight against the smooth, well-conditioned trunk basis
+    functions the classical branch/trunk inner product wants for stable
+    training (the same reason ``activation`` below stays a bounded
+    ``Tanh``), and DON is the only operator in this project that ever had
+    this featurization -- none of the other 9 Fourier-featurize their
+    frequency input, so DON was the outlier, not the rest. This project has
+    not re-run a controlled with/without-Fourier-features ablation to
+    confirm the size of the effect; the trunk MLP combined with
+    ``trunk_modulation``'s configuration-dependent FiLM gating is expressive
+    enough to shape the basis around each resonance without a fixed
+    featurization forcing a particular frequency scale on it, which is
+    reason enough on its own to drop it.
+
     ``activation`` defaults to ``Tanh`` (not the ``SiLU`` most other
     operators here use) to match the original DeepONet paper (Lu et al.),
     which uses bounded activations in the branch/trunk nets to keep the
@@ -67,7 +66,6 @@ class DON(nn.Module):
         hidden_dim: int = 128,
         context_dim: int = 160,
         basis_dim: int = 256,
-        fourier_bands: int = 6,
         num_terms: int = 4,
         refine_width: int = 64,
         activation: str | type[nn.Module] = "tanh",
@@ -79,7 +77,6 @@ class DON(nn.Module):
         stacked_dim = self.num_terms * self.basis_dim
         activation_cls = resolve_activation(activation)
 
-        self.frequency_features = FourierFrequencyEncoder(fourier_bands)
         self.configuration_encoder = ResonatorSetEncoder(
             hidden_dim=hidden_dim,
             element_dim=hidden_dim,
@@ -89,7 +86,7 @@ class DON(nn.Module):
             [context_dim, hidden_dim, stacked_dim], activation=activation_cls
         )
         self.trunk = MLP(
-            [self.frequency_features.output_dim, hidden_dim, hidden_dim, stacked_dim],
+            [1, hidden_dim, hidden_dim, stacked_dim],
             activation=activation_cls,
         )
         self.trunk_modulation = MLP(
@@ -112,7 +109,7 @@ class DON(nn.Module):
             batch, 1, self.num_terms, self.basis_dim
         )
 
-        trunk = self.trunk(self.frequency_features(frequency))  # (B,F,T*P)
+        trunk = self.trunk(frequency)  # (B,F,T*P)
         gamma, beta = self.trunk_modulation(context).chunk(2, dim=-1)
         gamma = 1.0 + 0.25 * torch.tanh(gamma[:, None, :])
         beta = 0.10 * beta[:, None, :]
@@ -137,13 +134,12 @@ def build_model(num_res: int, **kwargs) -> DON:
 # Every size-related dimension (not just hidden_dim) scaled down by the same
 # ratio from the ~550K-matched config to land at the project's new ~110K
 # budget, keeping DON's internal proportions similar rather than leaving one
-# sub-module oversized relative to a shrunken hidden_dim. fourier_bands and
-# num_terms are structural (not "widths"), so they stay unchanged.
+# sub-module oversized relative to a shrunken hidden_dim. num_terms is
+# structural (not a "width"), so it stays unchanged.
 DEFAULT_MODEL_CONFIG = {
     "hidden_dim": 45,
     "context_dim": 71,
     "basis_dim": 113,
-    "fourier_bands": 6,
     "num_terms": 4,
     "refine_width": 28,
     "activation": "tanh",

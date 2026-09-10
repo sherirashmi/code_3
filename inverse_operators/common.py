@@ -42,7 +42,7 @@ from utils.erp_dataset import (
     normalize_configuration_array,
     normalize_erp_array,
 )
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     MLP,
     _configuration_features,
     _split_ids,

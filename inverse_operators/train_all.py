@@ -52,15 +52,7 @@ from utils.erp_dataset import denormalize_erp_array
 
 from inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
 from inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from inverse_operators.mdn import MDN
-from inverse_operators.cvae import ConditionalVAE
-from inverse_operators.flow import ConditionalFlow
-from inverse_operators.diffusion import ConditionalDiffusion
-
-NUM_RES = 3
-DESIGN_DIM = NUM_RES * 5
-KL_WARMUP_EPOCHS = 30
-KL_TARGET_BETA = 0.1
+from inverse_operators.registry import INVERSE_MODELS, NUM_RES
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
@@ -112,6 +104,34 @@ def format_configuration(configuration: np.ndarray) -> str:
     return "\n".join(lines)
 
 
+def train_one_inverse_model(
+    key: str,
+    num_configurations: int = 10000,
+    epochs: int | None = None,
+    batch_size: int = 64,
+    dataset_file="datasets/dataset_erp_ft.pth",
+    seed: int = 727,
+):
+    """Train and checkpoint exactly one inverse model (``INVERSE_MODELS`` key).
+
+    Used by the CLI to run a single inverse model instead of always training
+    all 4. ``epochs`` defaults to that model's own registry default when
+    omitted, matching how forward operators fall back to their own
+    ``DEFAULT_MODEL_CONFIG``-adjacent epoch default in ``operator_registry.py``.
+    """
+    spec = INVERSE_MODELS[key]
+    epochs = int(epochs) if epochs is not None else int(spec["epochs"])
+
+    dataset, loaders = prepare_inverse_data(
+        num_configurations=num_configurations, batch_size=batch_size,
+        dataset_file=dataset_file, seed=seed,
+    )
+    model = spec["build"]()
+    history = train_one(model, loaders, spec["loss_fn"], epochs=epochs, lr=spec["lr"], name=spec["short"])
+    save_checkpoint(model, dataset.norm_params, f"models/inverse_{spec['short'].lower()}.pth")
+    return model, history, dataset
+
+
 def main(
     num_configurations: int = 10000,
     epochs: int = 150,
@@ -124,24 +144,9 @@ def main(
     )
     norm = dataset.norm_params
 
-    def mdn_loss(m, s, d, epoch):
-        return m.training_loss(s, d)
-
-    def cvae_loss(m, s, d, epoch):
-        beta = KL_TARGET_BETA * min(1.0, epoch / KL_WARMUP_EPOCHS)
-        return m.training_loss(s, d, beta=beta)
-
-    def flow_loss(m, s, d, epoch):
-        return m.training_loss(s, d)
-
-    def diffusion_loss(m, s, d, epoch):
-        return m.training_loss(s, d)
-
     models = {
-        "MDN": (MDN(design_dim=DESIGN_DIM, num_components=10), mdn_loss, 1e-3),
-        "cVAE": (ConditionalVAE(design_dim=DESIGN_DIM, latent_dim=8), cvae_loss, 1e-3),
-        "Flow": (ConditionalFlow(design_dim=DESIGN_DIM, num_layers=8, hidden=96), flow_loss, 5e-4),
-        "Diffusion": (ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=100, hidden=128), diffusion_loss, 1e-3),
+        spec["short"]: (spec["build"](), spec["loss_fn"], spec["lr"])
+        for spec in INVERSE_MODELS.values()
     }
 
     histories = {}

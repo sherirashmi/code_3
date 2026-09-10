@@ -67,23 +67,17 @@ import numpy as np
 import torch
 
 from inverse_operators.common import denormalize_design, prepare_inverse_data
-from inverse_operators.cvae import ConditionalVAE
-from inverse_operators.diffusion import ConditionalDiffusion
-from inverse_operators.flow import ConditionalFlow
-from inverse_operators.mdn import MDN
+from inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 
-NUM_RES = 3
-DESIGN_DIM = NUM_RES * 5
 OUT_DIR = Path("plots/INVERSE_OPERATORS")
 
-MODEL_BUILDERS = {
-    "MDN": lambda: MDN(design_dim=DESIGN_DIM, num_components=10),
-    "cVAE": lambda: ConditionalVAE(design_dim=DESIGN_DIM, latent_dim=8),
-    "Flow": lambda: ConditionalFlow(design_dim=DESIGN_DIM, num_layers=8, hidden=96),
-    "Diffusion": lambda: ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=100, hidden=128),
-}
+# Keyed by short name ("MDN", "cVAE", ...) rather than the registry's "1".."4"
+# keys, matching this module's own reporting convention; built from the same
+# INVERSE_MODELS registry train_all.py and the CLI use, so there is exactly
+# one place these 4 models' constructors are defined.
+MODEL_BUILDERS = {spec["short"]: spec["build"] for spec in INVERSE_MODELS.values()}
 
 
 def load_inverse_model(name: str):

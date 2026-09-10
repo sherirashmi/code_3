@@ -29,7 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from .erp_dataset import (
+from utils.erp_dataset import (
     DEFAULT_DATASET_FILE,
     configuration_to_resonators,
     denormalize_configuration_array,
@@ -40,14 +40,14 @@ from .erp_dataset import (
     prepare_erp_dataset,
 )
 from utils.physics import freqs, num_res as default_num_res
-from .plotting import (
+from utils.plotting import (
     operator_plot_dir,
     plot_erp_comparison,
     plot_loss_curves,
     plot_prediction_scatter,
 )
-from .solver import compute_erp_spectrum
-from .support import device, seed_everything
+from utils.solver import compute_erp_spectrum
+from utils.support import device, seed_everything
 
 
 # ==================================================

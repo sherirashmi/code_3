@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
     resolve_activation,

@@ -9,7 +9,7 @@ Compatibility version:
 
 from __future__ import annotations
 
-from utils.neural_operator_utils import make_operator_runner
+from operators.neural_operator_utils import make_operator_runner
 
 from operators.don import build_model as build_don, DEFAULT_MODEL_CONFIG as DON_MODEL_CONFIG
 from operators.dno import build_model as build_dno, DEFAULT_MODEL_CONFIG as DNO_MODEL_CONFIG

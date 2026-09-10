@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     prepare_operator_data,
     _split_ids,
     _configuration_features,

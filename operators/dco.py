@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from utils.neural_operator_utils import (
+from operators.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
     ResidualMLPBlock,
