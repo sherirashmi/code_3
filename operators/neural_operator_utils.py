@@ -1015,10 +1015,26 @@ def run_operator_experiment(
     preprocessing_state = checkpoint["preprocessing_state"]
     selected_ids = np.asarray(preprocessing_state["selected_source_ids"], dtype=np.int64)
 
+    # Prefer the raw file the checkpoint actually recorded at training time
+    # (see ERPDataset.preprocessing_state()) over whatever dataset_file the
+    # caller passed -- selected_source_ids only makes sense against the same
+    # raw file it was selected from. Checkpoints saved before this field
+    # existed have no "dataset_file" key, so .get() falls back to the
+    # caller-supplied dataset_file, same as before.
+    recorded_dataset_file = preprocessing_state.get("dataset_file")
+    effective_dataset_file = (
+        recorded_dataset_file if recorded_dataset_file is not None else dataset_file
+    )
+    if recorded_dataset_file is not None and recorded_dataset_file != dataset_file:
+        print(
+            f"Note: using this checkpoint's recorded training dataset "
+            f"({recorded_dataset_file}) instead of the requested {dataset_file!r}."
+        )
+
     dataset, loaders = prepare_operator_data(
         num_configurations=int(selected_ids.size),
         batch_size=batch_size,
-        dataset_file=dataset_file,
+        dataset_file=effective_dataset_file,
         regenerate_dataset=False,
         seed=seed,
         preprocessing_state=preprocessing_state,

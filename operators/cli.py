@@ -41,6 +41,25 @@ from inverse_operators import evaluate_design as inverse_evaluate_design
 
 DATASET_FILE = DEFAULT_DATASET_FILE
 INVERSE_DATASET_FILE = DEFAULT_DATASET_FILE
+
+# Stopgap for checkpoints saved before ERPDataset.preprocessing_state()
+# started recording which raw file its selected_source_ids came from (see
+# operators/neural_operator_utils.py's run_operator_experiment): models/
+# {dno,dco,gno}_erp.pth on disk right now were trained on the 100k sharded
+# dataset, not the 10k DATASET_FILE every other operator's checkpoint uses,
+# and have no self-describing metadata to fall back on. Evaluate/predict for
+# these 3 keys need the matching file until they're retrained again (which
+# would stamp the new field and make this override redundant, though still
+# harmless to leave in place).
+_HUNDRED_K_DATASET_FILES = [
+    "datasets/dataset_erp_ft_100k_part1.pth",
+    "datasets/dataset_erp_ft_100k_part2.pth",
+]
+DATASET_FILE_OVERRIDES: dict[str, object] = {
+    "2": _HUNDRED_K_DATASET_FILES,  # DNO
+    "4": _HUNDRED_K_DATASET_FILES,  # DCO
+    "5": _HUNDRED_K_DATASET_FILES,  # GNO
+}
 SEED = 727
 PLOTS_DIR = DEFAULT_PLOTS_DIR
 PLOT_PIPELINE_VERSION = "main-direct-save-v5"
@@ -650,7 +669,7 @@ def main_forward():
         result = runner(
             action="evaluate",
             batch_size=batch_size,
-            dataset_file=DATASET_FILE,
+            dataset_file=DATASET_FILE_OVERRIDES.get(operator_key, DATASET_FILE),
             seed=SEED,
             plot=False,
             save_plots=False,
@@ -681,7 +700,7 @@ def main_forward():
 
     result = runner(
         action="predict",
-        dataset_file=DATASET_FILE,
+        dataset_file=DATASET_FILE_OVERRIDES.get(operator_key, DATASET_FILE),
         seed=SEED,
         configuration=configuration,
         plot=False,

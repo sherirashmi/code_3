@@ -724,6 +724,11 @@ class ERPDataset(Dataset):
             "norm_params": dict(self.norm_params),
             "num_res": self.num_res,
             "feature_names": list(FEATURE_NAMES),
+            # The raw file(s) selected_source_ids indexes into. Absent (None,
+            # via .get() at the read site) on checkpoints saved before this
+            # field existed -- those fall back to whatever dataset_file the
+            # caller passes, same as always.
+            "dataset_file": getattr(self, "raw_dataset_file", None),
         }
 
     # --------------------------------------------------
@@ -912,6 +917,16 @@ def prepare_erp_dataset(
                     f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                     "was requested. Use a matching dataset file or regenerate it."
                 )
+
+    # Recorded so a saved checkpoint's preprocessing_state can remember which
+    # raw file its selected_source_ids index into -- different raw dataset
+    # files (e.g. the 10k vs. the 100k sharded dataset) are independently
+    # sampled, so the same numeric index means a different physical
+    # configuration in each one. Without this, evaluating/predicting with a
+    # checkpoint against the wrong raw file fails with a confusing
+    # "indices outside the raw dataset" error instead of using the file the
+    # checkpoint actually needs.
+    dataset.raw_dataset_file = list(dataset_file) if is_sharded else str(dataset_file)
 
     # Restore an exact trained preprocessing state when requested; otherwise
     # choose num_samples configurations reproducibly from the raw dataset.
