@@ -3,9 +3,12 @@
 Validation here does NOT check "did we recover the exact original design" --
 the inverse problem is genuinely non-unique (see module docstrings), so that
 would be the wrong test. Instead: sample several candidate designs per
-target spectrum from each model, run every sampled design back through a
-trained *forward* operator (the real physics-aware surrogate), and check how
-well the resulting predicted spectra match the target.
+target spectrum from each model, run every sampled design through the
+*actual coupled plate-resonator solver* (``utils.solver.compute_erp_spectrum``
+-- the same modal solver that generated the dataset, not a neural forward
+surrogate), and check how well the resulting predicted spectra match the
+target. Using the real solver instead of a forward operator removes that
+operator's own approximation error from the inverse-model score entirely.
 
 Training fixes applied here (see the per-method module docstrings for why):
   - Cosine LR annealing for every model (was a flat LR for all 80 epochs).
@@ -27,13 +30,15 @@ more plausible is this candidate than the others sampled for the same
 target", not an absolute probability, which a density value alone isn't).
 Diffusion has no tractable density with this simple formulation; it's
 reported instead with a spectrum-consistency score (how well the sampled
-design's forward-simulated spectrum matches the target) -- explicitly
+design's solver-simulated spectrum matches the target) -- explicitly
 labeled as such, not as a probability, so the two aren't confused.
 """
 
 from __future__ import annotations
 
 import copy
+import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -43,17 +48,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from operators.operator_registry import OPERATORS
-from utils.neural_operator_utils import load_operator_checkpoint
 from utils.erp_dataset import denormalize_erp_array
 
 from inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
+from inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from inverse_operators.mdn import MDN
 from inverse_operators.cvae import ConditionalVAE
 from inverse_operators.flow import ConditionalFlow
 from inverse_operators.diffusion import ConditionalDiffusion
 
-FORWARD_OPERATOR_KEY = "5"  # GNO -- the best forward performer, used as the validation surrogate
 NUM_RES = 3
 DESIGN_DIM = NUM_RES * 5
 KL_WARMUP_EPOCHS = 30
@@ -153,11 +156,7 @@ def main(
     # ------------------------------------------------------------------
     # Validation + per-sample reporting.
     # ------------------------------------------------------------------
-    checkpoint = load_operator_checkpoint("models/gno_erp.pth")
-    fwd_spec = OPERATORS[FORWARD_OPERATOR_KEY]
-    forward_model = fwd_spec["build_model"](num_res=NUM_RES, **checkpoint["model_config"])
-    forward_model.load_state_dict(checkpoint["model_state_dict"])
-    forward_model.eval()
+    solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
 
     num_examples = 3
     num_samples = 6
@@ -191,12 +190,9 @@ def main(
             flat_samples = result[0][0] if has_log_prob else result[0]
             log_probs = result[1][0] if has_log_prob else None
 
-            configuration = flat_samples.view(num_samples, NUM_RES, 5)
-            freq_batch = frequency[row : row + 1].expand(num_samples, -1, -1)
-            with torch.no_grad():
-                predicted = forward_model(configuration, freq_batch)
-            predicted_erp = denormalize_erp_array(predicted.numpy()[..., 0], norm)
-            recon_mse = ((predicted.numpy()[..., 0] - test_spectrum[row].numpy()[None, :]) ** 2).mean(axis=1)
+            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (num_samples, num_res, 5)
+            predicted_erp = solve_configs(solver_pool, physical, freq_hz)  # (num_samples, n_freq), real dB
+            recon_mse = ((predicted_erp - true_erp[row][None, :]) ** 2).mean(axis=1)
 
             if has_log_prob:
                 log_probs_np = log_probs.numpy()
@@ -213,8 +209,6 @@ def main(
                 best_idx = int(recon_mse.argmin())
                 score_label = "spectrum-consistency (-MSE, NOT a probability)"
                 scores = -recon_mse
-
-            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
 
             report_lines.append(f"\n--- {name} ({score_label}) ---")
             for i in range(num_samples):
@@ -250,7 +244,7 @@ def main(
 
     fig.suptitle(
         f"Inverse-design validation: {num_samples} sampled designs per method "
-        "(best-scoring highlighted red), run back through the forward operator (GNO)",
+        "(best-scoring highlighted red), run through the actual solver (not a neural surrogate)",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
@@ -261,6 +255,8 @@ def main(
     report_path = out_dir / "sample_configurations_and_scores.txt"
     report_path.write_text("\n".join(report_lines))
     print(f"Saved per-sample configurations + scores to {report_path}")
+
+    solver_pool.shutdown()
 
     fig, ax = plt.subplots(figsize=(9, 6))
     for name, history in histories.items():
