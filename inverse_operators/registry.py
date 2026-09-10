@@ -1,4 +1,4 @@
-"""Central registry for the 4 trainable probabilistic inverse models.
+"""Central registry for the 5 trainable probabilistic inverse models.
 
 Mirrors ``forward_operators/operator_registry.py``'s shape (a key -> spec dict) so
 the CLI can select "just MDN" or "all inverse models" the same way it
@@ -7,6 +7,7 @@ already selects individual forward operators or "all forward operators".
 
 from __future__ import annotations
 
+from inverse_operators.basis_flow import BasisFlow
 from inverse_operators.cvae import ConditionalVAE
 from inverse_operators.diffusion import ConditionalDiffusion
 from inverse_operators.flow import ConditionalFlow
@@ -36,6 +37,10 @@ def _flow_loss(model, spectrum, design, epoch):
 
 
 def _diffusion_loss(model, spectrum, design, epoch):
+    return model.training_loss(spectrum, design)
+
+
+def _basis_flow_loss(model, spectrum, design, epoch):
     return model.training_loss(spectrum, design)
 
 
@@ -70,6 +75,14 @@ INVERSE_MODELS = {
         "build": lambda: ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=100, hidden=128),
         "loss_fn": _diffusion_loss,
         "lr": 1e-3,
+        "epochs": 150,
+    },
+    "5": {
+        "name": "Basis Flow (invertible, bidirectional)",
+        "short": "BasisFlow",
+        "build": lambda: BasisFlow(design_dim=DESIGN_DIM, n_freq=301, num_layers=8, flow_hidden=96),
+        "loss_fn": _basis_flow_loss,
+        "lr": 5e-4,
         "epochs": 150,
     },
 }
