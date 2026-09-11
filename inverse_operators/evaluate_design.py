@@ -123,7 +123,7 @@ def main(
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     names = active_models
-    colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
+    colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"][: len(names)]
 
     stats = {name: {} for name in names}
     lines = [
