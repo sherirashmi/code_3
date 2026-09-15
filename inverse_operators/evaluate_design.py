@@ -123,7 +123,9 @@ def main(
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     names = active_models
-    colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"][: len(names)]
+    # tab10 scales to any number of models automatically -- this literal
+    # list has needed a manual bump every time a model was added (4 -> 5 -> 6).
+    colors = [plt.get_cmap("tab10")(i) for i in range(len(names))]
 
     stats = {name: {} for name in names}
     lines = [

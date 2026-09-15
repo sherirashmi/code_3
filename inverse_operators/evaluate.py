@@ -221,7 +221,9 @@ def main(
     # ---- bar charts: MAE, Pearson r, R^2 per method ----
     names = list(stats.keys())
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"][: len(names)]
+    # tab10 scales to any number of models automatically -- this literal
+    # list has needed a manual bump every time a model was added (4 -> 5 -> 6).
+    colors = [plt.get_cmap("tab10")(i) for i in range(len(names))]
 
     axes[0].bar(names, [stats[m]["mae_db"] for m in names], color=colors)
     axes[0].set_ylabel("MAE (dB)")
