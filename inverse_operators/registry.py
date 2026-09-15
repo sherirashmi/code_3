@@ -1,4 +1,4 @@
-"""Central registry for the 5 trainable probabilistic inverse models.
+"""Central registry for the 6 trainable probabilistic inverse models.
 
 Mirrors ``forward_operators/operator_registry.py``'s shape (a key -> spec dict) so
 the CLI can select "just MDN" or "all inverse models" the same way it
@@ -12,6 +12,7 @@ from inverse_operators.cvae import ConditionalVAE
 from inverse_operators.diffusion import ConditionalDiffusion
 from inverse_operators.flow import ConditionalFlow
 from inverse_operators.mdn import MDN
+from inverse_operators.padding_inn import PadINN
 
 NUM_RES = 3
 DESIGN_DIM = NUM_RES * 5
@@ -41,6 +42,10 @@ def _diffusion_loss(model, spectrum, design, epoch):
 
 
 def _basis_flow_loss(model, spectrum, design, epoch):
+    return model.training_loss(spectrum, design)
+
+
+def _padding_inn_loss(model, spectrum, design, epoch):
     return model.training_loss(spectrum, design)
 
 
@@ -82,6 +87,14 @@ INVERSE_MODELS = {
         "short": "BasisFlow",
         "build": lambda: BasisFlow(design_dim=DESIGN_DIM, n_freq=301, num_layers=8, flow_hidden=96),
         "loss_fn": _basis_flow_loss,
+        "lr": 5e-4,
+        "epochs": 150,
+    },
+    "6": {
+        "name": "Padding INN (Ardizzone et al., arXiv:1808.04730)",
+        "short": "PadINN",
+        "build": lambda: PadINN(design_dim=DESIGN_DIM, n_freq=301, z_dim=16, num_layers=8, hidden=96),
+        "loss_fn": _padding_inn_loss,
         "lr": 5e-4,
         "epochs": 150,
     },
