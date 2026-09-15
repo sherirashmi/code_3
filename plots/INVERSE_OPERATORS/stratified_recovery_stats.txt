@@ -1,0 +1,38 @@
+Stratified design-parameter recovery (Dogu et al., INTER-NOISE 2026, Table 1 style -- see this file's module docstring for why the group thresholds differ from theirs)
+====================================================================================================
+
+--- well_separated (min |df_t| > 10 Hz)  (n=107) ---
+Model        MAE m (kg)   MAE f_t (Hz)
+MDN              0.1982          11.76
+cVAE             0.2842          33.24
+Flow             0.2224          15.56
+Diffusion        0.2014          12.53
+BasisFlow        0.2331          14.63
+PadINN           0.2039          12.92
+
+--- near_degenerate (min |df_t| < 3 Hz)  (n=13) ---
+Model        MAE m (kg)   MAE f_t (Hz)
+MDN              0.2283          15.31
+cVAE             0.2622          41.42
+Flow             0.2418          17.47
+Diffusion        0.2444          16.07
+BasisFlow        0.2699           17.9
+PadINN           0.2137          17.13
+
+--- heavy (mean mass > 0.7 kg)  (n=27) ---
+Model        MAE m (kg)   MAE f_t (Hz)
+MDN              0.1893          9.097
+cVAE             0.3256             39
+Flow             0.2403          14.66
+Diffusion        0.2229          9.175
+BasisFlow         0.201          15.44
+PadINN           0.2257          12.68
+
+--- light (mean mass < 0.3 kg)  (n=9) ---
+Model        MAE m (kg)   MAE f_t (Hz)
+MDN              0.1675          10.29
+cVAE             0.3013          46.48
+Flow             0.2054          13.98
+Diffusion        0.1053          11.56
+BasisFlow        0.1909          15.14
+PadINN           0.2102          17.04
