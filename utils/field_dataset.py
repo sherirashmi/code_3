@@ -40,11 +40,19 @@ a dense regular mesh, which would blow up storage for no real benefit
 (the displacement field is smooth in space away from resonator
 attachment points; a modest random scatter captures it as well as a
 dense grid would for training purposes).
+
+Sharding: at higher point-density this dataset can exceed GitHub's
+100MB single-file push limit. ``generate_field_dataset_shards`` splits
+a run across several independently-generated, same-schema files (same
+approach as this project's 100k-configuration ERP dataset --
+see ``ERPDataset.load_shards``'s docstring); ``load_field_dataset_shards``
+loads and concatenates them back into one in-memory dataset.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -135,3 +143,97 @@ def load_field_dataset(filename: str) -> dict[str, object]:
     from utils.support import load_dataset
 
     return load_dataset(filename)
+
+
+def generate_field_dataset_shards(
+    num_configurations: int,
+    num_shards: int,
+    points_per_config: int = 480,
+    num_res: int = default_num_res,
+    frequencies: np.ndarray | None = None,
+    seed: int = 727,
+    filename_pattern: str = "datasets/dataset_field_displacement_part{shard}.pth",
+    verbose: bool = True,
+) -> list[str]:
+    """Generate ``num_configurations`` split across ``num_shards`` files.
+
+    Each shard is generated independently (its own seed, derived from the
+    base seed) rather than by splitting one combined LHS design -- the
+    same approach already used for this project's 100k-configuration ERP
+    dataset shards (see ``ERPDataset.load_shards``'s docstring): each
+    shard is a normal, independently loadable dataset covering a
+    different slice of configurations, purely so no single file exceeds
+    GitHub's 100MB push limit. No merged file ever needs to exist on disk.
+    """
+    if num_shards <= 0:
+        raise ValueError("num_shards must be positive.")
+    base = num_configurations // num_shards
+    remainder = num_configurations % num_shards
+    counts = [base + (1 if i < remainder else 0) for i in range(num_shards)]
+
+    filenames = []
+    for shard_idx, count in enumerate(counts, start=1):
+        if count <= 0:
+            continue
+        filename = filename_pattern.format(shard=shard_idx)
+        if verbose:
+            print(f"--- Shard {shard_idx}/{num_shards}: {count} configurations -> {filename} ---")
+        generate_field_dataset(
+            num_configurations=count,
+            points_per_config=points_per_config,
+            num_res=num_res,
+            frequencies=frequencies,
+            seed=seed + shard_idx,
+            filename=filename,
+            verbose=verbose,
+        )
+        filenames.append(filename)
+    return filenames
+
+
+def load_field_dataset_shards(filenames: Sequence[str]) -> dict[str, object]:
+    """Load and concatenate several same-schema field-dataset shards.
+
+    Mirrors ``ERPDataset.load_shards``: validates every shard shares the
+    same ``num_res``/``points_per_config``/``frequency_values``, then
+    concatenates the per-configuration arrays along axis 0.
+    """
+    from utils.support import load_dataset
+
+    if not filenames:
+        raise ValueError("filenames must not be empty.")
+
+    payloads = [load_dataset(f) for f in filenames]
+    first = payloads[0]
+
+    num_res = int(first["num_res"])
+    points_per_config = int(first["points_per_config"])
+    frequency_values = np.asarray(first["frequency_values"], dtype=np.float32)
+    for filename, payload in zip(filenames[1:], payloads[1:], strict=True):
+        if int(payload["num_res"]) != num_res:
+            raise ValueError(f"{filename} has a different num_res than {filenames[0]}.")
+        if int(payload["points_per_config"]) != points_per_config:
+            raise ValueError(f"{filename} has a different points_per_config than {filenames[0]}.")
+        if not np.array_equal(
+            np.asarray(payload["frequency_values"], dtype=np.float32), frequency_values
+        ):
+            raise ValueError(f"{filename} has different frequency_values than {filenames[0]}.")
+
+    return {
+        "configuration_features": np.concatenate(
+            [np.asarray(p["configuration_features"], dtype=np.float32) for p in payloads], axis=0
+        ),
+        "collocation_points": np.concatenate(
+            [np.asarray(p["collocation_points"], dtype=np.float32) for p in payloads], axis=0
+        ),
+        "real_displacement": np.concatenate(
+            [np.asarray(p["real_displacement"], dtype=np.float32) for p in payloads], axis=0
+        ),
+        "imag_displacement": np.concatenate(
+            [np.asarray(p["imag_displacement"], dtype=np.float32) for p in payloads], axis=0
+        ),
+        "frequency_values": frequency_values,
+        "num_res": num_res,
+        "points_per_config": points_per_config,
+        "feature_layout": first.get("feature_layout", "per_resonator_[m,k,f_t,x,y]"),
+    }
