@@ -335,6 +335,13 @@ class IFNO(nn.Module):
         lifted = self.lift_p(torch.cat((context, query, frequency), dim=-1))  # (B, F, 2*width)
         return lifted.transpose(1, 2)  # (B, 2*width, F)
 
+    def _through_blocks_to_spectrum(self, v0: torch.Tensor) -> torch.Tensor:
+        """Already-lifted (B, 2*width, F) -> blocks.forward -> Q -> ERP (B, F, 1)."""
+        v1_0, v2_0 = v0.chunk(2, dim=1)
+        v1_k, v2_k = self.blocks(v1_0, v2_0)
+        combined = torch.cat((v1_k, v2_k), dim=1).transpose(1, 2)  # (B, F, 2*width)
+        return self.project_q(combined)
+
     def predict_spectrum(self, configuration: torch.Tensor, frequency: torch.Tensor | None = None) -> torch.Tensor:
         """Forward-operator use: configuration -> predicted ERP (B, F, 1),
         directly comparable to forward_operators' own model outputs.
@@ -342,10 +349,7 @@ class IFNO(nn.Module):
         if frequency is None:
             frequency = self._frequency_batch(configuration.shape[0])
         v0 = self._lift_forward(configuration, frequency)
-        v1_0, v2_0 = v0.chunk(2, dim=1)
-        v1_k, v2_k = self.blocks(v1_0, v2_0)
-        combined = torch.cat((v1_k, v2_k), dim=1).transpose(1, 2)  # (B, F, 2*width)
-        return self.project_q(combined)
+        return self._through_blocks_to_spectrum(v0)
 
     def direct_design_reconstruction(self, configuration: torch.Tensor, frequency: torch.Tensor | None = None) -> torch.Tensor:
         """P then immediately Q' (skipping the invertible blocks entirely) --
@@ -386,6 +390,13 @@ class IFNO(nn.Module):
         u0 = self._lift_inverse(spectrum, frequency)  # (B, 2*width, F)
         return self.project_q(u0.transpose(1, 2))
 
+    def _through_blocks_to_design(self, u0: torch.Tensor) -> torch.Tensor:
+        """Already-lifted (B, 2*width, F) -> blocks.inverse -> pool -> Q' -> flat design."""
+        v1_k, v2_k = u0.chunk(2, dim=1)
+        v1_0, v2_0 = self.blocks.inverse(v1_k, v2_k)
+        pooled = self._pool(torch.cat((v1_0, v2_0), dim=1))
+        return self.project_qp(pooled)
+
     def infer_point_estimate(self, spectrum: torch.Tensor, frequency: torch.Tensor | None = None) -> torch.Tensor:
         """Full inverse pipeline WITHOUT the VAE: P' -> blocks.inverse -> pool -> Q'.
 
@@ -395,11 +406,8 @@ class IFNO(nn.Module):
         """
         if frequency is None:
             frequency = self._frequency_batch(spectrum.shape[0])
-        u_k = self._lift_inverse(spectrum, frequency)
-        v1_k, v2_k = u_k.chunk(2, dim=1)
-        v1_0, v2_0 = self.blocks.inverse(v1_k, v2_k)
-        pooled = self._pool(torch.cat((v1_0, v2_0), dim=1))
-        return self.project_qp(pooled)
+        u0 = self._lift_inverse(spectrum, frequency)
+        return self._through_blocks_to_design(u0)
 
     @torch.no_grad()
     def sample(self, spectrum: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
@@ -428,20 +436,30 @@ class IFNO(nn.Module):
         """J_IFB = J_FWD + J_INV + J_{P,Q'} + J_{P',Q} (paper eq 7), MSE in
         place of the paper's relative-L2 (matching this package's other
         models' convention, e.g. BasisFlow/PadINN's plain MSE terms).
+
+        Each of P's and P''s lift is computed ONCE and reused for both its
+        through-the-blocks path and its direct (blocks-skipped) path --
+        ``predict_spectrum``/``direct_design_reconstruction`` and
+        ``infer_point_estimate``/``direct_spectrum_reconstruction`` would
+        otherwise each recompute the same ResonatorSetEncoder/
+        ResonanceQueryEncoder lift from scratch, doubling this loss's cost
+        for no reason (this project trains on CPU; that redundancy was the
+        difference between a feasible and infeasible epoch time on the
+        100k-configuration dataset).
         """
         configuration = flat_design.view(-1, self.num_res, 5)
         frequency = self._frequency_batch(spectrum.shape[0])
 
-        predicted_spectrum = self.predict_spectrum(configuration, frequency).squeeze(-1)
+        v0 = self._lift_forward(configuration, frequency)
+        predicted_spectrum = self._through_blocks_to_spectrum(v0).squeeze(-1)
         j_fwd = F.mse_loss(predicted_spectrum, spectrum)
-
-        point_estimate = self.infer_point_estimate(spectrum, frequency)
-        j_inv = F.mse_loss(point_estimate, flat_design)
-
-        direct_design = self.direct_design_reconstruction(configuration, frequency)
+        direct_design = self.project_qp(self._pool(v0))
         j_pq_prime = F.mse_loss(direct_design, flat_design)
 
-        direct_spectrum = self.direct_spectrum_reconstruction(spectrum, frequency).squeeze(-1)
+        u0 = self._lift_inverse(spectrum, frequency)
+        point_estimate = self._through_blocks_to_design(u0)
+        j_inv = F.mse_loss(point_estimate, flat_design)
+        direct_spectrum = self.project_q(u0.transpose(1, 2)).squeeze(-1)
         j_pprime_q = F.mse_loss(direct_spectrum, spectrum)
 
         total = j_fwd + j_inv + j_pq_prime + j_pprime_q
@@ -469,16 +487,20 @@ class IFNO(nn.Module):
         configuration = flat_design.view(-1, self.num_res, 5)
         frequency = self._frequency_batch(spectrum.shape[0])
 
-        predicted_spectrum = self.predict_spectrum(configuration, frequency).squeeze(-1)
+        # Same one-lift-reused-twice structure as stage1_loss (see its
+        # docstring) -- halves the redundant ResonatorSetEncoder/
+        # ResonanceQueryEncoder/P' work per batch.
+        v0 = self._lift_forward(configuration, frequency)
+        predicted_spectrum = self._through_blocks_to_spectrum(v0).squeeze(-1)
         j_fwd = F.mse_loss(predicted_spectrum, spectrum)
-
-        direct_design = self.direct_design_reconstruction(configuration, frequency)
+        direct_design = self.project_qp(self._pool(v0))
         j_pq_prime = F.mse_loss(direct_design, flat_design)
 
-        direct_spectrum = self.direct_spectrum_reconstruction(spectrum, frequency).squeeze(-1)
+        u0 = self._lift_inverse(spectrum, frequency)
+        point_estimate = self._through_blocks_to_design(u0)
+        direct_spectrum = self.project_q(u0.transpose(1, 2)).squeeze(-1)
         j_pprime_q = F.mse_loss(direct_spectrum, spectrum)
 
-        point_estimate = self.infer_point_estimate(spectrum, frequency)
         mu, log_var = self.vae.encode(point_estimate)
         z = self.vae.reparameterize(mu, log_var)
         recon = self.vae.decode(z)
