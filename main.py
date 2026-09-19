@@ -10,7 +10,7 @@ Run:
 
 All menus, prompts, and orchestration live in utils/cli.py. Dataset
 preprocessing is handled by utils/erp_dataset.py, forward operator
-training/evaluation by forward_operators/neural_operator_utils.py, inverse-model
+training/evaluation by erp_forward_operators/neural_operator_utils.py, inverse-model
 training/evaluation by inverse_operators/, and all figure creation/saving
 by utils/plotting.py.
 """

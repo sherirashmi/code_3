@@ -1,7 +1,7 @@
 """Displacement-field Graph Neural Operator (GNO): (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/gno.py. Unchanged: complete-graph message
+Adapted from erp_forward_operators/gno.py. Unchanged: complete-graph message
 passing between resonator nodes (GraphMessageLayer, geometric/frequency
 edge features) and the learned per-query-frequency softmax attention
 pooling ("kernel integral") over those nodes -- GNO's own branch
@@ -19,7 +19,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, physics_aware_resonator_features, resolve_activation
+from erp_forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, physics_aware_resonator_features, resolve_activation
 
 
 class GraphMessageLayer(nn.Module):

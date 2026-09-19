@@ -37,7 +37,7 @@ from displacement_forward_operators.displacement_operator_utils import (
 )
 from displacement_forward_operators.operator_registry import OPERATORS
 from displacement_forward_operators.physics_loss import make_physics_loss_fn
-from forward_operators.neural_operator_utils import parameter_count
+from erp_forward_operators.neural_operator_utils import parameter_count
 from utils.field_dataset import load_field_dataset_shards
 from utils.support import seed_everything
 

@@ -1,7 +1,7 @@
 """Displacement-field Deep Cat Operator (DCO): (configuration, frequency,
 x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/dco.py. Unchanged: concatenate
+Adapted from erp_forward_operators/dco.py. Unchanged: concatenate
 (branch, trunk, query) -> lift -> depth plain (unconditioned) residual MLP
 blocks -> FrequencyRefinement1d -> output, all along the still-shared,
 ordered frequency axis. Changed: branch is FieldContextEncoder (position-
@@ -14,7 +14,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock, resolve_activation
+from erp_forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock, resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 

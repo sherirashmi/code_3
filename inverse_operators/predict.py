@@ -1,6 +1,6 @@
 """Predict with one inverse model: target ERP spectrum -> sampled designs.
 
-Mirrors forward_operators' "predict" action (one input in, one prediction
+Mirrors erp_forward_operators' "predict" action (one input in, one prediction
 out, with a saved comparison plot), but for the inverse direction: the
 "input" is a target ERP spectrum and the "prediction" is a small set of
 candidate resonator configurations, each forward-checked through the
@@ -11,7 +11,7 @@ Diffusion).
 The target spectrum itself can come from either a resonator configuration
 you supply (solved for real, so it's a genuine physical target -- typing
 301 raw dB numbers by hand isn't practical) or the first spectrum from the
-saved test split, matching forward_operators' own two prediction-input
+saved test split, matching erp_forward_operators' own two prediction-input
 choices.
 """
 

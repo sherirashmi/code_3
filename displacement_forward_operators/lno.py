@@ -1,7 +1,7 @@
 """Displacement-field Laplace Neural Operator (LNO): (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/lno.py, with the one architecture-specific
+Adapted from erp_forward_operators/lno.py, with the one architecture-specific
 change in this whole folder that ISN'T "swap in FieldContextEncoder
 everywhere": LNO's poles (damping + natural frequency) are kept
 CONFIGURATION-ONLY, predicted from the plain ResonatorSetEncoder context
@@ -26,7 +26,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResonatorSetEncoder, resolve_activation
+from erp_forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResonatorSetEncoder, resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 

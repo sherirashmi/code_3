@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 
-from forward_operators.neural_operator_utils import (
+from erp_forward_operators.neural_operator_utils import (
     prepare_operator_data,
     _split_ids,
     _configuration_features,
@@ -24,7 +24,7 @@ from utils.erp_dataset import (
     normalize_erp_array,
     denormalize_erp_array,
 )
-from forward_operators.operator_registry import OPERATORS
+from erp_forward_operators.operator_registry import OPERATORS
 
 OP_KEYS = {"DON": "1", "DNO": "2", "DCO": "4", "WNO": "8", "GNO": "5", "NN": "9"}
 

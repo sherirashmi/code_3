@@ -1,6 +1,6 @@
 """Shared infrastructure for the displacement-field forward operators.
 
-Unlike forward_operators/ (which maps design -> already spatially-integrated
+Unlike erp_forward_operators/ (which maps design -> already spatially-integrated
 ERP), every architecture in this folder maps
     (configuration, frequency, position=(x, y)) -> (v_real, v_imag, M_real, M_imag)
 i.e. the complex plate VELOCITY field v(x, y, omega) (plus an auxiliary
@@ -34,7 +34,7 @@ directly supervised.
 
 Architecture adaptation strategy (see this folder's other files and the
 docstrings there for the per-architecture detail): every one of the 10
-original forward_operators architectures keeps its distinctive
+original erp_forward_operators architectures keeps its distinctive
 frequency-axis mechanism (DON's branch/trunk product, FNO's spectral
 convolution, GNO's message passing, STO's cross-attention, WNO's wavelet
 blocks, SIREN's sine layers, LNO's Laplace pole/residue expansion, DNO/DCO/
@@ -70,7 +70,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from forward_operators.neural_operator_utils import (
+from erp_forward_operators.neural_operator_utils import (
     MLP,
     ResonatorSetEncoder,
     physics_aware_resonator_features,
@@ -171,7 +171,7 @@ class FieldContextEncoder(nn.Module):
     """The resonator-configuration context (unchanged ResonatorSetEncoder),
     fused with the query-position's modal-basis encoding. This is the ONE
     thing every architecture in this folder swaps in place of
-    forward_operators' plain ``ResonatorSetEncoder(configuration)`` call --
+    erp_forward_operators' plain ``ResonatorSetEncoder(configuration)`` call --
     see this module's docstring for why this is the surgical, per-
     architecture-faithful way to add position-dependence.
     """
@@ -201,7 +201,7 @@ class FieldContextEncoder(nn.Module):
 
 
 class FieldResonanceQueryEncoder(nn.Module):
-    """Like forward_operators' ResonanceQueryEncoder (permutation-invariant,
+    """Like erp_forward_operators' ResonanceQueryEncoder (permutation-invariant,
     frequency-detuning-aware over resonators), extended with a spatial
     feature: distance from the query position to EACH resonator's own
     (x, y) attachment point -- a resonator's influence on the field is
@@ -257,7 +257,7 @@ def compute_field_norm_params(
     num_res: int,
 ) -> dict[str, float]:
     """z-score stats for configuration/frequency (same convention as
-    forward_operators/utils.erp_dataset), fit on the train split only, plus
+    erp_forward_operators/utils.erp_dataset), fit on the train split only, plus
     a single shared scale for displacement AND for velocity (real and imag
     share physical units within each quantity, so one scale each -- no mean
     subtraction, since both oscillate symmetrically around zero by
@@ -291,7 +291,7 @@ def compute_field_norm_params(
 class DisplacementFieldDataset(Dataset):
     """One item = one (configuration, one collocation point), all 301
     frequencies at once. Configuration is repeated across every one of its
-    own collocation points -- same idea as forward_operators'
+    own collocation points -- same idea as erp_forward_operators'
     ERPSpectrumDataset repeating one configuration across its shared
     frequency grid.
 
@@ -457,7 +457,7 @@ def train_displacement_operator(
     operator_name: str = "operator",
 ) -> tuple[nn.Module, dict[str, list[float]]]:
     """Adam + cosine schedule, best-validation checkpointing -- same recipe
-    as forward_operators.train_operator. ``physics_loss_fn(model)`` (see
+    as erp_forward_operators.train_operator. ``physics_loss_fn(model)`` (see
     physics_loss.py's ``make_physics_loss_fn``), when given, is added to
     the ordinary data loss each training step, scaled by ``physics_weight``.
     Validation is data-loss only (the physics residual isn't a held-out
@@ -614,7 +614,7 @@ def evaluate_displacement_operator(
     """Reconstructs ERP from the trained displacement field on every test
     configuration and compares against compute_erp_spectrum's true
     (analytical, full-grid) ERP -- the actual-vs-predicted ERP comparison,
-    the same reporting convention forward_operators/evaluate_operator uses
+    the same reporting convention erp_forward_operators/evaluate_operator uses
     (plot_erp_comparison per configuration, plot_prediction_scatter for
     the aggregate parity plot), just fed from a field-reconstructed
     prediction instead of a directly-predicted ERP vector.

@@ -1,7 +1,7 @@
 """Displacement-field Deep Neural Operator (DNO): (configuration, frequency,
 x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/dno.py. Unchanged: the deep FiLM-
+Adapted from erp_forward_operators/dno.py. Unchanged: the deep FiLM-
 conditioned residual MLP tower (depth blocks, each gated by
 context+detuning-aware query) and FrequencyRefinement1d -- still valid
 since frequency stays the same shared, ordered grid. Changed: the branch
@@ -17,13 +17,13 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock, resolve_activation
+from erp_forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock, resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 
 
 class FiLMResidualBlock(nn.Module):
-    """Residual MLP block modulated by configuration/query conditioning (unchanged from forward_operators/dno.py)."""
+    """Residual MLP block modulated by configuration/query conditioning (unchanged from erp_forward_operators/dno.py)."""
 
     def __init__(
         self, width: int, condition_dim: int, dropout: float = 0.0, activation: str | type[nn.Module] = "silu"

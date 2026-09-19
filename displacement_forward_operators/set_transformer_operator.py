@@ -1,7 +1,7 @@
 """Displacement-field Set Transformer Operator (STO): (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/set_transformer_operator.py. Unchanged:
+Adapted from erp_forward_operators/set_transformer_operator.py. Unchanged:
 resonator self-attention (nn.TransformerEncoder over resonator tokens)
 followed by detuning-biased frequency cross-attention and FrequencyMixer,
 all along the still-shared, ordered frequency axis. Changed, faithfully
@@ -20,7 +20,7 @@ import math
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import MLP, physics_aware_resonator_features, resolve_activation
+from erp_forward_operators.neural_operator_utils import MLP, physics_aware_resonator_features, resolve_activation
 
 
 class DetuningCrossAttention(nn.Module):

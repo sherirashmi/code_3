@@ -1,5 +1,5 @@
 """Central registry for the 10 displacement forward operators, mirroring
-forward_operators/operator_registry.py's shape (a key -> spec dict).
+erp_forward_operators/operator_registry.py's shape (a key -> spec dict).
 """
 
 from __future__ import annotations

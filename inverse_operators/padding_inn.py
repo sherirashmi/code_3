@@ -68,7 +68,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from forward_operators.neural_operator_utils import MLP
+from erp_forward_operators.neural_operator_utils import MLP
 
 from .common import flatten_configuration
 

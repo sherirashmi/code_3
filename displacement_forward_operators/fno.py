@@ -1,7 +1,7 @@
 """Displacement-field Fourier Neural Operator (FNO): (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/fno.py. Unchanged: the SpectralConv1d
+Adapted from erp_forward_operators/fno.py. Unchanged: the SpectralConv1d
 Fourier-mode-truncation mixing runs along the frequency axis exactly as
 before -- this is the one architecture where preserving that axis as a
 shared, ordered grid mattered most (see displacement_operator_utils.py's
@@ -18,13 +18,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from forward_operators.neural_operator_utils import resolve_activation
+from erp_forward_operators.neural_operator_utils import resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 
 
 class SpectralConv1d(nn.Module):
-    """Learned convolution on retained Fourier modes (unchanged from forward_operators/fno.py)."""
+    """Learned convolution on retained Fourier modes (unchanged from erp_forward_operators/fno.py)."""
 
     def __init__(self, in_channels: int, out_channels: int, modes: int) -> None:
         super().__init__()

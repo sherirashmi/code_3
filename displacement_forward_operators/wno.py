@@ -1,7 +1,7 @@
 """Displacement-field Wavelet Neural Operator (WNO): (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/wno.py. Unchanged: the learned multi-level
+Adapted from erp_forward_operators/wno.py. Unchanged: the learned multi-level
 Haar wavelet analysis/mixing/synthesis blocks run along the frequency axis
 exactly as before -- valid for the same reason FNO's spectral conv stays
 valid (frequency is still a shared, ordered grid; see
@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from forward_operators.neural_operator_utils import resolve_activation
+from erp_forward_operators.neural_operator_utils import resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 

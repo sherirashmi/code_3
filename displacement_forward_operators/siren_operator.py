@@ -1,7 +1,7 @@
 """Displacement-field SIREN neural operator: (configuration, frequency, x,
 y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/siren_operator.py. Unchanged: the depth
+Adapted from erp_forward_operators/siren_operator.py. Unchanged: the depth
 FiLM-modulated sine layers (sin(omega_0 * (gamma*Linear(h)+beta))) and
 FrequencyRefinement1d, still along the shared, ordered frequency axis.
 Changed: context comes from FieldContextEncoder (position-aware) instead
@@ -16,7 +16,7 @@ import math
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import FrequencyRefinement1d
+from erp_forward_operators.neural_operator_utils import FrequencyRefinement1d
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 

@@ -1,7 +1,7 @@
 """Displacement-field DeepONet (DON): (configuration, frequency, x, y) ->
 (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/don.py. What's UNCHANGED: the classical
+Adapted from erp_forward_operators/don.py. What's UNCHANGED: the classical
 branch/trunk inner product over frequency (branch encodes resonator
 configuration, trunk encodes query frequency, num_terms stacked basis
 pairs, config-modulated FiLM gating of the trunk, FrequencyRefinement1d
@@ -36,7 +36,7 @@ import math
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import FrequencyRefinement1d, MLP, resolve_activation
+from erp_forward_operators.neural_operator_utils import FrequencyRefinement1d, MLP, resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder
 

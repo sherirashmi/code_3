@@ -1,6 +1,6 @@
 """Plain feedforward neural-network baseline for ERP spectrum prediction.
 
-Every other file in ``forward_operators/`` implements a specific neural-operator
+Every other file in ``erp_forward_operators/`` implements a specific neural-operator
 idea (branch/trunk product, spectral/wavelet transform, message passing,
 attention, sinusoidal representation, ...). This file is the "does any of
 that sophistication even matter" baseline: a bog-standard stack of
@@ -26,7 +26,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import (
+from erp_forward_operators.neural_operator_utils import (
     FrequencyRefinement1d,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,

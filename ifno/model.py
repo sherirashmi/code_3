@@ -26,7 +26,7 @@ which the paper's construction assumes. The adaptation:
     axis (fixed, deterministic -- utils.physics.freqs), so that is what
     plays the paper's "spatial grid" role, and the invertible Fourier
     blocks' spectral convolution (SpectralConv1d, same construction as
-    forward_operators/fno.py and displacement_forward_operators/fno.py)
+    erp_forward_operators/fno.py and displacement_forward_operators/fno.py)
     mixes along frequency, exactly as FNO's Fourier layer requires an
     ordered axis to be meaningful (see those modules' own docstrings for
     why a scattered axis would break this).
@@ -36,7 +36,7 @@ which the paper's construction assumes. The adaptation:
     every one of the 301 points, concatenated with a genuine per-point
     resonance-detuning feature (ResonanceQueryEncoder) and the frequency
     value itself -- i.e. exactly the conditioning signal
-    forward_operators/fno.py already uses for its own (non-invertible) FNO,
+    erp_forward_operators/fno.py already uses for its own (non-invertible) FNO,
     just lifted through P into the 2d-channel latent this architecture's
     coupling blocks require instead of FNO's plain width-d channels.
   - Inverse direction (P', lift): given a target spectrum, each of the 301
@@ -81,7 +81,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from forward_operators.neural_operator_utils import (
+from erp_forward_operators.neural_operator_utils import (
     MLP,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
@@ -97,7 +97,7 @@ from utils.physics import freqs as _frequency_grid_hz
 
 class SpectralConv1d(nn.Module):
     """Learned convolution on retained Fourier modes -- same construction as
-    forward_operators/fno.py and displacement_forward_operators/fno.py's own
+    erp_forward_operators/fno.py and displacement_forward_operators/fno.py's own
     SpectralConv1d, redefined locally here per this repo's existing
     convention of keeping each operator module self-contained.
     """
@@ -122,7 +122,7 @@ class SpectralConv1d(nn.Module):
 
 class FourierLayer1d(nn.Module):
     """The paper's "standard FNO Fourier layer" L: a location-wise linear
-    transform W (a kernel-3 conv, playing the same role as forward_operators'
+    transform W (a kernel-3 conv, playing the same role as erp_forward_operators'
     own ``local`` conv) plus the spectral integral, then a nonlinear
     activation -- eq 1 of the paper, ``sigma(W*v + integral(kappa*v'))``.
     Deliberately has NO residual/skip connection of its own (unlike this
@@ -344,7 +344,7 @@ class IFNO(nn.Module):
 
     def predict_spectrum(self, configuration: torch.Tensor, frequency: torch.Tensor | None = None) -> torch.Tensor:
         """Forward-operator use: configuration -> predicted ERP (B, F, 1),
-        directly comparable to forward_operators' own model outputs.
+        directly comparable to erp_forward_operators' own model outputs.
         """
         if frequency is None:
             frequency = self._frequency_batch(configuration.shape[0])

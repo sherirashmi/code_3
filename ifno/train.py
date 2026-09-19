@@ -12,7 +12,7 @@ inverse pipeline's own point estimate, not the oracle design).
 Evaluation, once trained:
   - Forward: predict_spectrum(configuration) vs the dataset's true ERP on
     the test split -- RMSE/MAE/R^2/Pearson plus per-configuration overlay
-    plots, same reporting convention as forward_operators/evaluate_operator.
+    plots, same reporting convention as erp_forward_operators/evaluate_operator.
   - Inverse: sample(spectrum, num_samples) on test spectra, run every
     sampled design through the ACTUAL coupled solver (not a neural
     surrogate -- same principle as inverse_operators/train_all.py's own

@@ -1,7 +1,7 @@
 """Displacement-field plain feedforward baseline: (configuration,
 frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
-Adapted from forward_operators/nn.py, kept as the same deliberate "does
+Adapted from erp_forward_operators/nn.py, kept as the same deliberate "does
 any of that sophistication even matter" ablation control: Linear -> ReLU
 -> Dropout, no residual connections, no FiLM, no branch/trunk split, no
 spectral/wavelet/attention/message-passing mechanism. It still gets
@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from forward_operators.neural_operator_utils import FrequencyRefinement1d, resolve_activation
+from erp_forward_operators.neural_operator_utils import FrequencyRefinement1d, resolve_activation
 
 from .displacement_operator_utils import FieldContextEncoder, FieldResonanceQueryEncoder
 
