@@ -1,5 +1,5 @@
 """Displacement-field Set Transformer Operator (STO): (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/set_transformer_operator.py. Unchanged:
 resonator self-attention (nn.TransformerEncoder over resonator tokens)
@@ -10,7 +10,7 @@ attention bias already used (raw config, query frequency, detuning,
 |detuning|) as its bias-net input; a spatial-distance feature (query
 position vs. each resonator's own (x,y)) is added alongside it, same
 position-side counterpart to detuning used in gno.py/dno.py/etc. Output
-is 2 channels, not 1.
+is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class DisplacementSetTransformerOperator(nn.Module):
         self.cross_attention = DetuningCrossAttention(width, heads, dropout=dropout, activation=activation_cls)
         self.cross_norm = nn.LayerNorm(width)
         self.frequency_mixer = FrequencyMixer(width, activation=activation_cls)
-        self.output = MLP([width, width, width // 2, 2], activation=activation_cls)
+        self.output = MLP([width, width, width // 2, 4], activation=activation_cls)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

@@ -1,5 +1,5 @@
 """Displacement-field Graph Neural Operator (GNO): (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/gno.py. Unchanged: complete-graph message
 passing between resonator nodes (GraphMessageLayer, geometric/frequency
@@ -11,7 +11,7 @@ GNO's OWN idiom rather than swapping in a shared class: the query kernel's
 pairwise features already include frequency detuning (query_frequency -
 f_t) per resonator; a spatial-distance feature (query position vs. each
 resonator's own (x,y)) is added alongside it, the exact position-side
-counterpart to detuning's frequency-side role. Output is 2 channels, not 1.
+counterpart to detuning's frequency-side role. Output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ class DisplacementGNO(nn.Module):
         self.attention_score = MLP([width, width // 2, 1], activation=activation_cls)
         self.attention_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(width)
-        self.output = MLP([width, width // 2, 2], activation=activation_cls)
+        self.output = MLP([width, width // 2, 4], activation=activation_cls)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

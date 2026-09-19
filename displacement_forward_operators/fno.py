@@ -1,5 +1,5 @@
 """Displacement-field Fourier Neural Operator (FNO): (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/fno.py. Unchanged: the SpectralConv1d
 Fourier-mode-truncation mixing runs along the frequency axis exactly as
@@ -9,7 +9,7 @@ module docstring: rfft along a scattered axis would be meaningless).
 Changed: branch context comes from FieldContextEncoder (position-aware)
 instead of ResonatorSetEncoder alone; the query uses
 FieldResonanceQueryEncoder (adds spatial distance to each resonator);
-final projection outputs 2 channels, not 1.
+final projection outputs 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class DisplacementFNO(nn.Module):
         self.blocks = nn.ModuleList(
             [FNOBlock1d(width, modes, dropout=dropout, activation=activation_cls) for _ in range(depth)]
         )
-        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 2))
+        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 4))
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

@@ -1,12 +1,12 @@
 """Displacement-field Deep Cat Operator (DCO): (configuration, frequency,
-x, y) -> (displacement_real, displacement_imag).
+x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/dco.py. Unchanged: concatenate
 (branch, trunk, query) -> lift -> depth plain (unconditioned) residual MLP
 blocks -> FrequencyRefinement1d -> output, all along the still-shared,
 ordered frequency axis. Changed: branch is FieldContextEncoder (position-
 aware) instead of ResonatorSetEncoder alone; query is
-FieldResonanceQueryEncoder; output is 2 channels, not 1.
+FieldResonanceQueryEncoder; output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class DisplacementDCO(nn.Module):
         self.blocks = nn.ModuleList([ResidualMLPBlock(hidden_dim, activation=activation_cls) for _ in range(depth)])
         self.block_dropout = nn.Dropout(dropout)
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = MLP([hidden_dim, hidden_dim // 2, 2], activation=activation_cls)
+        self.output = MLP([hidden_dim, hidden_dim // 2, 4], activation=activation_cls)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

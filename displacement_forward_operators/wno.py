@@ -1,5 +1,5 @@
 """Displacement-field Wavelet Neural Operator (WNO): (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/wno.py. Unchanged: the learned multi-level
 Haar wavelet analysis/mixing/synthesis blocks run along the frequency axis
@@ -7,7 +7,7 @@ exactly as before -- valid for the same reason FNO's spectral conv stays
 valid (frequency is still a shared, ordered grid; see
 displacement_operator_utils.py's module docstring). Changed: branch
 context from FieldContextEncoder (position-aware); query from
-FieldResonanceQueryEncoder; final projection outputs 2 channels, not 1.
+FieldResonanceQueryEncoder; final projection outputs 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ class DisplacementWNO(nn.Module):
         self.blocks = nn.ModuleList(
             [MultiLevelHaarWaveletBlock1d(width, levels=levels, dropout=dropout, activation=activation_cls) for _ in range(depth)]
         )
-        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 2))
+        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 4))
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

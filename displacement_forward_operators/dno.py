@@ -1,5 +1,5 @@
 """Displacement-field Deep Neural Operator (DNO): (configuration, frequency,
-x, y) -> (displacement_real, displacement_imag).
+x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/dno.py. Unchanged: the deep FiLM-
 conditioned residual MLP tower (depth blocks, each gated by
@@ -9,7 +9,7 @@ context now comes from FieldContextEncoder (resonator configuration fused
 with the query position's modal-basis encoding, see
 displacement_operator_utils.py) instead of ResonatorSetEncoder alone; the
 detuning-aware query now also carries a spatial-distance-to-each-resonator
-feature (FieldResonanceQueryEncoder); output is 2 channels, not 1.
+feature (FieldResonanceQueryEncoder); output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class DisplacementDNO(nn.Module):
             [FiLMResidualBlock(hidden_dim, condition_dim, dropout=dropout, activation=activation_cls) for _ in range(depth)]
         )
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = MLP([hidden_dim, hidden_dim // 2, 2], activation=activation_cls)
+        self.output = MLP([hidden_dim, hidden_dim // 2, 4], activation=activation_cls)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

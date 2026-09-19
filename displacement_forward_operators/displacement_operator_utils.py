@@ -2,27 +2,35 @@
 
 Unlike forward_operators/ (which maps design -> already spatially-integrated
 ERP), every architecture in this folder maps
-    (configuration, frequency, position=(x, y)) -> (displacement_real, displacement_imag)
-i.e. the actual complex plate displacement field w(x, y, omega) at one
-spatial point and every training frequency, trained against the
-dataset_field_displacement*.pth shards (utils/field_dataset.py).
+    (configuration, frequency, position=(x, y)) -> (v_real, v_imag, M_real, M_imag)
+i.e. the complex plate VELOCITY field v(x, y, omega) (plus an auxiliary
+laplacian(v) field, M, used only by the physics loss) at one spatial point
+and every training frequency. Velocity targets are derived from the
+dataset_field_displacement*.pth shards (utils/field_dataset.py), which
+store displacement -- see compute_velocity_from_displacement below.
 
-Velocity is NOT a learned output. v = i*omega*w, so given predicted
-(w_real, w_imag) and the known (input) omega, velocity is an EXACT
-deterministic function of what the network already predicts:
-    v = i*omega*(w_real + i*w_imag) = -omega*w_imag + i*omega*w_real
-    => v_real = -omega * w_imag      (imag, negated, scaled by omega)
-    => v_imag =  omega * w_real      (real, scaled by omega, no sign flip)
-Real and imaginary parts swap, one of the two swapped assignments picks up
-a minus sign, both get scaled by omega -- exactly the relationship asked
-for, confirmed here (see also compute_velocity_from_displacement below and
-its docstring for the derivation, and displacement_forward_operators'
-package-level docstring / the commit message for a worked numeric check).
-Forcing the network to output 4 independently-learned numbers instead
-would let it produce answers that don't actually satisfy v=i*omega*w --
-strictly worse than building the exact relationship into the output layer
-for free, so every architecture here predicts 2 numbers (w_real, w_imag),
-not 4.
+VELOCITY, not displacement, is the primary learned output (channels 0:2 --
+v_real, v_imag). v = i*omega*w is a purely TEMPORAL relationship (omega
+doesn't depend on x, y), so it does not change what order of spatial
+derivative the physics residual needs -- but velocity is what ERP actually
+integrates (ERP = 0.5*rho*c*integral(|v|^2)), so making it the directly
+supervised quantity removes a derived-quantity step between what the
+network is trained on and what evaluation actually needs.
+
+Every architecture outputs 4 channels, not 2:
+    (v_real, v_imag, M_real, M_imag)
+where M = laplacian(v) = d^2v/dx^2 + d^2v/dy^2 is a SECOND, independently
+learned field with no ground-truth label anywhere in the dataset (a pure
+auxiliary quantity, standard "mixed formulation" PINN practice). Splitting
+the governing equation's laplacian(laplacian(v)) into two coupled 2nd-order
+equations via M -- (A) M - laplacian(v) = 0, (B) D*laplacian(M) -
+rho*h*omega^2*v = 0 -- means no autograd derivative chain in the physics
+loss needs to go deeper than 2 nested calls, instead of 4; see
+physics_loss.py's module docstring for the full derivation. Only the data
+loss (channels 0:2, against velocity targets derived from the dataset's
+stored displacement, see compute_velocity_from_displacement) and the
+physics residual (all 4 channels) ever constrain the network -- M is never
+directly supervised.
 
 Architecture adaptation strategy (see this folder's other files and the
 docstrings there for the per-architecture detail): every one of the 10
@@ -88,12 +96,26 @@ _CONFIG_ZSCORE_FIELDS = ("m", "k", "f_t", "x", "y")
 
 
 def compute_velocity_from_displacement(
-    w_real: torch.Tensor, w_imag: torch.Tensor, omega: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """v = i*omega*w, exactly -- see this module's docstring for the derivation.
+    w_real: np.ndarray, w_imag: np.ndarray, omega: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """v = i*omega*w, exactly:
+        v = i*omega*(w_real + i*w_imag) = -omega*w_imag + i*omega*w_real
+        => v_real = -omega * w_imag      (imag, negated, scaled by omega)
+        => v_imag =  omega * w_real      (real, scaled by omega, no sign flip)
+    Real and imaginary parts swap, one of the two swapped assignments picks
+    up a minus sign, both get scaled by omega.
 
-    ``omega`` must already be angular frequency (2*pi*f) in the same
-    broadcastable shape as w_real/w_imag.
+    Used once, at dataset-build time (DisplacementFieldDataset below), to
+    convert the stored displacement arrays into the velocity TARGETS the
+    network is actually trained against -- not used at inference time,
+    since the network predicts v directly now (see this module's
+    docstring). Plain numpy, not torch: this never needs to be part of an
+    autograd graph, unlike physics_loss.py's own velocity computation from
+    the network's live output.
+
+    ``omega`` must already be angular frequency (2*pi*f) in a shape
+    broadcastable against w_real/w_imag (typically (1, F) against (C, F) or
+    (P, F)).
     """
     v_real = -omega * w_imag
     v_imag = omega * w_real
@@ -236,9 +258,12 @@ def compute_field_norm_params(
 ) -> dict[str, float]:
     """z-score stats for configuration/frequency (same convention as
     forward_operators/utils.erp_dataset), fit on the train split only, plus
-    a single shared scale for displacement (real and imag share physical
-    units, so one scale -- no mean subtraction, since displacement
-    oscillates symmetrically around zero by construction).
+    a single shared scale for displacement AND for velocity (real and imag
+    share physical units within each quantity, so one scale each -- no mean
+    subtraction, since both oscillate symmetrically around zero by
+    construction). ``displacement_std`` is kept only because the raw
+    dataset is stored as displacement; ``velocity_std`` is what the network
+    itself is trained and normalized against (see this module's docstring).
     """
     norm_params: dict[str, float] = {"num_res": int(num_res)}
     train_config = configuration_features[train_ids]
@@ -253,6 +278,13 @@ def compute_field_norm_params(
     train_imag = imag_displacement[train_ids]
     combined = np.concatenate([train_real.ravel(), train_imag.ravel()])
     norm_params["displacement_std"] = float(combined.std() + 1e-12)
+
+    omega = (2.0 * np.pi * np.asarray(frequency_values, dtype=np.float64))[None, :]  # (1, F)
+    v_real, v_imag = compute_velocity_from_displacement(
+        train_real.astype(np.float64), train_imag.astype(np.float64), omega
+    )
+    v_combined = np.concatenate([v_real.ravel(), v_imag.ravel()])
+    norm_params["velocity_std"] = float(v_combined.std() + 1e-12)
     return norm_params
 
 
@@ -262,6 +294,14 @@ class DisplacementFieldDataset(Dataset):
     own collocation points -- same idea as forward_operators'
     ERPSpectrumDataset repeating one configuration across its shared
     frequency grid.
+
+    Targets are VELOCITY (v_real, v_imag), not displacement, even though
+    the dataset on disk stores displacement -- converted once here via
+    compute_velocity_from_displacement (v = i*omega*w) and normalized by
+    ``velocity_std``, matching what the network now predicts directly in
+    channels 0:2 (see this module's docstring). There is no target for the
+    auxiliary M = laplacian(v) channels (2:4) -- those are only ever
+    constrained by the physics residual, never by data.
 
     Position (x, y) is stored RAW (physical meters), never normalized --
     the model normalizes it internally via TorchModeShapeFeatures'
@@ -286,23 +326,26 @@ class DisplacementFieldDataset(Dataset):
 
         config_sel = configuration_features[configuration_ids]
         colloc_sel = collocation_points[configuration_ids]
-        real_sel = real_displacement[configuration_ids]
-        imag_sel = imag_displacement[configuration_ids]
+        real_sel = real_displacement[configuration_ids].astype(np.float64)
+        imag_sel = imag_displacement[configuration_ids].astype(np.float64)
 
         config_norm = normalize_configuration_array(config_sel, norm_params)
         config_flat = np.repeat(config_norm, points_per_config, axis=0)  # (C*P, N, 5)
         position_flat = colloc_sel.reshape(-1, 2).astype(np.float32)  # (C*P, 2), RAW meters
 
-        disp_scale = float(norm_params["displacement_std"])
-        real_flat = (real_sel.reshape(-1, real_sel.shape[-1]) / disp_scale).astype(np.float32)
-        imag_flat = (imag_sel.reshape(-1, imag_sel.shape[-1]) / disp_scale).astype(np.float32)
+        omega = (2.0 * np.pi * np.asarray(frequency_values, dtype=np.float64))[None, None, :]  # (1, 1, F)
+        v_real_sel, v_imag_sel = compute_velocity_from_displacement(real_sel, imag_sel, omega)  # (C, P, F)
+
+        vel_scale = float(norm_params["velocity_std"])
+        real_flat = (v_real_sel.reshape(-1, v_real_sel.shape[-1]) / vel_scale).astype(np.float32)
+        imag_flat = (v_imag_sel.reshape(-1, v_imag_sel.shape[-1]) / vel_scale).astype(np.float32)
 
         freq_norm = normalize_frequency_array(frequency_values, norm_params)
 
         self.configuration = torch.from_numpy(config_flat)
         self.frequency = torch.from_numpy(freq_norm.astype(np.float32))[:, None]  # (F, 1), shared
         self.position = torch.from_numpy(position_flat)  # (C*P, 2)
-        self.target_real = torch.from_numpy(real_flat)  # (C*P, F)
+        self.target_real = torch.from_numpy(real_flat)  # (C*P, F), velocity
         self.target_imag = torch.from_numpy(imag_flat)
 
     def __len__(self) -> int:
@@ -387,17 +430,12 @@ def build_displacement_loaders(
 def displacement_data_loss(
     pred_real: torch.Tensor, pred_imag: torch.Tensor, target_real: torch.Tensor, target_imag: torch.Tensor
 ) -> torch.Tensor:
-    """Plain MSE on normalized (real, imag) displacement.
-
-    A velocity-AWARE weighting (penalizing v=i*omega*w error, not just w
-    error -- higher-frequency errors get amplified by the omega factor,
-    which would push training toward what ultimately matters for ERP) is a
-    natural refinement but isn't implemented here: it needs its own
-    consistently-normalized velocity scale (velocity and displacement do
-    not share a scale once omega, which ranges over ~63-1005 rad/s, is
-    multiplied in) to avoid one term silently dominating the other, which
-    is a real piece of design work left for later rather than done
-    half-carefully under time pressure.
+    """Plain MSE on normalized (real, imag) VELOCITY -- ``pred_real``/
+    ``pred_imag`` are the model's channels 0:2 (v_real, v_imag), never the
+    auxiliary M channels (2:4), which have no data target at all (see
+    DisplacementFieldDataset's docstring). Named ``displacement_data_loss``
+    for continuity with the rest of this module/its callers, not because
+    the target is displacement anymore.
     """
     return F.mse_loss(pred_real, target_real) + F.mse_loss(pred_imag, target_imag)
 
@@ -446,7 +484,7 @@ def train_displacement_operator(
             target_imag = target_imag.to(device)
 
             optimizer.zero_grad(set_to_none=True)
-            pred = model(configuration, frequency, x, y)  # (B, F, 2)
+            pred = model(configuration, frequency, x, y)  # (B, F, 4): v_real, v_imag, M_real, M_imag
             data_loss = displacement_data_loss(pred[..., 0:1], pred[..., 1:2], target_real, target_imag)
 
             loss = data_loss
@@ -522,6 +560,12 @@ def reconstruct_erp_with_model(
     here costs a real forward pass through the network, so grid_nx*grid_ny
     trades reconstruction accuracy for compute directly -- 40*15=600 points
     is ~47x fewer evaluations than the full 280x100 grid.
+
+    Reads velocity DIRECTLY from the model's channels 0:2 -- no more
+    "predict displacement, then derive velocity" step, since the network
+    now predicts v itself (see this module's docstring). The auxiliary M
+    channels (2:4) are ignored here entirely; they exist only to support
+    the physics residual during training.
     """
     from utils.physics import P_ref, c_L, rho_L
     from utils.support import grid as make_grid
@@ -544,15 +588,11 @@ def reconstruct_erp_with_model(
         freq_t = torch.from_numpy(freq_norm).to(device)[None, :, None].expand(n_points, -1, -1).contiguous()
         x_t = torch.from_numpy(xs).to(device)[:, None]
         y_t = torch.from_numpy(ys).to(device)[:, None]
-        pred = model(config_t, freq_t, x_t, y_t)  # (P, F, 2)
+        pred = model(config_t, freq_t, x_t, y_t)  # (P, F, 4): v_real, v_imag, M_real, M_imag
 
-    disp_scale = float(norm_params["displacement_std"])
-    w_real = pred[..., 0].cpu().numpy().astype(np.float64) * disp_scale
-    w_imag = pred[..., 1].cpu().numpy().astype(np.float64) * disp_scale
-
-    omega = 2.0 * np.pi * frequency_hz[None, :]  # (1, F)
-    v_real = -omega * w_imag
-    v_imag = omega * w_real
+    vel_scale = float(norm_params["velocity_std"])
+    v_real = pred[..., 0].cpu().numpy().astype(np.float64) * vel_scale
+    v_imag = pred[..., 1].cpu().numpy().astype(np.float64) * vel_scale
     velocity = (v_real + 1j * v_imag).reshape(grid_ny, grid_nx, n_freq)
 
     velocity_energy = np.sum(np.abs(velocity) ** 2, axis=(0, 1)) * dA

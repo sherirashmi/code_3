@@ -1,5 +1,5 @@
 """Displacement-field DeepONet (DON): (configuration, frequency, x, y) ->
-(displacement_real, displacement_imag).
+(v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/don.py. What's UNCHANGED: the classical
 branch/trunk inner product over frequency (branch encodes resonator
@@ -18,13 +18,15 @@ What changed:
      displacement_operator_utils.py. Position enters exactly where the
      resonator configuration already entered (branch conditioning), not
      as a new trunk axis.
-  2. Output is 2 channels (displacement_real, displacement_imag), not 1
-     (ERP). The branch/trunk basis stays SHARED between the two channels
-     (physically reasonable -- both are components of the same underlying
-     field), but the final term-weighting and bias are per-channel
-     (``term_logits``/``bias`` gain a size-2 axis), since the real and
-     imaginary parts of a general complex field aren't simply
-     proportional to one another.
+  2. Output is 4 channels (v_real, v_imag, M_real, M_imag), not 1 (ERP).
+     ``v`` is velocity (the primary, data-supervised quantity); ``M`` is
+     the auxiliary laplacian(v) field used only by physics_loss.py's
+     mixed-formulation residual (see displacement_operator_utils.py's
+     module docstring), never data-supervised. The branch/trunk basis
+     stays SHARED between all four channels (physically reasonable -- all
+     are components of the same underlying field/its Laplacian), but the
+     final term-weighting and bias are per-channel (``term_logits``/
+     ``bias`` gain a size-4 axis).
 """
 
 from __future__ import annotations
@@ -62,13 +64,13 @@ class DisplacementDON(nn.Module):
         self.trunk = MLP([1, hidden_dim, hidden_dim, stacked_dim], activation=activation_cls)
         self.trunk_modulation = MLP([context_dim, hidden_dim, 2 * stacked_dim], activation=activation_cls)
 
-        self.term_logits = nn.Parameter(torch.zeros(self.num_terms, 2))  # per output channel
-        self.bias = nn.Parameter(torch.zeros(2))
+        self.term_logits = nn.Parameter(torch.zeros(self.num_terms, 4))  # per output channel
+        self.bias = nn.Parameter(torch.zeros(4))
         self.scale = math.sqrt(float(basis_dim))
 
-        self.refine_lift = nn.Linear(2, refine_width)
+        self.refine_lift = nn.Linear(4, refine_width)
         self.frequency_refinement = FrequencyRefinement1d(refine_width)
-        self.refine_project = nn.Linear(refine_width, 2)
+        self.refine_project = nn.Linear(refine_width, 4)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor
@@ -84,8 +86,8 @@ class DisplacementDON(nn.Module):
         trunk = (gamma * trunk + beta).view(batch, n_freq, self.num_terms, self.basis_dim)
 
         term_output = (branch * trunk).sum(dim=-1) / self.scale  # (B, F, T)
-        term_weight = torch.softmax(self.term_logits, dim=0)  # (T, 2)
-        base_output = torch.einsum("bft,tc->bfc", term_output, term_weight) + self.bias  # (B, F, 2)
+        term_weight = torch.softmax(self.term_logits, dim=0)  # (T, 4)
+        base_output = torch.einsum("bft,tc->bfc", term_output, term_weight) + self.bias  # (B, F, 4)
 
         refined = self.refine_lift(base_output).transpose(1, 2)
         refined = self.frequency_refinement(refined)

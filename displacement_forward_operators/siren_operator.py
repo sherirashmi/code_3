@@ -1,12 +1,12 @@
 """Displacement-field SIREN neural operator: (configuration, frequency, x,
-y) -> (displacement_real, displacement_imag).
+y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/siren_operator.py. Unchanged: the depth
 FiLM-modulated sine layers (sin(omega_0 * (gamma*Linear(h)+beta))) and
 FrequencyRefinement1d, still along the shared, ordered frequency axis.
 Changed: context comes from FieldContextEncoder (position-aware) instead
 of ResonatorSetEncoder alone; query_features from FieldResonanceQueryEncoder;
-output is 2 channels, not 1.
+output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class DisplacementSIRENOperator(nn.Module):
         layers.extend(ModulatedSineLayer(hidden_dim, hidden_dim, context_dim, omega_0=omega_0) for _ in range(depth - 1))
         self.layers = nn.ModuleList(layers)
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = nn.Linear(hidden_dim, 2)
+        self.output = nn.Linear(hidden_dim, 4)
 
         with torch.no_grad():
             bound = math.sqrt(6.0 / hidden_dim) / self.omega_0

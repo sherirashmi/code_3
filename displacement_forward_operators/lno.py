@@ -1,5 +1,5 @@
 """Displacement-field Laplace Neural Operator (LNO): (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/lno.py, with the one architecture-specific
 change in this whole folder that ISN'T "swap in FieldContextEncoder
@@ -18,7 +18,7 @@ picture the modal expansion this project's own solver uses is built on
 eta_mn's own dynamics, position-dependence comes from phi_mn(x,y)).
 
 Everything else -- evaluating each pole's rational term at s=j*frequency,
-FrequencyRefinement1d -- is unchanged. Output is 2 channels, not 1.
+FrequencyRefinement1d -- is unchanged. Output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ class DisplacementLNO(nn.Module):
         self.lift = nn.Linear(2 * self.num_poles + query_dim + 1, width)
         self.dropout = nn.Dropout(dropout)
         self.refine = FrequencyRefinement1d(width)
-        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 2))
+        self.project = nn.Sequential(nn.Linear(width, width), activation_cls(), nn.Linear(width, 4))
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor

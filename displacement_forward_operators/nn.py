@@ -1,5 +1,5 @@
 """Displacement-field plain feedforward baseline: (configuration,
-frequency, x, y) -> (displacement_real, displacement_imag).
+frequency, x, y) -> (v_real, v_imag, M_real, M_imag).
 
 Adapted from forward_operators/nn.py, kept as the same deliberate "does
 any of that sophistication even matter" ablation control: Linear -> ReLU
@@ -9,7 +9,7 @@ exactly the same *information* every other architecture in this folder
 has -- FieldContextEncoder (position-aware resonator context) and
 FieldResonanceQueryEncoder (frequency-detuning AND spatial-distance
 features) -- so any accuracy gap reflects architecture, not access to
-different inputs. Output is 2 channels, not 1.
+different inputs. Output is 4 channels, not 1.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class DisplacementNN(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
         self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
-        self.output = nn.Linear(hidden_dim, 2)
+        self.output = nn.Linear(hidden_dim, 4)
 
     def forward(
         self, configuration: torch.Tensor, frequency: torch.Tensor, x: torch.Tensor, y: torch.Tensor
