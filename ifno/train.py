@@ -45,14 +45,14 @@ from utils.support import seed_everything
 OUT_DIR = Path("plots/IFNO")
 MODEL_DIR = Path("ifno/models")
 
-STAGE1_EPOCHS = 35
-STAGE2_EPOCHS = 25
-STAGE3_EPOCHS = 35
-KL_WARMUP_EPOCHS = 10
+STAGE1_EPOCHS = 15
+STAGE2_EPOCHS = 15
+STAGE3_EPOCHS = 15
+KL_WARMUP_EPOCHS = 5
 KL_TARGET_BETA = 0.05
-BATCH_SIZE = 64
-NUM_CONFIGURATIONS = 10000
-DATASET_FILE = "datasets/dataset_erp_ft.pth"
+BATCH_SIZE = 128
+NUM_CONFIGURATIONS = 100000
+DATASET_FILE = ("datasets/dataset_erp_ft_100k_part1.pth", "datasets/dataset_erp_ft_100k_part2.pth")
 SEED = 727
 
 
