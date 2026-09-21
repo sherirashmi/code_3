@@ -50,9 +50,9 @@ import matplotlib.pyplot as plt
 
 from utils.erp_dataset import denormalize_erp_array
 
-from inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
-from inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from inverse_operators.registry import INVERSE_MODELS, NUM_RES
+from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
+from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
+from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
@@ -128,7 +128,7 @@ def train_one_inverse_model(
     )
     model = spec["build"]()
     history = train_one(model, loaders, spec["loss_fn"], epochs=epochs, lr=spec["lr"], name=spec["short"])
-    save_checkpoint(model, dataset.norm_params, f"models/inverse_{spec['short'].lower()}.pth")
+    save_checkpoint(model, dataset.norm_params, f"erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth")
     return model, history, dataset
 
 
@@ -156,7 +156,7 @@ def main(
         print("#" * 70)
         history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name=name)
         histories[name] = history
-        save_checkpoint(model, norm, f"models/inverse_{name.lower()}.pth")
+        save_checkpoint(model, norm, f"erp_inverse_operators/models/inverse_{name.lower()}.pth")
 
     # ------------------------------------------------------------------
     # Validation + per-sample reporting.
@@ -179,7 +179,7 @@ def main(
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
 
-    out_dir = Path("plots/INVERSE_OPERATORS")
+    out_dir = Path("erp_inverse_operators/plots")
     out_dir.mkdir(parents=True, exist_ok=True)
     report_lines = []
 

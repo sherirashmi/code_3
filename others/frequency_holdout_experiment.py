@@ -113,7 +113,7 @@ def main(num_configurations=10000, epochs=200, num_plot=5):
 
     norm = dataset.norm_params
     results = {}
-    out_root = Path("plots/FREQ_HOLDOUT")
+    out_root = Path("erp_forward_operators/plots/FREQ_HOLDOUT")
     out_root.mkdir(parents=True, exist_ok=True)
 
     for short, key in OP_KEYS.items():
@@ -182,7 +182,7 @@ def main(num_configurations=10000, epochs=200, num_plot=5):
             fig.savefig(plot_dir / f"holdout_spectrum_config_{i + 1:02d}.png", dpi=140)
             plt.close(fig)
 
-        torch.save(model.state_dict(), f"models/{short.lower()}_freq_holdout.pth")
+        torch.save(model.state_dict(), f"erp_forward_operators/models/{short.lower()}_freq_holdout.pth")
         print(f"Saved checkpoint + plots for {short}")
 
     with open(out_root / "results.json", "w") as f:

@@ -62,7 +62,7 @@ which the paper's construction assumes. The adaptation:
     specialized to this project's design space -- encodes the inverse
     pipeline's point-estimate design into a small Gaussian latent z and
     decodes back, giving `sample()` a genuine posterior to draw from
-    (matching every other model in inverse_operators/'s
+    (matching every other model in erp_inverse_operators/'s
     ``sample(spectrum, num_samples) -> (B, num_samples, design_dim)``
     convention) instead of always returning the same point estimate.
 
@@ -282,7 +282,7 @@ class IFNO(nn.Module):
         # deterministic, independent of any specific generated dataset, so
         # it can be registered here at construction time without needing a
         # live dataset/norm_params -- keeping IFNO's constructor a plain
-        # zero-arg-friendly call like every other inverse_operators model.
+        # zero-arg-friendly call like every other erp_inverse_operators model.
         frequency_hz = torch.from_numpy(_frequency_grid_hz.astype("float32"))
         if frequency_hz.numel() != self.n_freq:
             raise ValueError(f"utils.physics.freqs has {frequency_hz.numel()} points, expected n_freq={self.n_freq}.")
@@ -416,7 +416,7 @@ class IFNO(nn.Module):
 
         Returns a plain ``(B, num_samples, design_dim)`` tensor (no
         tractable log p(design|spectrum), same convention as
-        inverse_operators/diffusion.py and padding_inn.py).
+        erp_inverse_operators/diffusion.py and padding_inn.py).
         """
         b = spectrum.shape[0]
         point_estimate = self.infer_point_estimate(spectrum)

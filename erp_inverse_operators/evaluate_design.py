@@ -1,7 +1,7 @@
 """Predicted vs. true resonator design parameters (m, k, x, y) for the 4 inverse models.
 
 Important caveat, not a technicality: the inverse problem is genuinely
-non-unique (see inverse_operators/common.py's module docstring) -- several
+non-unique (see erp_inverse_operators/common.py's module docstring) -- several
 different [m,k,x,y] configurations can produce very similar ERP spectra, most
 directly through the mass/stiffness degeneracy (f_t = sqrt(k/m)/(2*pi) is what
 mostly sets a resonator's effect on the spectrum, so many (m,k) pairs sharing
@@ -32,8 +32,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from inverse_operators.common import denormalize_design, prepare_inverse_data
-from inverse_operators.evaluate import (
+from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.evaluate import (
     MODEL_BUILDERS,
     SPAWN_CONTEXT,
     load_inverse_model,
@@ -43,7 +43,7 @@ from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_a
 from concurrent.futures import ProcessPoolExecutor
 
 NUM_RES = 3
-OUT_DIR = Path("plots/INVERSE_OPERATORS")
+OUT_DIR = Path("erp_inverse_operators/plots")
 PARAMS = [
     ("m", 0, "Mass (kg)"),
     ("k", 1, "Spring constant (N/m)"),

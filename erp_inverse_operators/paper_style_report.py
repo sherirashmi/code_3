@@ -66,13 +66,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
-from inverse_operators.common import denormalize_design, flatten_configuration, prepare_inverse_data
-from inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_inverse_model, solve_configs
-from inverse_operators.registry import NUM_RES
+from erp_inverse_operators.common import denormalize_design, flatten_configuration, prepare_inverse_data
+from erp_inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_inverse_model, solve_configs
+from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_configuration_array, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 
-OUT_DIR = Path("plots/INVERSE_OPERATORS")
+OUT_DIR = Path("erp_inverse_operators/plots")
 F_T_IDX = [i * 5 + 2 for i in range(NUM_RES)]  # flat-design index of each resonator's f_t
 MASS_IDX = [i * 5 + 0 for i in range(NUM_RES)]  # flat-design index of each resonator's mass
 

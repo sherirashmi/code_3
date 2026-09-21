@@ -15,7 +15,7 @@ Evaluation, once trained:
     plots, same reporting convention as erp_forward_operators/evaluate_operator.
   - Inverse: sample(spectrum, num_samples) on test spectra, run every
     sampled design through the ACTUAL coupled solver (not a neural
-    surrogate -- same principle as inverse_operators/train_all.py's own
+    surrogate -- same principle as erp_inverse_operators/train_all.py's own
     validation), plot best-sample-vs-target overlays.
 """
 
@@ -34,15 +34,15 @@ import numpy as np
 import torch
 
 from ifno.model import DEFAULT_MODEL_CONFIG, IFNO
-from inverse_operators.common import denormalize_design, prepare_inverse_data
-from inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from inverse_operators.registry import DESIGN_DIM, NUM_RES
+from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
+from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_array
 from utils.plotting import plot_erp_comparison, plot_prediction_scatter
 from utils.solver import compute_erp_spectrum
 from utils.support import seed_everything
 
-OUT_DIR = Path("plots/IFNO")
+OUT_DIR = Path("ifno/plots")
 MODEL_DIR = Path("ifno/models")
 
 STAGE1_EPOCHS = 6

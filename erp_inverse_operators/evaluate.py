@@ -20,7 +20,7 @@ neural net), so solver calls are parallelized across all CPU cores and the
 number of test examples/samples is kept modest to finish in a reasonable
 time.
 
-Design selection per target (matches inverse_operators/train_all.py):
+Design selection per target (matches erp_inverse_operators/train_all.py):
   - MDN / cVAE / Flow have a tractable log p(design | spectrum); the
     reported prediction is the sample with the highest log-probability
     under the model itself (does not look at the ground truth spectrum).
@@ -66,12 +66,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from inverse_operators.common import denormalize_design, prepare_inverse_data
-from inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
+from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 
-OUT_DIR = Path("plots/INVERSE_OPERATORS")
+OUT_DIR = Path("erp_inverse_operators/plots")
 
 # Keyed by short name ("MDN", "cVAE", ...) rather than the registry's "1".."4"
 # keys, matching this module's own reporting convention; built from the same
@@ -81,7 +81,9 @@ MODEL_BUILDERS = {spec["short"]: spec["build"] for spec in INVERSE_MODELS.values
 
 
 def load_inverse_model(name: str):
-    checkpoint = torch.load(f"models/inverse_{name.lower()}.pth", map_location="cpu", weights_only=False)
+    checkpoint = torch.load(
+        f"erp_inverse_operators/models/inverse_{name.lower()}.pth", map_location="cpu", weights_only=False
+    )
     model = MODEL_BUILDERS[name]()
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

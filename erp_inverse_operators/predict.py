@@ -28,10 +28,10 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from inverse_operators.common import denormalize_design, prepare_inverse_data
-from inverse_operators.evaluate import SPAWN_CONTEXT, load_inverse_model, solve_configs
-from inverse_operators.registry import NUM_RES
-from inverse_operators.train_all import format_configuration
+from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.evaluate import SPAWN_CONTEXT, load_inverse_model, solve_configs
+from erp_inverse_operators.registry import NUM_RES
+from erp_inverse_operators.train_all import format_configuration
 from utils.erp_dataset import (
     configuration_to_resonators,
     denormalize_configuration_array,
@@ -39,7 +39,7 @@ from utils.erp_dataset import (
 )
 from utils.solver import compute_erp_spectrum
 
-OUT_DIR = Path("plots/INVERSE_OPERATORS")
+OUT_DIR = Path("erp_inverse_operators/plots")
 
 
 def predict_one(
@@ -59,7 +59,7 @@ def predict_one(
     instead (its own true configuration is not shown to the model or used
     anywhere except as informational context in the printed report -- the
     inverse problem is non-unique, so "recovering" that specific design is
-    not the goal, see inverse_operators/common.py).
+    not the goal, see erp_inverse_operators/common.py).
 
     Returns a dict with the target spectrum, sampled physical designs,
     scores/confidences, the best index, and the saved plot path.

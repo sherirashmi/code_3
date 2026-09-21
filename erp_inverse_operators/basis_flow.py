@@ -44,7 +44,7 @@ What "both directions, same weights" buys here, concretely:
 
 Design representation, canonicalization, and log-probability/confidence
 reporting conventions match the rest of this package exactly (see
-inverse_operators/common.py and inverse_operators/flow.py).
+erp_inverse_operators/common.py and erp_inverse_operators/flow.py).
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class SpectrumBasisAutoencoder(nn.Module):
 class AffineCoupling(nn.Module):
     """RealNVP coupling layer with BOTH directions returning their log-det.
 
-    Unlike inverse_operators/flow.py's coupling layer (which only needs a
+    Unlike erp_inverse_operators/flow.py's coupling layer (which only needs a
     forward log-det, since that model always samples via the inverse
     direction blind to any density there), this one needs the inverse
     direction's log-det too -- CouplingFlow.inverse() is used at sampling

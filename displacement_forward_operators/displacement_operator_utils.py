@@ -86,7 +86,7 @@ from utils.plotting import plot_erp_comparison, plot_prediction_scatter
 from utils.solver import compute_erp, compute_erp_spectrum
 from utils.support import device, seed_everything
 
-OUT_DIR = Path("plots/DISPLACEMENT_FORWARD_OPERATORS")
+OUT_DIR = Path("displacement_forward_operators/plots")
 _CONFIG_ZSCORE_FIELDS = ("m", "k", "f_t", "x", "y")
 
 

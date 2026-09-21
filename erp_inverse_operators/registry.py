@@ -7,12 +7,12 @@ already selects individual forward operators or "all forward operators".
 
 from __future__ import annotations
 
-from inverse_operators.basis_flow import BasisFlow
-from inverse_operators.cvae import ConditionalVAE
-from inverse_operators.diffusion import ConditionalDiffusion
-from inverse_operators.flow import ConditionalFlow
-from inverse_operators.mdn import MDN
-from inverse_operators.padding_inn import PadINN
+from erp_inverse_operators.basis_flow import BasisFlow
+from erp_inverse_operators.cvae import ConditionalVAE
+from erp_inverse_operators.diffusion import ConditionalDiffusion
+from erp_inverse_operators.flow import ConditionalFlow
+from erp_inverse_operators.mdn import MDN
+from erp_inverse_operators.padding_inn import PadINN
 
 NUM_RES = 3
 DESIGN_DIM = NUM_RES * 5

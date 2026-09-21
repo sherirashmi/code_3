@@ -1,25 +1,36 @@
-"""Interactive CLI for forward and inverse ERP neural operators.
+"""Interactive CLI for this project's neural-operator problems.
 
 ``main.py`` at the repo root is a thin entry point; every prompt, menu, and
-orchestration function lives here. Two top-level workflows:
+orchestration function lives here. Three top-level problems, each dispatched
+from ``main()``:
 
-- **Forward** (configuration -> ERP spectrum): any single operator from
-  ``erp_forward_operators.operator_registry.OPERATORS``, or all of them at once.
-- **Inverse** (ERP spectrum -> resonator configuration): any single model
-  from ``inverse_operators.registry.INVERSE_MODELS``, or all of them at
-  once (which also offers the solver-scored aggregate evaluations built in
-  ``inverse_operators/evaluate.py`` and ``evaluate_design.py``).
-
-Single inverse models only support "train" here, not "evaluate" --
-``evaluate.py``/``evaluate_design.py`` are whole-cohort comparisons by
-design (every candidate design is scored via the actual physics solver
-against the *other* models' candidates too), not a per-model action, so
-they only appear under "train ALL inverse models" below.
+- **ERP** (resonator configuration <-> ERP spectrum, a scalar function of
+  frequency): forward and inverse sub-workflows.
+    - **Forward** (configuration -> ERP spectrum): any single operator from
+      ``erp_forward_operators.operator_registry.OPERATORS``, or all at once.
+    - **Inverse** (ERP spectrum -> resonator configuration): any single model
+      from ``erp_inverse_operators.registry.INVERSE_MODELS``, or all at once
+      (which also offers the solver-scored aggregate evaluations built in
+      ``erp_inverse_operators/evaluate.py`` and ``evaluate_design.py``).
+    Single inverse models only support "train" here, not "evaluate" --
+    ``evaluate.py``/``evaluate_design.py`` are whole-cohort comparisons by
+    design (every candidate design is scored via the actual physics solver
+    against the *other* models' candidates too), not a per-model action, so
+    they only appear under "train ALL inverse models" below.
+- **Displacement field** (configuration, frequency, position -> the complex
+  velocity field, plus a physics-informed PDE residual): any single
+  architecture from ``displacement_forward_operators.operator_registry.OPERATORS``,
+  or all at once, via that package's own fixed train+evaluate+plot pipeline
+  (``displacement_forward_operators.train_all.run_one``).
+- **iFNO** (joint forward+inverse invertible Fourier operator on the ERP
+  problem): one architecture, one fixed 3-step training schedule
+  (``ifno.train.main``) -- no per-model selection needed.
 """
 
 from __future__ import annotations
 
 import gc
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -28,39 +39,31 @@ from utils.erp_dataset import DEFAULT_DATASET_FILE
 from erp_forward_operators.operator_registry import OPERATORS
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
-    DEFAULT_PLOTS_DIR,
     save_all_model_comparison_plots,
     save_operator_experiment_plots,
 )
 
-from inverse_operators.registry import INVERSE_MODELS
-from inverse_operators.train_all import train_one_inverse_model
-from inverse_operators import evaluate as inverse_evaluate
-from inverse_operators import evaluate_design as inverse_evaluate_design
+from erp_inverse_operators.registry import INVERSE_MODELS
+from erp_inverse_operators.train_all import train_one_inverse_model
+from erp_inverse_operators import evaluate as inverse_evaluate
+from erp_inverse_operators import evaluate_design as inverse_evaluate_design
+
+from displacement_forward_operators.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
 
 
 DATASET_FILE = DEFAULT_DATASET_FILE
 
-# Stopgap for checkpoints saved before ERPDataset.preprocessing_state()
-# started recording which raw file its selected_source_ids came from (see
-# erp_forward_operators/neural_operator_utils.py's run_operator_experiment): models/
-# {dno,dco,gno}_erp.pth on disk right now were trained on the 100k sharded
-# dataset, not the 10k DATASET_FILE every other operator's checkpoint uses,
-# and have no self-describing metadata to fall back on. Evaluate/predict for
-# these 3 keys need the matching file until they're retrained again (which
-# would stamp the new field and make this override redundant, though still
-# harmless to leave in place).
+# All 10 checkpoints in erp_forward_operators/models/ (the 100k-trained set)
+# self-describe which raw dataset file they were trained on via
+# ERPDataset.preprocessing_state() (see run_operator_experiment's "evaluate"/
+# "predict" branches), so evaluate/predict always recover the correct file
+# from the checkpoint itself -- no per-operator override needed.
 _HUNDRED_K_DATASET_FILES = [
     "datasets/dataset_erp_ft_100k_part1.pth",
     "datasets/dataset_erp_ft_100k_part2.pth",
 ]
-DATASET_FILE_OVERRIDES: dict[str, object] = {
-    "2": _HUNDRED_K_DATASET_FILES,  # DNO
-    "4": _HUNDRED_K_DATASET_FILES,  # DCO
-    "5": _HUNDRED_K_DATASET_FILES,  # GNO
-}
 SEED = 727
-PLOTS_DIR = DEFAULT_PLOTS_DIR
+PLOTS_DIR = Path("erp_forward_operators/plots")
 PLOT_PIPELINE_VERSION = "main-direct-save-v5"
 # Always create the top-level plot folder beside main.py at startup.
 # Per-operator subfolders are created automatically when their plots are saved.
@@ -703,7 +706,7 @@ def main_forward():
         result = runner(
             action="evaluate",
             batch_size=batch_size,
-            dataset_file=DATASET_FILE_OVERRIDES.get(operator_key, DATASET_FILE),
+            dataset_file=DATASET_FILE,
             seed=SEED,
             plot=False,
             save_plots=False,
@@ -734,7 +737,7 @@ def main_forward():
 
     result = runner(
         action="predict",
-        dataset_file=DATASET_FILE_OVERRIDES.get(operator_key, DATASET_FILE),
+        dataset_file=DATASET_FILE,
         seed=SEED,
         configuration=configuration,
         plot=False,
@@ -764,7 +767,7 @@ def _as_dataset_tuple(dataset_file) -> tuple:
 def main_all_inverse_models():
     """Train every inverse model, then optionally run the solver-scored evaluations."""
     print("\nAll-inverse-model training parameters")
-    print("Per-model defaults come from inverse_operators.registry.INVERSE_MODELS.")
+    print("Per-model defaults come from erp_inverse_operators.registry.INVERSE_MODELS.")
     for spec in INVERSE_MODELS.values():
         print(f"  {spec['short']:>10s}: epochs={spec['epochs']}, lr={spec['lr']:g}")
 
@@ -782,7 +785,7 @@ def main_all_inverse_models():
         "Epochs (applied to every inverse model)", default=150, minimum=1
     )
 
-    from inverse_operators.train_all import main as train_all_inverse
+    from erp_inverse_operators.train_all import main as train_all_inverse
 
     print(f"\nTraining all {len(INVERSE_MODELS)} inverse models, then building the "
           "solver-scored validation figure + per-sample report ...")
@@ -897,7 +900,7 @@ def main_inverse():
             f"\n{spec['short']} trained: final val loss={history['val'][-1]:.4f}, "
             f"best val loss={min(history['val']):.4f}"
         )
-        print(f"Checkpoint saved to models/inverse_{spec['short'].lower()}.pth")
+        print(f"Checkpoint saved to erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth")
         return {"model": model, "history": history, "dataset": dataset}
 
     if action == "evaluate":
@@ -953,7 +956,7 @@ def main_inverse():
         "Number of candidate designs to sample", default=6, minimum=1
     )
 
-    from inverse_operators.predict import predict_one, print_report
+    from erp_inverse_operators.predict import predict_one, print_report
 
     result = predict_one(
         spec["short"],
@@ -973,9 +976,93 @@ def main_inverse():
 
 
 def main():
-    """Interactive entry point: choose forward or inverse, then dispatch."""
+    """Interactive entry point: choose the problem, then dispatch.
+
+    ERP and Displacement field are the two physical problems this project
+    solves; iFNO is a separate architecture that answers the ERP problem's
+    forward AND inverse directions from one set of weights, so it gets its
+    own top-level slot instead of living inside the ERP submenu's
+    single-optimizer forward/inverse machinery (see ifno/model.py's
+    docstring for why it can't share that training loop).
+    """
+    print("\nWhich problem would you like to work on?")
+    print("1. ERP           (resonator configuration <-> ERP spectrum)")
+    print("2. Displacement  (configuration, frequency, position -> velocity field)")
+    print("3. iFNO          (joint forward+inverse invertible Fourier operator, ERP problem)")
+    problem = _prompt_choice("Select problem: ", {"1": None, "2": None, "3": None})
+    if problem == "1":
+        return main_erp()
+    if problem == "2":
+        return main_displacement()
+    return main_ifno()
+
+
+def main_erp():
+    """ERP problem: choose forward or inverse, then dispatch."""
     print("\nWhat would you like to run?")
     print("1. Forward  (resonator configuration -> ERP spectrum)")
     print("2. Inverse  (ERP spectrum -> resonator configuration)")
     mode = _prompt_choice("Select workflow: ", {"1": None, "2": None})
     return main_forward() if mode == "1" else main_inverse()
+
+
+def _print_displacement_menu() -> None:
+    print("\nAvailable displacement-field forward operators")
+    print("=" * 52)
+    for key, spec in DISPLACEMENT_OPERATORS.items():
+        print(f"{key}. {spec['name']} ({spec['short']})")
+    print(f"{len(DISPLACEMENT_OPERATORS) + 1}. Train and evaluate ALL displacement operators")
+    print("=" * 52)
+
+
+def main_displacement():
+    """Interactive entry point for the displacement-field workflow.
+
+    Each architecture's run (data loss + physics-informed PDE residual +
+    ERP reconstruction + loss-curve/comparison plots + checkpoint save) is
+    one call to ``displacement_forward_operators.train_all.run_one`` -- a
+    single, already-tuned pipeline (fixed epoch/batch/physics-weight budget,
+    see that module's own constants), so this menu only needs to ask which
+    architecture(s) to run, unlike the ERP menu's per-run hyperparameter
+    prompts.
+    """
+    _print_displacement_menu()
+    all_key = str(len(DISPLACEMENT_OPERATORS) + 1)
+    choices = {**DISPLACEMENT_OPERATORS, all_key: None}
+    key = _prompt_choice("Select architecture/workflow: ", choices)
+    keys = list(DISPLACEMENT_OPERATORS.keys()) if key == all_key else [key]
+
+    from displacement_forward_operators.train_all import run_one
+
+    results = []
+    for architecture_key in keys:
+        name, result, train_time = run_one(architecture_key)
+        print(
+            f"\n{name}: RMSE={result['rmse']:.3f} dB  R^2={result['r2_score']:.3f}  "
+            f"Pearson={result['pearson_correlation']:.3f}  ({train_time:.1f}s)"
+        )
+        results.append((name, result, train_time))
+    return results
+
+
+def main_ifno():
+    """Interactive entry point for iFNO (Long et al., arXiv:2402.11722).
+
+    One architecture, one fixed 3-step training schedule
+    (invertible-block pretraining -> beta-VAE pretraining -> joint
+    fine-tune, see ifno/train.py), so there is no per-model menu -- just a
+    confirmation before committing to the ~1-2 hour CPU run.
+    """
+    print("\niFNO: invertible Fourier Neural Operator (joint forward+inverse).")
+    print("Runs the paper's 3-step schedule on the full 100k-configuration ERP "
+          "dataset, then forward (config->ERP) and inverse (ERP->config, "
+          "solver-validated) evaluation.")
+    if not _prompt_yes_no(
+        "Proceed with iFNO training (100k configurations, ~1-2h on CPU)", default=True
+    ):
+        print("Cancelled.")
+        return None
+
+    from ifno.train import main as ifno_main
+
+    return ifno_main()

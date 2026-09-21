@@ -950,7 +950,7 @@ def run_operator_experiment(
 
     seed_everything(seed)
     if checkpoint_file is None:
-        checkpoint_file = f"models/{operator_name.lower()}_erp.pth"
+        checkpoint_file = f"erp_forward_operators/models/{operator_name.lower()}_erp.pth"
 
     if action == "train":
         dataset, loaders = prepare_operator_data(
