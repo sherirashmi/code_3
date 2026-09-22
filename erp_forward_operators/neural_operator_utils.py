@@ -427,7 +427,7 @@ def erp_spectrum_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
     slope_weight: float = 0.5,
-    peak_weight: float = 1.0,
+    peak_weight: float = 0.05,
 ) -> torch.Tensor:
     """Normalized ERP MSE plus a first-difference penalty and a peak-value penalty.
 
@@ -467,7 +467,7 @@ def train_operator(
     lr: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
-    peak_weight: float = 1.0,
+    peak_weight: float = 0.05,
     lbfgs_epochs: int = 0,
     lbfgs_max_iter: int = 20,
     lbfgs_history_size: int = 10,
@@ -950,7 +950,7 @@ def run_operator_experiment(
     learning_rate: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
-    peak_weight: float = 1.0,
+    peak_weight: float = 0.05,
     lbfgs_epochs: int = 0,
     lbfgs_max_iter: int = 20,
     lbfgs_history_size: int = 10,
