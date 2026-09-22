@@ -52,7 +52,8 @@ from utils.erp_dataset import denormalize_erp_array
 
 from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES
+from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM
+from erp_inverse_operators.surrogate_inverse import SurrogateInverse
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
@@ -148,6 +149,15 @@ def main(
         spec["short"]: (spec["build"](), spec["loss_fn"], spec["lr"])
         for spec in INVERSE_MODELS.values()
     }
+
+    # SurrogateInverse isn't in INVERSE_MODELS (its loss needs this dataset's
+    # own norm_params, unavailable to a zero-arg registry build() lambda --
+    # see surrogate_inverse.py's docstring), so it's wired in here instead,
+    # once norm_params exists, to train and plot alongside the other 6.
+    def surrogate_loss_fn(model, spectrum, design, epoch):
+        return model.training_loss(spectrum, design, own_norm_params=norm, surrogate_weight=1.0)
+
+    models["Surrogate"] = (SurrogateInverse(design_dim=DESIGN_DIM), surrogate_loss_fn, 5e-4)
 
     histories = {}
     for name, (model, loss_fn, lr) in models.items():
