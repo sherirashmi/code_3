@@ -427,14 +427,36 @@ def erp_spectrum_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
     slope_weight: float = 0.5,
+    peak_weight: float = 1.0,
 ) -> torch.Tensor:
-    """Normalized ERP MSE plus a small first-difference penalty."""
+    """Normalized ERP MSE plus a first-difference penalty and a peak-value penalty.
+
+    ``prediction``/``target``: ``(batch, n_freq, 1)``.
+
+    The peak term reads off BOTH curves at the TRUE spectrum's own peak
+    frequency index (``target.argmax(dim=1)``) and MSEs those two values --
+    NOT the model's own predicted peak location, which would need a
+    differentiable stand-in for argmax (e.g. soft-argmax) since
+    ``torch.argmax`` has zero gradient almost everywhere. Using the true
+    peak index is fully differentiable w.r.t. the prediction (a plain
+    ``gather``, not an index-selection operation on the prediction itself)
+    and directly targets the failure mode plain MSE allows: a model can
+    reach a low average error by slightly smoothing over a sharp resonance
+    peak, since a pointwise loss spreads that error thinly across many
+    frequency bins instead of concentrating it where the peak actually is.
+    """
     mse = F.mse_loss(prediction, target)
-    if slope_weight <= 0.0 or prediction.shape[1] < 2:
-        return mse
-    dp = prediction[:, 1:] - prediction[:, :-1]
-    dt = target[:, 1:] - target[:, :-1]
-    return mse + float(slope_weight) * F.mse_loss(dp, dt)
+    loss = mse
+    if slope_weight > 0.0 and prediction.shape[1] >= 2:
+        dp = prediction[:, 1:] - prediction[:, :-1]
+        dt = target[:, 1:] - target[:, :-1]
+        loss = loss + float(slope_weight) * F.mse_loss(dp, dt)
+    if peak_weight > 0.0:
+        peak_idx = target.argmax(dim=1, keepdim=True)  # (B, 1, 1), from target only -- no grad needed here
+        pred_at_peak = torch.gather(prediction, 1, peak_idx)
+        true_at_peak = torch.gather(target, 1, peak_idx)
+        loss = loss + float(peak_weight) * F.mse_loss(pred_at_peak, true_at_peak)
+    return loss
 
 
 def train_operator(
@@ -445,6 +467,7 @@ def train_operator(
     lr: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    peak_weight: float = 1.0,
     lbfgs_epochs: int = 0,
     lbfgs_max_iter: int = 20,
     lbfgs_history_size: int = 10,
@@ -492,7 +515,7 @@ def train_operator(
 
             optimizer.zero_grad(set_to_none=True)
             prediction = model(configuration, frequency)
-            loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+            loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight, peak_weight=peak_weight)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
@@ -513,7 +536,7 @@ def train_operator(
                 frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
                 target = target.to(device, dtype=torch.float32, non_blocking=True)
                 prediction = model(configuration, frequency)
-                loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight, peak_weight=peak_weight)
                 batch = configuration.shape[0]
                 val_sum += loss.item() * batch
                 val_count += batch
@@ -567,7 +590,7 @@ def train_operator(
                 target = target.to(device, dtype=torch.float32)
                 batch = configuration.shape[0]
                 prediction = model(configuration, frequency)
-                batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight, peak_weight=peak_weight)
                 (batch_loss * batch).backward()
                 loss_sum += batch_loss.item() * batch
                 sample_count += batch
@@ -608,7 +631,7 @@ def train_operator(
                     frequency = frequency.to(device, dtype=torch.float32)
                     target = target.to(device, dtype=torch.float32)
                     prediction = model(configuration, frequency)
-                    batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight)
+                    batch_loss = erp_spectrum_loss(prediction, target, slope_weight=slope_weight, peak_weight=peak_weight)
                     batch = configuration.shape[0]
                     val_sum += batch_loss.item() * batch
                     val_count += batch
@@ -927,6 +950,7 @@ def run_operator_experiment(
     learning_rate: float = 5e-4,
     weight_decay: float = 1e-4,
     slope_weight: float = 0.5,
+    peak_weight: float = 1.0,
     lbfgs_epochs: int = 0,
     lbfgs_max_iter: int = 20,
     lbfgs_history_size: int = 10,
@@ -972,6 +996,7 @@ def run_operator_experiment(
             lr=learning_rate,
             weight_decay=weight_decay,
             slope_weight=slope_weight,
+            peak_weight=peak_weight,
             lbfgs_epochs=lbfgs_epochs,
             lbfgs_max_iter=lbfgs_max_iter,
             lbfgs_history_size=lbfgs_history_size,
