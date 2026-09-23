@@ -4,555 +4,555 @@ Example 1
 ==========================================================================================
 
 --- MDN (log p(design|spectrum)) ---
-sample 1: score=+2.3749  relative_confidence= 20.0%  recon_MSE=105.3289
-  res1: m=0.624kg k=28,564N/m f_t=33.8Hz x=0.889m y=0.283m
-  res2: m=0.912kg k=299,666N/m f_t=83.8Hz x=0.880m y=0.259m
-  res3: m=0.741kg k=383,732N/m f_t=122.8Hz x=1.022m y=0.185m
-sample 2: score=+3.3774  relative_confidence= 54.6%  recon_MSE=122.2329 <-- best
-  res1: m=0.597kg k=23,993N/m f_t=33.6Hz x=0.886m y=0.260m
-  res2: m=0.917kg k=566,812N/m f_t=103.5Hz x=0.510m y=0.335m
-  res3: m=0.812kg k=444,862N/m f_t=133.0Hz x=0.560m y=0.227m
-sample 3: score=-4.5147  relative_confidence=  0.0%  recon_MSE=180.8071
-  res1: m=0.627kg k=24,897N/m f_t=34.2Hz x=0.874m y=0.247m
-  res2: m=0.691kg k=61,659N/m f_t=69.7Hz x=0.740m y=0.233m
-  res3: m=0.818kg k=811,618N/m f_t=137.6Hz x=1.400m y=0.037m
-sample 4: score=-4.0484  relative_confidence=  0.0%  recon_MSE=86.3039
-  res1: m=0.572kg k=26,843N/m f_t=33.3Hz x=0.868m y=0.265m
-  res2: m=0.858kg k=405,457N/m f_t=123.3Hz x=1.260m y=0.127m
-  res3: m=0.921kg k=654,724N/m f_t=143.1Hz x=0.808m y=0.573m
-sample 5: score=+2.5749  relative_confidence= 24.5%  recon_MSE=99.0475
-  res1: m=0.588kg k=24,522N/m f_t=33.6Hz x=0.865m y=0.228m
-  res2: m=0.888kg k=559,645N/m f_t=107.6Hz x=1.109m y=0.385m
-  res3: m=0.725kg k=698,673N/m f_t=140.3Hz x=0.563m y=0.302m
-sample 6: score=-0.7779  relative_confidence=  0.9%  recon_MSE=111.3902
-  res1: m=0.579kg k=23,550N/m f_t=33.2Hz x=0.852m y=0.229m
-  res2: m=0.800kg k=338,700N/m f_t=113.7Hz x=0.197m y=0.281m
-  res3: m=0.609kg k=403,890N/m f_t=119.6Hz x=0.434m y=0.337m
+sample 1: score=-2.5490  relative_confidence=  1.1%  recon_MSE=124.5038
+  res1: m=0.611kg k=27,860N/m f_t=34.0Hz x=0.942m y=0.211m
+  res2: m=0.846kg k=205,392N/m f_t=98.5Hz x=0.523m y=0.257m
+  res3: m=0.675kg k=353,387N/m f_t=158.1Hz x=0.891m y=0.444m
+sample 2: score=-7.6957  relative_confidence=  0.0%  recon_MSE=85.3748
+  res1: m=0.506kg k=24,183N/m f_t=32.8Hz x=0.849m y=0.254m
+  res2: m=0.860kg k=561,647N/m f_t=123.6Hz x=0.641m y=0.303m
+  res3: m=0.948kg k=591,389N/m f_t=149.4Hz x=1.066m y=0.152m
+sample 3: score=-2.1344  relative_confidence=  1.6%  recon_MSE=105.6472
+  res1: m=0.566kg k=24,670N/m f_t=34.0Hz x=0.913m y=0.202m
+  res2: m=0.814kg k=557,575N/m f_t=110.6Hz x=1.126m y=0.078m
+  res3: m=0.608kg k=637,462N/m f_t=124.8Hz x=0.443m y=0.377m
+sample 4: score=-2.9542  relative_confidence=  0.7%  recon_MSE=118.9624
+  res1: m=0.600kg k=24,766N/m f_t=33.6Hz x=0.937m y=0.202m
+  res2: m=0.854kg k=613,404N/m f_t=124.0Hz x=0.779m y=0.026m
+  res3: m=0.795kg k=414,720N/m f_t=121.7Hz x=0.500m y=0.298m
+sample 5: score=+1.7179  relative_confidence= 75.2%  recon_MSE=116.4040 <-- best
+  res1: m=0.570kg k=27,954N/m f_t=33.9Hz x=0.873m y=0.254m
+  res2: m=0.902kg k=259,577N/m f_t=69.8Hz x=1.043m y=0.390m
+  res3: m=0.941kg k=535,336N/m f_t=129.5Hz x=0.755m y=0.279m
+sample 6: score=+0.4603  relative_confidence= 21.4%  recon_MSE=100.3992
+  res1: m=0.633kg k=27,649N/m f_t=33.9Hz x=0.901m y=0.231m
+  res2: m=0.677kg k=276,930N/m f_t=96.9Hz x=1.298m y=0.119m
+  res3: m=0.883kg k=582,920N/m f_t=145.7Hz x=0.979m y=0.366m
 
 --- cVAE (log p(design|spectrum)) ---
-sample 1: score=-12.0996  relative_confidence=  0.4%  recon_MSE=107.8377
-  res1: m=0.719kg k=134,627N/m f_t=52.1Hz x=0.786m y=0.261m
-  res2: m=0.382kg k=169,250N/m f_t=101.2Hz x=0.252m y=0.068m
-  res3: m=0.770kg k=132,465N/m f_t=122.6Hz x=0.629m y=0.361m
-sample 2: score=-7.9578  relative_confidence= 24.1%  recon_MSE=139.1923
-  res1: m=0.911kg k=176,556N/m f_t=67.2Hz x=0.641m y=0.159m
-  res2: m=0.287kg k=105,157N/m f_t=83.6Hz x=0.487m y=0.197m
-  res3: m=0.738kg k=320,103N/m f_t=84.2Hz x=1.041m y=0.306m
-sample 3: score=-6.9201  relative_confidence= 68.1%  recon_MSE=128.2658 <-- best
-  res1: m=0.843kg k=184,970N/m f_t=66.9Hz x=0.828m y=0.297m
-  res2: m=0.293kg k=-10,261N/m f_t=78.5Hz x=1.230m y=0.015m
-  res3: m=0.691kg k=294,204N/m f_t=100.9Hz x=0.604m y=0.346m
-sample 4: score=-9.2413  relative_confidence=  6.7%  recon_MSE=129.1312
-  res1: m=0.497kg k=111,179N/m f_t=40.6Hz x=0.796m y=0.357m
-  res2: m=0.320kg k=171,376N/m f_t=81.6Hz x=1.636m y=0.300m
-  res3: m=0.455kg k=274,689N/m f_t=73.8Hz x=0.375m y=0.368m
-sample 5: score=-11.4243  relative_confidence=  0.8%  recon_MSE=139.8793
-  res1: m=0.670kg k=192,232N/m f_t=95.4Hz x=1.132m y=0.306m
-  res2: m=0.786kg k=353,080N/m f_t=117.5Hz x=0.973m y=0.344m
-  res3: m=0.537kg k=420,237N/m f_t=94.8Hz x=-0.045m y=0.289m
-sample 6: score=-16.4820  relative_confidence=  0.0%  recon_MSE=120.0615
-  res1: m=0.336kg k=-17,179N/m f_t=96.2Hz x=0.833m y=0.423m
-  res2: m=0.969kg k=278,986N/m f_t=84.6Hz x=1.056m y=0.199m
-  res3: m=0.651kg k=470,229N/m f_t=56.1Hz x=0.615m y=0.248m
+sample 1: score=-3.9473  relative_confidence= 98.3%  recon_MSE=118.0262 <-- best
+  res1: m=0.867kg k=-8,175N/m f_t=-9.8Hz x=0.530m y=0.284m
+  res2: m=0.406kg k=28,144N/m f_t=-3.4Hz x=0.726m y=0.365m
+  res3: m=0.462kg k=194,414N/m f_t=83.5Hz x=0.810m y=0.284m
+sample 2: score=-11.7703  relative_confidence=  0.0%  recon_MSE=176.9967
+  res1: m=0.699kg k=179,355N/m f_t=55.0Hz x=0.945m y=0.296m
+  res2: m=0.419kg k=105,720N/m f_t=13.8Hz x=0.804m y=0.208m
+  res3: m=0.499kg k=19,304N/m f_t=102.3Hz x=1.210m y=0.194m
+sample 3: score=-16.0310  relative_confidence=  0.0%  recon_MSE=129.5271
+  res1: m=0.453kg k=146,002N/m f_t=48.4Hz x=0.376m y=0.445m
+  res2: m=0.152kg k=9,104N/m f_t=75.5Hz x=0.546m y=0.331m
+  res3: m=0.771kg k=177,956N/m f_t=109.7Hz x=0.501m y=0.058m
+sample 4: score=-8.0325  relative_confidence=  1.7%  recon_MSE=125.7067
+  res1: m=0.941kg k=116,542N/m f_t=44.7Hz x=0.855m y=0.227m
+  res2: m=0.370kg k=216,074N/m f_t=19.1Hz x=0.506m y=0.283m
+  res3: m=0.701kg k=259,039N/m f_t=76.5Hz x=0.572m y=0.225m
+sample 5: score=-12.4504  relative_confidence=  0.0%  recon_MSE=102.3817
+  res1: m=0.419kg k=192,419N/m f_t=107.5Hz x=0.482m y=0.195m
+  res2: m=0.679kg k=388,557N/m f_t=107.9Hz x=-0.107m y=0.358m
+  res3: m=0.452kg k=286,421N/m f_t=107.8Hz x=1.112m y=0.177m
+sample 6: score=-13.0664  relative_confidence=  0.0%  recon_MSE=112.6549
+  res1: m=0.587kg k=114,065N/m f_t=58.1Hz x=0.357m y=0.300m
+  res2: m=0.722kg k=283,568N/m f_t=87.3Hz x=0.767m y=0.592m
+  res3: m=0.512kg k=229,641N/m f_t=118.7Hz x=1.006m y=0.404m
 
 --- Flow (log p(design|spectrum)) ---
-sample 1: score=+7.9803  relative_confidence=  8.9%  recon_MSE=136.7706
-  res1: m=0.771kg k=42,601N/m f_t=37.5Hz x=0.939m y=0.201m
-  res2: m=0.457kg k=87,595N/m f_t=69.8Hz x=1.063m y=0.323m
-  res3: m=1.129kg k=883,165N/m f_t=140.8Hz x=0.732m y=0.178m
-sample 2: score=+8.2130  relative_confidence= 11.2%  recon_MSE=137.1929
-  res1: m=0.834kg k=46,470N/m f_t=37.7Hz x=0.954m y=0.244m
-  res2: m=0.909kg k=403,314N/m f_t=106.0Hz x=0.767m y=0.294m
-  res3: m=0.430kg k=307,054N/m f_t=134.6Hz x=1.000m y=0.357m
-sample 3: score=+10.1425  relative_confidence= 77.0%  recon_MSE=161.8120 <-- best
-  res1: m=0.723kg k=26,578N/m f_t=30.4Hz x=0.910m y=0.321m
-  res2: m=0.761kg k=363,897N/m f_t=110.0Hz x=0.298m y=0.254m
-  res3: m=0.870kg k=461,293N/m f_t=115.9Hz x=0.358m y=0.315m
-sample 4: score=+4.6314  relative_confidence=  0.3%  recon_MSE=78.8720
-  res1: m=1.009kg k=46,995N/m f_t=34.3Hz x=0.699m y=0.180m
-  res2: m=0.731kg k=529,979N/m f_t=135.5Hz x=0.959m y=0.258m
-  res3: m=0.951kg k=756,268N/m f_t=142.0Hz x=0.464m y=0.395m
-sample 5: score=+2.6772  relative_confidence=  0.0%  recon_MSE=126.0503
-  res1: m=0.556kg k=26,750N/m f_t=34.9Hz x=0.969m y=0.360m
-  res2: m=0.746kg k=545,789N/m f_t=136.2Hz x=0.721m y=0.328m
-  res3: m=0.404kg k=360,355N/m f_t=150.4Hz x=1.634m y=0.517m
-sample 6: score=+6.7622  relative_confidence=  2.6%  recon_MSE=138.9731
-  res1: m=0.523kg k=16,891N/m f_t=28.6Hz x=0.650m y=0.277m
-  res2: m=0.643kg k=157,111N/m f_t=78.7Hz x=1.176m y=0.239m
-  res3: m=1.138kg k=527,519N/m f_t=108.2Hz x=0.707m y=0.333m
+sample 1: score=+1.3231  relative_confidence=  0.0%  recon_MSE=70.9704
+  res1: m=1.045kg k=54,425N/m f_t=36.3Hz x=0.756m y=0.501m
+  res2: m=0.524kg k=275,387N/m f_t=115.3Hz x=1.033m y=0.110m
+  res3: m=0.968kg k=877,958N/m f_t=151.4Hz x=0.110m y=0.329m
+sample 2: score=+7.6714  relative_confidence=  2.5%  recon_MSE=119.6175
+  res1: m=0.528kg k=27,851N/m f_t=36.6Hz x=0.813m y=0.265m
+  res2: m=0.930kg k=617,918N/m f_t=129.7Hz x=1.120m y=0.410m
+  res3: m=0.565kg k=473,152N/m f_t=145.6Hz x=0.071m y=0.167m
+sample 3: score=+8.4906  relative_confidence=  5.7%  recon_MSE=161.8436
+  res1: m=0.658kg k=25,934N/m f_t=31.7Hz x=0.805m y=0.253m
+  res2: m=0.828kg k=111,855N/m f_t=58.6Hz x=0.591m y=0.363m
+  res3: m=0.670kg k=501,330N/m f_t=137.6Hz x=1.384m y=0.239m
+sample 4: score=+10.5900  relative_confidence= 46.2%  recon_MSE=109.0544 <-- best
+  res1: m=0.619kg k=30,925N/m f_t=35.6Hz x=0.929m y=0.214m
+  res2: m=0.912kg k=192,343N/m f_t=73.1Hz x=1.013m y=0.267m
+  res3: m=0.532kg k=248,145N/m f_t=108.7Hz x=0.702m y=0.191m
+sample 5: score=+6.2524  relative_confidence=  0.6%  recon_MSE=110.9839
+  res1: m=0.957kg k=46,900N/m f_t=35.2Hz x=0.865m y=0.361m
+  res2: m=0.414kg k=66,325N/m f_t=63.8Hz x=0.417m y=0.389m
+  res3: m=1.038kg k=920,130N/m f_t=149.8Hz x=1.120m y=0.112m
+sample 6: score=+10.5640  relative_confidence= 45.0%  recon_MSE=109.1231
+  res1: m=0.756kg k=38,321N/m f_t=35.9Hz x=0.800m y=0.183m
+  res2: m=0.470kg k=127,589N/m f_t=82.9Hz x=0.793m y=0.230m
+  res3: m=0.590kg k=451,354N/m f_t=139.2Hz x=0.851m y=0.194m
 
 --- Diffusion (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-82.0521  relative_confidence=  3.0%  recon_MSE=82.0521
-  res1: m=0.594kg k=34,677N/m f_t=34.4Hz x=0.833m y=0.232m
-  res2: m=0.879kg k=580,668N/m f_t=130.7Hz x=0.733m y=0.149m
-  res3: m=0.670kg k=410,665N/m f_t=125.0Hz x=1.271m y=0.229m
-sample 2: score=-78.5831  relative_confidence= 97.0%  recon_MSE=78.5831 <-- best
-  res1: m=0.755kg k=37,714N/m f_t=33.6Hz x=0.848m y=0.237m
-  res2: m=0.867kg k=626,862N/m f_t=137.7Hz x=1.208m y=0.129m
-  res3: m=0.666kg k=572,838N/m f_t=149.0Hz x=0.838m y=0.146m
-sample 3: score=-125.5646  relative_confidence=  0.0%  recon_MSE=125.5646
-  res1: m=1.000kg k=60,441N/m f_t=41.7Hz x=0.883m y=0.147m
-  res2: m=0.645kg k=195,564N/m f_t=85.6Hz x=0.532m y=0.066m
-  res3: m=0.809kg k=455,053N/m f_t=119.1Hz x=1.203m y=0.352m
-sample 4: score=-115.3841  relative_confidence=  0.0%  recon_MSE=115.3841
-  res1: m=0.831kg k=41,659N/m f_t=35.1Hz x=0.967m y=0.271m
-  res2: m=0.845kg k=425,824N/m f_t=113.1Hz x=0.781m y=0.373m
-  res3: m=1.118kg k=845,674N/m f_t=137.5Hz x=0.274m y=0.326m
-sample 5: score=-139.8279  relative_confidence=  0.0%  recon_MSE=139.8279
-  res1: m=0.611kg k=38,790N/m f_t=37.7Hz x=0.870m y=0.306m
-  res2: m=0.968kg k=533,363N/m f_t=117.8Hz x=1.087m y=0.201m
-  res3: m=0.465kg k=364,312N/m f_t=140.8Hz x=0.899m y=0.305m
-sample 6: score=-119.2452  relative_confidence=  0.0%  recon_MSE=119.2452
-  res1: m=0.692kg k=34,580N/m f_t=34.7Hz x=0.861m y=0.316m
-  res2: m=0.855kg k=370,062N/m f_t=103.9Hz x=0.257m y=0.374m
-  res3: m=1.102kg k=819,131N/m f_t=135.3Hz x=1.350m y=0.149m
+sample 1: score=-114.1356  relative_confidence=  0.0%  recon_MSE=114.1356
+  res1: m=0.863kg k=32,177N/m f_t=35.1Hz x=0.908m y=0.181m
+  res2: m=0.889kg k=422,430N/m f_t=108.3Hz x=1.061m y=0.335m
+  res3: m=0.940kg k=846,974N/m f_t=153.7Hz x=1.294m y=0.101m
+sample 2: score=-97.2792  relative_confidence= 68.4%  recon_MSE=97.2792 <-- best
+  res1: m=0.645kg k=30,305N/m f_t=34.5Hz x=0.852m y=0.192m
+  res2: m=1.076kg k=970,461N/m f_t=156.3Hz x=0.951m y=0.184m
+  res3: m=0.932kg k=847,510N/m f_t=154.2Hz x=0.365m y=0.318m
+sample 3: score=-98.0513  relative_confidence= 31.6%  recon_MSE=98.0513
+  res1: m=0.821kg k=39,782N/m f_t=34.8Hz x=0.923m y=0.251m
+  res2: m=0.835kg k=606,442N/m f_t=135.4Hz x=1.088m y=0.146m
+  res3: m=0.976kg k=797,935N/m f_t=142.9Hz x=-0.109m y=0.064m
+sample 4: score=-110.8632  relative_confidence=  0.0%  recon_MSE=110.8632
+  res1: m=0.500kg k=25,209N/m f_t=35.6Hz x=0.847m y=0.283m
+  res2: m=0.913kg k=419,584N/m f_t=106.7Hz x=0.462m y=0.177m
+  res3: m=0.985kg k=490,191N/m f_t=110.0Hz x=1.468m y=0.250m
+sample 5: score=-113.9650  relative_confidence=  0.0%  recon_MSE=113.9650
+  res1: m=0.831kg k=41,457N/m f_t=38.3Hz x=0.988m y=0.189m
+  res2: m=0.829kg k=232,567N/m f_t=85.9Hz x=1.361m y=0.129m
+  res3: m=0.767kg k=344,142N/m f_t=106.6Hz x=1.042m y=0.262m
+sample 6: score=-116.5118  relative_confidence=  0.0%  recon_MSE=116.5118
+  res1: m=0.535kg k=23,123N/m f_t=31.9Hz x=0.798m y=0.232m
+  res2: m=0.914kg k=451,107N/m f_t=113.9Hz x=1.126m y=0.305m
+  res3: m=0.714kg k=658,143N/m f_t=153.0Hz x=0.954m y=0.376m
 
 --- BasisFlow (log p(design|spectrum)) ---
-sample 1: score=-3.1648  relative_confidence= 21.5%  recon_MSE=136.0926
-  res1: m=0.837kg k=43,313N/m f_t=36.2Hz x=0.988m y=0.268m
-  res2: m=0.765kg k=324,172N/m f_t=103.6Hz x=0.855m y=0.144m
-  res3: m=0.443kg k=331,534N/m f_t=137.7Hz x=0.797m y=0.083m
-sample 2: score=-8.7087  relative_confidence=  0.1%  recon_MSE=105.7115
-  res1: m=0.643kg k=20,655N/m f_t=28.5Hz x=0.885m y=0.183m
-  res2: m=0.718kg k=334,655N/m f_t=108.7Hz x=0.873m y=0.215m
-  res3: m=0.571kg k=430,001N/m f_t=138.1Hz x=1.474m y=0.280m
-sample 3: score=-9.7640  relative_confidence=  0.0%  recon_MSE=122.5258
-  res1: m=0.870kg k=39,840N/m f_t=34.0Hz x=0.873m y=0.300m
-  res2: m=0.514kg k=420,248N/m f_t=144.0Hz x=0.291m y=0.407m
-  res3: m=0.603kg k=508,273N/m f_t=146.0Hz x=0.276m y=0.117m
-sample 4: score=-12.2578  relative_confidence=  0.0%  recon_MSE=126.8300
-  res1: m=0.661kg k=23,916N/m f_t=30.2Hz x=0.927m y=0.236m
-  res2: m=0.590kg k=63,587N/m f_t=52.2Hz x=0.308m y=0.118m
-  res3: m=0.919kg k=382,060N/m f_t=102.7Hz x=1.306m y=0.308m
-sample 5: score=-8.3549  relative_confidence=  0.1%  recon_MSE=111.5140
-  res1: m=1.081kg k=65,053N/m f_t=39.1Hz x=0.765m y=0.267m
-  res2: m=0.735kg k=301,202N/m f_t=101.9Hz x=0.567m y=0.263m
-  res3: m=0.296kg k=224,578N/m f_t=138.7Hz x=1.497m y=0.253m
-sample 6: score=-1.8703  relative_confidence= 78.3%  recon_MSE=152.2372 <-- best
-  res1: m=0.946kg k=49,393N/m f_t=36.5Hz x=1.002m y=0.253m
-  res2: m=0.792kg k=396,559N/m f_t=112.6Hz x=0.808m y=0.289m
-  res3: m=0.286kg k=199,604N/m f_t=133.0Hz x=0.970m y=0.263m
+sample 1: score=-11.9666  relative_confidence=  0.0%  recon_MSE=154.9409
+  res1: m=0.803kg k=61,529N/m f_t=44.1Hz x=0.878m y=0.325m
+  res2: m=0.898kg k=838,198N/m f_t=153.5Hz x=0.253m y=0.284m
+  res3: m=0.692kg k=597,582N/m f_t=147.8Hz x=0.248m y=0.417m
+sample 2: score=-9.2107  relative_confidence=  0.6%  recon_MSE=144.3341
+  res1: m=0.855kg k=60,416N/m f_t=42.3Hz x=1.027m y=0.308m
+  res2: m=1.074kg k=407,495N/m f_t=98.0Hz x=1.016m y=0.143m
+  res3: m=0.415kg k=361,238N/m f_t=148.6Hz x=1.297m y=0.339m
+sample 3: score=-8.7046  relative_confidence=  1.0%  recon_MSE=130.1172
+  res1: m=0.711kg k=27,037N/m f_t=31.0Hz x=0.987m y=0.319m
+  res2: m=0.631kg k=230,597N/m f_t=96.2Hz x=0.370m y=0.288m
+  res3: m=0.379kg k=341,335N/m f_t=151.1Hz x=0.884m y=0.454m
+sample 4: score=-9.5843  relative_confidence=  0.4%  recon_MSE=122.4286
+  res1: m=0.885kg k=40,704N/m f_t=34.2Hz x=0.972m y=0.256m
+  res2: m=0.534kg k=256,611N/m f_t=110.3Hz x=0.796m y=0.307m
+  res3: m=0.582kg k=441,437N/m f_t=138.7Hz x=0.686m y=0.048m
+sample 5: score=-9.8451  relative_confidence=  0.3%  recon_MSE=129.2252
+  res1: m=0.891kg k=41,018N/m f_t=34.1Hz x=0.863m y=0.330m
+  res2: m=0.196kg k=45,466N/m f_t=76.7Hz x=0.515m y=0.422m
+  res3: m=0.792kg k=342,888N/m f_t=104.7Hz x=0.681m y=0.240m
+sample 6: score=-4.1016  relative_confidence= 97.7%  recon_MSE=107.7362 <-- best
+  res1: m=0.799kg k=40,821N/m f_t=36.0Hz x=0.964m y=0.185m
+  res2: m=0.764kg k=324,490N/m f_t=103.7Hz x=0.851m y=0.411m
+  res3: m=0.693kg k=441,260N/m f_t=127.0Hz x=0.500m y=0.285m
 
 --- PadINN (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-130.1316  relative_confidence=  0.0%  recon_MSE=130.1316
-  res1: m=0.697kg k=30,418N/m f_t=30.2Hz x=0.791m y=0.249m
-  res2: m=0.791kg k=361,502N/m f_t=124.6Hz x=0.309m y=0.205m
-  res3: m=0.745kg k=536,525N/m f_t=141.8Hz x=0.877m y=0.247m
-sample 2: score=-66.3683  relative_confidence=100.0%  recon_MSE=66.3683 <-- best
-  res1: m=0.711kg k=33,583N/m f_t=32.4Hz x=0.867m y=0.250m
-  res2: m=0.756kg k=368,347N/m f_t=124.5Hz x=0.262m y=0.211m
-  res3: m=0.752kg k=543,331N/m f_t=141.7Hz x=0.929m y=0.250m
-sample 3: score=-120.9435  relative_confidence=  0.0%  recon_MSE=120.9435
-  res1: m=0.707kg k=34,942N/m f_t=32.5Hz x=0.831m y=0.250m
-  res2: m=0.761kg k=359,153N/m f_t=122.9Hz x=0.299m y=0.210m
-  res3: m=0.759kg k=543,441N/m f_t=141.5Hz x=0.890m y=0.243m
-sample 4: score=-84.9415  relative_confidence=  0.0%  recon_MSE=84.9415
-  res1: m=0.693kg k=32,535N/m f_t=33.1Hz x=0.804m y=0.248m
-  res2: m=0.763kg k=361,857N/m f_t=125.5Hz x=0.235m y=0.207m
-  res3: m=0.765kg k=576,769N/m f_t=143.7Hz x=0.915m y=0.238m
-sample 5: score=-100.7300  relative_confidence=  0.0%  recon_MSE=100.7300
-  res1: m=0.702kg k=28,494N/m f_t=30.8Hz x=0.841m y=0.251m
-  res2: m=0.791kg k=364,531N/m f_t=124.4Hz x=0.304m y=0.206m
-  res3: m=0.746kg k=530,992N/m f_t=140.5Hz x=0.914m y=0.250m
-sample 6: score=-129.8067  relative_confidence=  0.0%  recon_MSE=129.8067
-  res1: m=0.696kg k=31,169N/m f_t=31.1Hz x=0.789m y=0.248m
-  res2: m=0.739kg k=344,775N/m f_t=125.3Hz x=0.252m y=0.205m
-  res3: m=0.803kg k=602,019N/m f_t=144.3Hz x=0.814m y=0.240m
+sample 1: score=-142.3301  relative_confidence=  0.0%  recon_MSE=142.3301
+  res1: m=0.705kg k=32,899N/m f_t=32.0Hz x=0.799m y=0.248m
+  res2: m=0.753kg k=370,513N/m f_t=126.3Hz x=0.245m y=0.207m
+  res3: m=0.823kg k=602,399N/m f_t=143.8Hz x=0.872m y=0.239m
+sample 2: score=-150.4288  relative_confidence=  0.0%  recon_MSE=150.4288
+  res1: m=0.702kg k=31,154N/m f_t=32.0Hz x=0.754m y=0.249m
+  res2: m=0.778kg k=342,551N/m f_t=124.8Hz x=0.283m y=0.204m
+  res3: m=0.795kg k=573,653N/m f_t=143.0Hz x=0.842m y=0.247m
+sample 3: score=-136.2624  relative_confidence=  0.0%  recon_MSE=136.2624
+  res1: m=0.674kg k=30,802N/m f_t=30.5Hz x=0.811m y=0.249m
+  res2: m=0.733kg k=355,059N/m f_t=126.2Hz x=0.199m y=0.202m
+  res3: m=0.786kg k=604,526N/m f_t=144.2Hz x=0.826m y=0.238m
+sample 4: score=-129.2817  relative_confidence=  0.0%  recon_MSE=129.2817
+  res1: m=0.715kg k=28,928N/m f_t=33.9Hz x=0.820m y=0.249m
+  res2: m=0.825kg k=379,563N/m f_t=126.9Hz x=0.241m y=0.201m
+  res3: m=0.821kg k=549,645N/m f_t=143.1Hz x=0.900m y=0.245m
+sample 5: score=-132.9158  relative_confidence=  0.0%  recon_MSE=132.9158
+  res1: m=0.701kg k=30,658N/m f_t=30.7Hz x=0.854m y=0.250m
+  res2: m=0.777kg k=372,894N/m f_t=124.2Hz x=0.275m y=0.208m
+  res3: m=0.732kg k=530,645N/m f_t=142.2Hz x=0.877m y=0.246m
+sample 6: score=-103.9024  relative_confidence=100.0%  recon_MSE=103.9024 <-- best
+  res1: m=0.720kg k=36,717N/m f_t=32.6Hz x=0.829m y=0.252m
+  res2: m=0.761kg k=348,914N/m f_t=122.0Hz x=0.335m y=0.212m
+  res3: m=0.758kg k=527,046N/m f_t=139.7Hz x=0.909m y=0.251m
 
 --- Surrogate (log p(design|spectrum)) ---
-sample 1: score=+0.1638  relative_confidence= 94.9%  recon_MSE=98.3738 <-- best
-  res1: m=0.622kg k=29,649N/m f_t=32.2Hz x=0.844m y=0.251m
-  res2: m=0.881kg k=289,423N/m f_t=121.5Hz x=0.949m y=0.118m
-  res3: m=0.620kg k=673,184N/m f_t=144.8Hz x=0.784m y=0.315m
-sample 2: score=-3.6936  relative_confidence=  2.0%  recon_MSE=133.1226
-  res1: m=0.621kg k=25,137N/m f_t=34.2Hz x=0.885m y=0.230m
-  res2: m=1.055kg k=341,071N/m f_t=130.5Hz x=0.937m y=0.244m
-  res3: m=0.721kg k=877,489N/m f_t=157.3Hz x=0.088m y=0.149m
-sample 3: score=-9.2659  relative_confidence=  0.0%  recon_MSE=115.0277
-  res1: m=0.518kg k=32,449N/m f_t=32.7Hz x=0.935m y=0.264m
-  res2: m=0.780kg k=490,853N/m f_t=92.9Hz x=0.099m y=0.284m
-  res3: m=0.702kg k=552,734N/m f_t=132.8Hz x=0.475m y=0.277m
-sample 4: score=-3.3799  relative_confidence=  2.7%  recon_MSE=112.3367
-  res1: m=0.613kg k=32,178N/m f_t=33.5Hz x=0.833m y=0.353m
-  res2: m=0.661kg k=537,537N/m f_t=107.5Hz x=0.833m y=0.440m
-  res3: m=0.682kg k=626,147N/m f_t=153.8Hz x=0.769m y=0.308m
-sample 5: score=-6.4792  relative_confidence=  0.1%  recon_MSE=115.3115
-  res1: m=0.598kg k=32,002N/m f_t=33.1Hz x=0.840m y=0.350m
-  res2: m=1.143kg k=306,095N/m f_t=100.5Hz x=1.042m y=0.104m
-  res3: m=1.033kg k=602,813N/m f_t=125.5Hz x=1.382m y=0.357m
-sample 6: score=-5.7931  relative_confidence=  0.2%  recon_MSE=94.6494
-  res1: m=0.663kg k=30,820N/m f_t=34.2Hz x=0.828m y=0.272m
-  res2: m=0.816kg k=241,852N/m f_t=129.9Hz x=0.341m y=0.281m
-  res3: m=0.830kg k=899,223N/m f_t=162.2Hz x=0.814m y=0.430m
+sample 1: score=-2.9813  relative_confidence= 38.5%  recon_MSE=150.7389
+  res1: m=0.715kg k=34,126N/m f_t=33.1Hz x=0.842m y=0.366m
+  res2: m=0.678kg k=396,745N/m f_t=89.6Hz x=0.688m y=0.180m
+  res3: m=0.824kg k=340,201N/m f_t=157.6Hz x=0.849m y=0.246m
+sample 2: score=-9.4375  relative_confidence=  0.1%  recon_MSE=134.4115
+  res1: m=0.581kg k=34,533N/m f_t=33.2Hz x=0.934m y=0.284m
+  res2: m=0.902kg k=94,710N/m f_t=97.0Hz x=0.690m y=0.312m
+  res3: m=1.135kg k=284,071N/m f_t=113.0Hz x=0.172m y=0.361m
+sample 3: score=-7.0578  relative_confidence=  0.7%  recon_MSE=112.3286
+  res1: m=0.590kg k=31,811N/m f_t=32.9Hz x=0.861m y=0.446m
+  res2: m=0.744kg k=427,256N/m f_t=125.3Hz x=0.281m y=0.141m
+  res3: m=0.783kg k=323,416N/m f_t=138.4Hz x=1.293m y=0.328m
+sample 4: score=-6.0250  relative_confidence=  1.8%  recon_MSE=111.1695
+  res1: m=0.774kg k=33,579N/m f_t=34.0Hz x=0.842m y=0.112m
+  res2: m=0.751kg k=482,888N/m f_t=81.9Hz x=1.097m y=0.337m
+  res3: m=0.558kg k=517,514N/m f_t=145.0Hz x=0.410m y=0.376m
+sample 5: score=-2.5591  relative_confidence= 58.8%  recon_MSE=93.2546 <-- best
+  res1: m=0.681kg k=29,179N/m f_t=32.4Hz x=0.851m y=0.264m
+  res2: m=0.651kg k=302,155N/m f_t=89.2Hz x=0.800m y=0.366m
+  res3: m=0.618kg k=313,246N/m f_t=135.2Hz x=0.400m y=0.131m
+sample 6: score=-8.5222  relative_confidence=  0.2%  recon_MSE=105.3535
+  res1: m=0.679kg k=30,471N/m f_t=35.3Hz x=0.904m y=0.289m
+  res2: m=0.704kg k=288,962N/m f_t=117.1Hz x=0.439m y=0.406m
+  res3: m=0.528kg k=279,869N/m f_t=116.1Hz x=1.628m y=0.122m
 
 ==========================================================================================
 Example 2
 ==========================================================================================
 
 --- MDN (log p(design|spectrum)) ---
-sample 1: score=+1.9444  relative_confidence=  0.2%  recon_MSE=88.9333
-  res1: m=0.585kg k=2,931N/m f_t=14.8Hz x=0.805m y=0.102m
-  res2: m=0.806kg k=47,773N/m f_t=38.1Hz x=0.418m y=0.259m
-  res3: m=0.403kg k=185,732N/m f_t=79.4Hz x=1.021m y=0.119m
-sample 2: score=+2.2831  relative_confidence=  0.2%  recon_MSE=54.4880
-  res1: m=0.449kg k=2,994N/m f_t=15.0Hz x=0.899m y=0.176m
-  res2: m=0.985kg k=51,121N/m f_t=39.6Hz x=0.534m y=0.243m
-  res3: m=0.321kg k=65,149N/m f_t=70.3Hz x=0.809m y=0.192m
-sample 3: score=+7.3665  relative_confidence= 34.0%  recon_MSE=119.1041
-  res1: m=0.562kg k=3,745N/m f_t=14.9Hz x=0.552m y=0.200m
-  res2: m=0.690kg k=53,847N/m f_t=39.4Hz x=0.643m y=0.265m
-  res3: m=0.448kg k=156,668N/m f_t=90.1Hz x=0.813m y=0.322m
-sample 4: score=+6.1910  relative_confidence= 10.5%  recon_MSE=81.3364
-  res1: m=0.618kg k=3,982N/m f_t=14.8Hz x=0.845m y=0.371m
-  res2: m=0.847kg k=55,613N/m f_t=41.1Hz x=0.615m y=0.325m
-  res3: m=0.553kg k=128,621N/m f_t=83.3Hz x=0.670m y=0.101m
-sample 5: score=+7.8421  relative_confidence= 54.7%  recon_MSE=103.5005 <-- best
-  res1: m=0.444kg k=2,749N/m f_t=14.9Hz x=0.925m y=0.229m
-  res2: m=0.821kg k=60,293N/m f_t=39.8Hz x=0.725m y=0.264m
-  res3: m=0.550kg k=109,329N/m f_t=88.7Hz x=0.623m y=0.239m
-sample 6: score=+3.1186  relative_confidence=  0.5%  recon_MSE=82.5344
-  res1: m=0.633kg k=7,067N/m f_t=15.2Hz x=0.805m y=0.289m
-  res2: m=0.615kg k=32,585N/m f_t=43.2Hz x=0.236m y=0.248m
-  res3: m=0.607kg k=180,195N/m f_t=72.1Hz x=0.614m y=0.198m
+sample 1: score=+5.6875  relative_confidence= 34.0%  recon_MSE=113.7707
+  res1: m=0.322kg k=3,036N/m f_t=15.3Hz x=0.596m y=0.135m
+  res2: m=0.358kg k=33,332N/m f_t=42.7Hz x=0.568m y=0.271m
+  res3: m=0.655kg k=177,597N/m f_t=84.3Hz x=0.341m y=0.264m
+sample 2: score=-1.3685  relative_confidence=  0.0%  recon_MSE=63.7859
+  res1: m=0.495kg k=2,773N/m f_t=15.7Hz x=0.556m y=0.243m
+  res2: m=0.740kg k=101,030N/m f_t=59.3Hz x=0.548m y=0.140m
+  res3: m=0.569kg k=153,000N/m f_t=90.5Hz x=1.100m y=0.224m
+sample 3: score=-0.5923  relative_confidence=  0.1%  recon_MSE=106.9891
+  res1: m=0.697kg k=1,581N/m f_t=15.2Hz x=-0.066m y=0.156m
+  res2: m=0.430kg k=31,911N/m f_t=43.3Hz x=0.606m y=0.223m
+  res3: m=0.606kg k=256,473N/m f_t=83.6Hz x=0.672m y=0.085m
+sample 4: score=+3.9234  relative_confidence=  5.8%  recon_MSE=71.4510
+  res1: m=0.347kg k=4,128N/m f_t=14.9Hz x=0.912m y=0.176m
+  res2: m=0.839kg k=53,885N/m f_t=40.0Hz x=0.321m y=0.173m
+  res3: m=0.540kg k=105,057N/m f_t=86.2Hz x=1.027m y=0.065m
+sample 5: score=+5.9606  relative_confidence= 44.6%  recon_MSE=60.1812 <-- best
+  res1: m=0.482kg k=4,716N/m f_t=14.9Hz x=0.305m y=0.236m
+  res2: m=0.974kg k=56,216N/m f_t=40.3Hz x=0.403m y=0.197m
+  res3: m=0.449kg k=99,067N/m f_t=89.5Hz x=0.532m y=0.267m
+sample 6: score=+4.9011  relative_confidence= 15.5%  recon_MSE=77.4222
+  res1: m=0.535kg k=2,930N/m f_t=15.2Hz x=0.503m y=0.290m
+  res2: m=0.669kg k=38,584N/m f_t=39.4Hz x=0.601m y=0.218m
+  res3: m=0.494kg k=139,618N/m f_t=98.1Hz x=0.752m y=0.218m
 
 --- cVAE (log p(design|spectrum)) ---
-sample 1: score=-28.6863  relative_confidence=  0.0%  recon_MSE=92.3413
-  res1: m=0.910kg k=730,093N/m f_t=98.5Hz x=1.463m y=-0.200m
-  res2: m=1.640kg k=527,540N/m f_t=117.8Hz x=0.353m y=0.385m
-  res3: m=0.757kg k=547,288N/m f_t=61.5Hz x=1.013m y=0.260m
-sample 2: score=-26.3084  relative_confidence=  0.0%  recon_MSE=128.1839
-  res1: m=0.625kg k=737,617N/m f_t=-14.9Hz x=1.853m y=0.185m
-  res2: m=0.461kg k=399,012N/m f_t=104.1Hz x=0.638m y=0.199m
-  res3: m=0.802kg k=-92,999N/m f_t=90.9Hz x=0.832m y=0.333m
-sample 3: score=+0.2953  relative_confidence=  6.5%  recon_MSE=119.7510
-  res1: m=0.645kg k=122,263N/m f_t=66.8Hz x=1.090m y=0.371m
-  res2: m=0.396kg k=203,299N/m f_t=105.5Hz x=0.788m y=0.316m
-  res3: m=0.570kg k=303,613N/m f_t=131.2Hz x=0.060m y=0.345m
-sample 4: score=-8.3494  relative_confidence=  0.0%  recon_MSE=97.8779
-  res1: m=0.202kg k=53,767N/m f_t=68.4Hz x=0.664m y=0.165m
-  res2: m=0.650kg k=335,877N/m f_t=99.7Hz x=1.012m y=0.220m
-  res3: m=0.541kg k=308,626N/m f_t=76.9Hz x=0.878m y=0.047m
-sample 5: score=+2.9683  relative_confidence= 93.5%  recon_MSE=124.8764 <-- best
-  res1: m=0.382kg k=47,209N/m f_t=30.8Hz x=0.367m y=0.232m
-  res2: m=0.869kg k=321,555N/m f_t=97.2Hz x=0.773m y=0.404m
-  res3: m=0.448kg k=274,440N/m f_t=120.3Hz x=0.139m y=0.254m
-sample 6: score=-15.6072  relative_confidence=  0.0%  recon_MSE=145.4908
-  res1: m=0.424kg k=369,524N/m f_t=75.8Hz x=0.791m y=0.160m
-  res2: m=0.503kg k=83,379N/m f_t=94.6Hz x=0.569m y=0.191m
-  res3: m=0.648kg k=332,034N/m f_t=135.7Hz x=0.004m y=0.157m
+sample 1: score=-17.8378  relative_confidence=  0.0%  recon_MSE=111.9341
+  res1: m=0.257kg k=398,215N/m f_t=132.7Hz x=0.404m y=0.247m
+  res2: m=0.383kg k=173,974N/m f_t=151.6Hz x=0.540m y=0.273m
+  res3: m=0.589kg k=577,183N/m f_t=128.7Hz x=1.004m y=0.314m
+sample 2: score=-4.7273  relative_confidence=  2.8%  recon_MSE=110.8800
+  res1: m=0.942kg k=116,722N/m f_t=74.1Hz x=0.246m y=0.209m
+  res2: m=0.654kg k=214,114N/m f_t=73.7Hz x=0.853m y=0.384m
+  res3: m=0.315kg k=129,501N/m f_t=104.0Hz x=1.344m y=0.214m
+sample 3: score=-19.1167  relative_confidence=  0.0%  recon_MSE=99.8415
+  res1: m=0.397kg k=123,573N/m f_t=63.5Hz x=0.922m y=0.137m
+  res2: m=0.725kg k=138,845N/m f_t=10.1Hz x=0.522m y=0.220m
+  res3: m=0.499kg k=-27,634N/m f_t=25.8Hz x=1.303m y=0.459m
+sample 4: score=-23.1187  relative_confidence=  0.0%  recon_MSE=80.7148
+  res1: m=0.123kg k=315,052N/m f_t=69.6Hz x=0.810m y=0.451m
+  res2: m=0.343kg k=400,072N/m f_t=27.7Hz x=0.682m y=0.069m
+  res3: m=0.236kg k=97,895N/m f_t=61.6Hz x=0.971m y=0.140m
+sample 5: score=-1.1681  relative_confidence= 97.2%  recon_MSE=176.0077 <-- best
+  res1: m=0.715kg k=95,882N/m f_t=72.9Hz x=0.573m y=0.122m
+  res2: m=0.596kg k=201,874N/m f_t=72.3Hz x=0.865m y=0.225m
+  res3: m=0.471kg k=283,589N/m f_t=143.2Hz x=0.764m y=0.101m
+sample 6: score=-14.5848  relative_confidence=  0.0%  recon_MSE=146.5628
+  res1: m=0.685kg k=354,458N/m f_t=102.6Hz x=0.524m y=0.160m
+  res2: m=0.386kg k=112,534N/m f_t=85.0Hz x=0.690m y=0.252m
+  res3: m=0.897kg k=381,959N/m f_t=69.2Hz x=1.063m y=0.200m
 
 --- Flow (log p(design|spectrum)) ---
-sample 1: score=+12.1575  relative_confidence= 24.6%  recon_MSE=74.0307
-  res1: m=0.730kg k=5,078N/m f_t=13.5Hz x=0.257m y=0.090m
-  res2: m=0.495kg k=52,717N/m f_t=52.0Hz x=0.763m y=0.398m
-  res3: m=0.481kg k=115,142N/m f_t=77.8Hz x=0.445m y=0.227m
-sample 2: score=+3.8863  relative_confidence=  0.0%  recon_MSE=135.3490
-  res1: m=0.767kg k=13,378N/m f_t=21.0Hz x=-0.773m y=0.261m
-  res2: m=1.145kg k=215,702N/m f_t=69.2Hz x=0.518m y=0.175m
-  res3: m=0.709kg k=83,696N/m f_t=54.1Hz x=0.879m y=0.745m
-sample 3: score=+9.9794  relative_confidence=  2.8%  recon_MSE=93.3238
-  res1: m=0.960kg k=5,292N/m f_t=11.9Hz x=0.221m y=0.300m
-  res2: m=0.964kg k=83,787N/m f_t=46.9Hz x=0.732m y=0.355m
-  res3: m=0.440kg k=57,193N/m f_t=57.4Hz x=0.371m y=0.294m
-sample 4: score=+12.3494  relative_confidence= 29.8%  recon_MSE=114.0059 <-- best
-  res1: m=0.680kg k=5,701N/m f_t=14.6Hz x=0.218m y=0.160m
-  res2: m=0.552kg k=62,585N/m f_t=53.6Hz x=0.850m y=0.172m
-  res3: m=0.445kg k=116,839N/m f_t=81.6Hz x=0.615m y=0.189m
-sample 5: score=+11.8445  relative_confidence= 18.0%  recon_MSE=100.5181
-  res1: m=0.948kg k=6,483N/m f_t=13.3Hz x=0.299m y=0.232m
-  res2: m=0.484kg k=74,149N/m f_t=62.3Hz x=0.837m y=0.353m
-  res3: m=0.686kg k=174,132N/m f_t=80.2Hz x=0.678m y=0.357m
-sample 6: score=+12.1698  relative_confidence= 24.9%  recon_MSE=133.7453
-  res1: m=0.678kg k=3,935N/m f_t=12.3Hz x=0.419m y=0.227m
-  res2: m=0.874kg k=146,549N/m f_t=65.2Hz x=0.721m y=0.246m
-  res3: m=0.523kg k=99,842N/m f_t=69.5Hz x=0.634m y=0.242m
+sample 1: score=+11.0307  relative_confidence= 12.4%  recon_MSE=90.3724
+  res1: m=0.939kg k=6,526N/m f_t=13.3Hz x=0.323m y=0.349m
+  res2: m=0.536kg k=35,147N/m f_t=40.7Hz x=0.579m y=0.341m
+  res3: m=0.485kg k=182,177N/m f_t=97.5Hz x=0.884m y=0.144m
+sample 2: score=+10.1237  relative_confidence=  5.0%  recon_MSE=66.8435
+  res1: m=0.512kg k=4,477N/m f_t=14.9Hz x=0.838m y=0.327m
+  res2: m=0.426kg k=52,784N/m f_t=56.0Hz x=0.953m y=0.074m
+  res3: m=0.397kg k=91,665N/m f_t=76.5Hz x=0.451m y=0.085m
+sample 3: score=+12.1403  relative_confidence= 37.5%  recon_MSE=96.1017
+  res1: m=0.195kg k=1,272N/m f_t=12.7Hz x=1.018m y=0.222m
+  res2: m=0.610kg k=30,554N/m f_t=35.7Hz x=0.587m y=0.198m
+  res3: m=0.386kg k=151,451N/m f_t=99.8Hz x=0.713m y=0.272m
+sample 4: score=+7.5926  relative_confidence=  0.4%  recon_MSE=87.7413
+  res1: m=0.844kg k=10,836N/m f_t=18.0Hz x=1.020m y=0.189m
+  res2: m=0.513kg k=131,794N/m f_t=80.7Hz x=1.280m y=0.297m
+  res3: m=0.387kg k=103,767N/m f_t=82.5Hz x=0.546m y=0.206m
+sample 5: score=+12.2465  relative_confidence= 41.7%  recon_MSE=64.8618 <-- best
+  res1: m=0.331kg k=2,357N/m f_t=13.5Hz x=0.517m y=0.200m
+  res2: m=0.340kg k=30,388N/m f_t=47.5Hz x=0.573m y=0.279m
+  res3: m=0.823kg k=249,929N/m f_t=87.7Hz x=0.969m y=0.374m
+sample 6: score=+9.6331  relative_confidence=  3.1%  recon_MSE=71.7996
+  res1: m=0.396kg k=2,815N/m f_t=13.5Hz x=0.700m y=0.452m
+  res2: m=0.858kg k=91,761N/m f_t=52.0Hz x=1.387m y=0.276m
+  res3: m=0.511kg k=108,872N/m f_t=73.5Hz x=0.414m y=0.350m
 
 --- Diffusion (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-45.5504  relative_confidence= 36.9%  recon_MSE=45.5504
-  res1: m=0.254kg k=8,367N/m f_t=12.2Hz x=0.458m y=0.071m
-  res2: m=1.003kg k=75,931N/m f_t=43.6Hz x=0.539m y=0.347m
-  res3: m=0.378kg k=98,800N/m f_t=72.4Hz x=1.106m y=0.265m
-sample 2: score=-75.8356  relative_confidence=  0.0%  recon_MSE=75.8356
-  res1: m=0.663kg k=10,344N/m f_t=19.7Hz x=1.102m y=0.090m
-  res2: m=0.239kg k=28,496N/m f_t=47.5Hz x=0.943m y=0.323m
-  res3: m=0.732kg k=235,505N/m f_t=89.7Hz x=0.431m y=0.300m
-sample 3: score=-136.2134  relative_confidence=  0.0%  recon_MSE=136.2134
-  res1: m=0.337kg k=-2,659N/m f_t=14.9Hz x=0.621m y=0.101m
-  res2: m=0.598kg k=69,380N/m f_t=52.0Hz x=0.849m y=0.153m
-  res3: m=0.691kg k=243,902N/m f_t=96.0Hz x=0.161m y=0.302m
-sample 4: score=-76.8738  relative_confidence=  0.0%  recon_MSE=76.8738
-  res1: m=0.970kg k=8,463N/m f_t=12.4Hz x=0.455m y=0.321m
-  res2: m=0.704kg k=47,545N/m f_t=38.6Hz x=0.918m y=0.097m
-  res3: m=0.515kg k=131,123N/m f_t=79.1Hz x=0.542m y=0.086m
-sample 5: score=-45.0123  relative_confidence= 63.1%  recon_MSE=45.0123 <-- best
-  res1: m=0.479kg k=11,432N/m f_t=18.5Hz x=0.426m y=0.066m
-  res2: m=0.618kg k=40,040N/m f_t=40.9Hz x=0.453m y=0.268m
-  res3: m=0.677kg k=165,268N/m f_t=77.2Hz x=0.886m y=0.366m
-sample 6: score=-72.2856  relative_confidence=  0.0%  recon_MSE=72.2856
-  res1: m=0.743kg k=7,519N/m f_t=19.2Hz x=1.074m y=0.172m
-  res2: m=0.722kg k=64,154N/m f_t=47.2Hz x=0.500m y=0.311m
-  res3: m=0.789kg k=169,595N/m f_t=71.9Hz x=1.177m y=0.178m
+sample 1: score=-82.7854  relative_confidence=  0.0%  recon_MSE=82.7854
+  res1: m=1.041kg k=6,782N/m f_t=16.8Hz x=1.155m y=0.202m
+  res2: m=0.327kg k=43,780N/m f_t=55.1Hz x=1.264m y=0.235m
+  res3: m=0.911kg k=220,568N/m f_t=76.4Hz x=1.222m y=0.123m
+sample 2: score=-45.9457  relative_confidence= 75.1%  recon_MSE=45.9457 <-- best
+  res1: m=0.701kg k=5,368N/m f_t=14.0Hz x=0.375m y=0.343m
+  res2: m=0.634kg k=52,898N/m f_t=47.5Hz x=0.249m y=0.210m
+  res3: m=0.754kg k=182,807N/m f_t=77.5Hz x=0.593m y=0.372m
+sample 3: score=-110.0883  relative_confidence=  0.0%  recon_MSE=110.0883
+  res1: m=0.501kg k=15,073N/m f_t=11.8Hz x=0.358m y=0.302m
+  res2: m=0.937kg k=65,107N/m f_t=42.9Hz x=0.359m y=0.367m
+  res3: m=0.804kg k=196,918N/m f_t=78.4Hz x=0.900m y=0.277m
+sample 4: score=-78.9266  relative_confidence=  0.0%  recon_MSE=78.9266
+  res1: m=0.419kg k=-1,034N/m f_t=7.6Hz x=0.480m y=0.101m
+  res2: m=0.731kg k=58,070N/m f_t=47.4Hz x=1.004m y=0.296m
+  res3: m=0.721kg k=188,663N/m f_t=81.6Hz x=0.421m y=0.127m
+sample 5: score=-96.0058  relative_confidence=  0.0%  recon_MSE=96.0058
+  res1: m=0.493kg k=15,220N/m f_t=23.3Hz x=0.448m y=0.126m
+  res2: m=0.622kg k=73,369N/m f_t=55.1Hz x=0.997m y=0.314m
+  res3: m=0.339kg k=87,416N/m f_t=76.2Hz x=0.514m y=0.412m
+sample 6: score=-47.0496  relative_confidence= 24.9%  recon_MSE=47.0496
+  res1: m=0.393kg k=10,437N/m f_t=15.9Hz x=0.913m y=0.152m
+  res2: m=0.887kg k=61,164N/m f_t=42.3Hz x=0.553m y=0.114m
+  res3: m=0.777kg k=167,345N/m f_t=71.2Hz x=1.010m y=0.397m
 
 --- BasisFlow (log p(design|spectrum)) ---
-sample 1: score=-10.3579  relative_confidence=  3.2%  recon_MSE=97.2974
-  res1: m=0.704kg k=6,009N/m f_t=14.9Hz x=0.463m y=0.116m
-  res2: m=0.487kg k=63,097N/m f_t=57.3Hz x=0.754m y=0.279m
-  res3: m=0.742kg k=153,175N/m f_t=72.4Hz x=0.553m y=0.179m
-sample 2: score=-12.1424  relative_confidence=  0.5%  recon_MSE=69.8925
-  res1: m=0.744kg k=6,056N/m f_t=14.4Hz x=1.059m y=0.395m
-  res2: m=1.010kg k=126,029N/m f_t=56.2Hz x=0.509m y=0.146m
-  res3: m=0.759kg k=130,531N/m f_t=65.9Hz x=1.046m y=0.088m
-sample 3: score=-13.2194  relative_confidence=  0.2%  recon_MSE=92.0604
-  res1: m=0.540kg k=4,506N/m f_t=14.9Hz x=0.341m y=0.219m
-  res2: m=0.850kg k=162,138N/m f_t=69.5Hz x=0.760m y=0.287m
-  res3: m=0.176kg k=34,214N/m f_t=69.8Hz x=0.792m y=0.439m
-sample 4: score=-15.5181  relative_confidence=  0.0%  recon_MSE=89.6180
-  res1: m=0.639kg k=5,648N/m f_t=14.9Hz x=1.467m y=0.119m
-  res2: m=0.435kg k=42,894N/m f_t=50.0Hz x=0.446m y=0.361m
-  res3: m=0.871kg k=125,670N/m f_t=60.5Hz x=1.236m y=0.188m
-sample 5: score=-8.8556  relative_confidence= 14.3%  recon_MSE=79.1650
-  res1: m=0.196kg k=1,649N/m f_t=14.6Hz x=0.970m y=0.270m
-  res2: m=0.722kg k=83,911N/m f_t=54.2Hz x=0.657m y=0.122m
-  res3: m=0.778kg k=160,347N/m f_t=72.3Hz x=1.077m y=0.420m
-sample 6: score=-7.1114  relative_confidence= 81.8%  recon_MSE=93.7036 <-- best
-  res1: m=0.362kg k=3,577N/m f_t=15.8Hz x=0.890m y=0.280m
-  res2: m=0.741kg k=78,731N/m f_t=51.9Hz x=1.021m y=0.159m
-  res3: m=0.388kg k=121,644N/m f_t=89.1Hz x=0.352m y=0.107m
+sample 1: score=-4.6333  relative_confidence= 93.6%  recon_MSE=94.3500 <-- best
+  res1: m=0.514kg k=4,602N/m f_t=15.2Hz x=0.465m y=0.299m
+  res2: m=0.829kg k=98,742N/m f_t=54.9Hz x=0.547m y=0.165m
+  res3: m=0.436kg k=78,874N/m f_t=67.6Hz x=0.519m y=0.253m
+sample 2: score=-9.6019  relative_confidence=  0.7%  recon_MSE=74.2376
+  res1: m=0.303kg k=2,567N/m f_t=14.6Hz x=0.872m y=0.282m
+  res2: m=0.521kg k=45,752N/m f_t=47.1Hz x=0.387m y=0.387m
+  res3: m=0.598kg k=141,826N/m f_t=77.5Hz x=0.553m y=0.418m
+sample 3: score=-9.6804  relative_confidence=  0.6%  recon_MSE=68.4590
+  res1: m=0.871kg k=7,809N/m f_t=14.9Hz x=1.147m y=0.206m
+  res2: m=0.244kg k=24,104N/m f_t=50.0Hz x=0.526m y=0.304m
+  res3: m=0.667kg k=126,347N/m f_t=69.3Hz x=0.799m y=0.118m
+sample 4: score=-7.5705  relative_confidence=  5.0%  recon_MSE=63.9230
+  res1: m=0.511kg k=4,315N/m f_t=14.9Hz x=0.597m y=0.226m
+  res2: m=0.789kg k=144,553N/m f_t=68.1Hz x=0.824m y=0.144m
+  res3: m=0.121kg k=23,713N/m f_t=70.4Hz x=0.574m y=0.396m
+sample 5: score=-10.8711  relative_confidence=  0.2%  recon_MSE=74.0465
+  res1: m=0.652kg k=5,503N/m f_t=14.7Hz x=1.148m y=0.262m
+  res2: m=0.483kg k=84,711N/m f_t=66.6Hz x=0.328m y=0.146m
+  res3: m=0.497kg k=184,287N/m f_t=96.9Hz x=0.934m y=0.054m
+sample 6: score=-15.3453  relative_confidence=  0.0%  recon_MSE=56.9185
+  res1: m=0.485kg k=3,906N/m f_t=14.3Hz x=1.190m y=0.057m
+  res2: m=0.536kg k=68,358N/m f_t=56.8Hz x=1.169m y=0.426m
+  res3: m=0.931kg k=227,510N/m f_t=78.7Hz x=0.560m y=0.382m
 
 --- PadINN (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-109.4335  relative_confidence= 53.8%  recon_MSE=109.4335 <-- best
-  res1: m=0.472kg k=36,112N/m f_t=38.0Hz x=0.304m y=0.241m
-  res2: m=0.606kg k=115,248N/m f_t=78.0Hz x=0.729m y=0.252m
-  res3: m=0.538kg k=154,368N/m f_t=82.4Hz x=0.636m y=0.212m
-sample 2: score=-115.5758  relative_confidence=  0.1%  recon_MSE=115.5758
-  res1: m=0.487kg k=35,055N/m f_t=37.5Hz x=0.302m y=0.242m
-  res2: m=0.615kg k=114,571N/m f_t=77.2Hz x=0.735m y=0.253m
-  res3: m=0.507kg k=144,551N/m f_t=81.8Hz x=0.560m y=0.196m
-sample 3: score=-117.3330  relative_confidence=  0.0%  recon_MSE=117.3330
-  res1: m=0.496kg k=31,018N/m f_t=37.8Hz x=0.319m y=0.241m
-  res2: m=0.617kg k=115,823N/m f_t=77.8Hz x=0.755m y=0.251m
-  res3: m=0.519kg k=149,826N/m f_t=83.0Hz x=0.566m y=0.193m
-sample 4: score=-117.8129  relative_confidence=  0.0%  recon_MSE=117.8129
-  res1: m=0.483kg k=38,111N/m f_t=38.7Hz x=0.309m y=0.241m
-  res2: m=0.620kg k=115,674N/m f_t=77.8Hz x=0.759m y=0.250m
-  res3: m=0.526kg k=152,294N/m f_t=83.0Hz x=0.601m y=0.213m
-sample 5: score=-121.8474  relative_confidence=  0.0%  recon_MSE=121.8474
-  res1: m=0.497kg k=38,764N/m f_t=37.8Hz x=0.312m y=0.241m
-  res2: m=0.640kg k=114,661N/m f_t=77.8Hz x=0.779m y=0.250m
-  res3: m=0.518kg k=148,272N/m f_t=83.1Hz x=0.547m y=0.203m
-sample 6: score=-109.5889  relative_confidence= 46.1%  recon_MSE=109.5889
-  res1: m=0.488kg k=32,769N/m f_t=37.5Hz x=0.313m y=0.238m
-  res2: m=0.606kg k=115,775N/m f_t=78.1Hz x=0.727m y=0.249m
-  res3: m=0.522kg k=151,621N/m f_t=82.6Hz x=0.589m y=0.203m
+sample 1: score=-110.6549  relative_confidence=  0.0%  recon_MSE=110.6549
+  res1: m=0.489kg k=36,802N/m f_t=38.0Hz x=0.297m y=0.242m
+  res2: m=0.614kg k=113,284N/m f_t=77.3Hz x=0.756m y=0.248m
+  res3: m=0.520kg k=151,436N/m f_t=83.1Hz x=0.626m y=0.219m
+sample 2: score=-110.1190  relative_confidence=  0.0%  recon_MSE=110.1190
+  res1: m=0.477kg k=29,703N/m f_t=36.4Hz x=0.311m y=0.240m
+  res2: m=0.598kg k=114,421N/m f_t=77.7Hz x=0.709m y=0.252m
+  res3: m=0.523kg k=148,908N/m f_t=82.2Hz x=0.586m y=0.190m
+sample 3: score=-122.8527  relative_confidence=  0.0%  recon_MSE=122.8527
+  res1: m=0.507kg k=42,321N/m f_t=38.7Hz x=0.296m y=0.241m
+  res2: m=0.632kg k=113,760N/m f_t=77.5Hz x=0.793m y=0.245m
+  res3: m=0.517kg k=148,852N/m f_t=82.7Hz x=0.607m y=0.215m
+sample 4: score=-109.9551  relative_confidence=  0.0%  recon_MSE=109.9551
+  res1: m=0.482kg k=35,807N/m f_t=38.0Hz x=0.297m y=0.240m
+  res2: m=0.600kg k=114,379N/m f_t=77.7Hz x=0.738m y=0.247m
+  res3: m=0.528kg k=152,661N/m f_t=83.0Hz x=0.643m y=0.214m
+sample 5: score=-92.8824  relative_confidence=100.0%  recon_MSE=92.8824 <-- best
+  res1: m=0.485kg k=37,093N/m f_t=36.5Hz x=0.331m y=0.241m
+  res2: m=0.619kg k=109,802N/m f_t=77.3Hz x=0.732m y=0.252m
+  res3: m=0.495kg k=138,218N/m f_t=81.0Hz x=0.463m y=0.182m
+sample 6: score=-122.3366  relative_confidence=  0.0%  recon_MSE=122.3366
+  res1: m=0.507kg k=40,865N/m f_t=37.8Hz x=0.304m y=0.241m
+  res2: m=0.637kg k=113,553N/m f_t=77.1Hz x=0.770m y=0.251m
+  res3: m=0.504kg k=142,573N/m f_t=82.0Hz x=0.525m y=0.203m
 
 --- Surrogate (log p(design|spectrum)) ---
-sample 1: score=+4.0665  relative_confidence= 72.8%  recon_MSE=80.1769 <-- best
-  res1: m=0.276kg k=5,971N/m f_t=14.0Hz x=1.145m y=0.087m
-  res2: m=0.921kg k=68,631N/m f_t=40.1Hz x=0.402m y=0.289m
-  res3: m=0.714kg k=190,181N/m f_t=68.9Hz x=0.834m y=0.248m
-sample 2: score=-2.3887  relative_confidence=  0.1%  recon_MSE=161.9659
-  res1: m=0.253kg k=8,243N/m f_t=15.9Hz x=1.160m y=0.260m
-  res2: m=0.745kg k=73,245N/m f_t=39.9Hz x=0.975m y=0.286m
-  res3: m=0.759kg k=222,543N/m f_t=72.4Hz x=0.840m y=0.281m
-sample 3: score=+0.8845  relative_confidence=  3.0%  recon_MSE=122.9410
-  res1: m=0.224kg k=7,383N/m f_t=13.5Hz x=1.053m y=0.280m
-  res2: m=0.887kg k=76,224N/m f_t=38.8Hz x=0.606m y=0.181m
-  res3: m=0.373kg k=145,611N/m f_t=101.2Hz x=0.779m y=0.214m
-sample 4: score=-6.2838  relative_confidence=  0.0%  recon_MSE=83.5474
-  res1: m=0.160kg k=4,825N/m f_t=13.7Hz x=1.382m y=0.311m
-  res2: m=0.943kg k=27,917N/m f_t=35.5Hz x=0.426m y=0.291m
-  res3: m=0.749kg k=177,896N/m f_t=74.7Hz x=0.475m y=0.049m
-sample 5: score=-12.3591  relative_confidence=  0.0%  recon_MSE=75.2122
-  res1: m=0.199kg k=-11,149N/m f_t=12.9Hz x=0.915m y=0.373m
-  res2: m=1.368kg k=59,965N/m f_t=42.9Hz x=0.287m y=0.269m
-  res3: m=0.722kg k=108,557N/m f_t=94.5Hz x=0.616m y=0.268m
-sample 6: score=+2.9581  relative_confidence= 24.0%  recon_MSE=66.6929
-  res1: m=0.352kg k=2,697N/m f_t=14.9Hz x=0.828m y=0.170m
-  res2: m=0.928kg k=72,568N/m f_t=37.3Hz x=0.079m y=0.242m
-  res3: m=0.527kg k=173,998N/m f_t=81.4Hz x=1.156m y=0.219m
+sample 1: score=-7.1955  relative_confidence=  0.1%  recon_MSE=61.4885
+  res1: m=0.226kg k=6,805N/m f_t=16.0Hz x=0.967m y=0.631m
+  res2: m=0.564kg k=69,033N/m f_t=61.6Hz x=0.190m y=0.359m
+  res3: m=0.422kg k=150,471N/m f_t=73.2Hz x=0.431m y=0.141m
+sample 2: score=-3.5909  relative_confidence=  2.3%  recon_MSE=94.1998
+  res1: m=0.096kg k=8,185N/m f_t=15.8Hz x=0.948m y=0.260m
+  res2: m=1.109kg k=117,645N/m f_t=62.2Hz x=0.443m y=0.203m
+  res3: m=0.630kg k=157,760N/m f_t=78.5Hz x=0.576m y=0.189m
+sample 3: score=-1.2661  relative_confidence= 23.9%  recon_MSE=174.1685
+  res1: m=0.274kg k=158N/m f_t=15.1Hz x=0.903m y=0.267m
+  res2: m=0.605kg k=86,918N/m f_t=60.2Hz x=0.476m y=0.088m
+  res3: m=0.252kg k=207,323N/m f_t=83.1Hz x=0.902m y=0.285m
+sample 4: score=-6.9357  relative_confidence=  0.1%  recon_MSE=98.6768
+  res1: m=0.223kg k=-4,648N/m f_t=14.4Hz x=0.981m y=0.154m
+  res2: m=0.768kg k=177,281N/m f_t=41.8Hz x=0.263m y=0.270m
+  res3: m=0.714kg k=100,390N/m f_t=83.0Hz x=0.716m y=0.365m
+sample 5: score=-0.3734  relative_confidence= 58.4%  recon_MSE=66.9800 <-- best
+  res1: m=0.104kg k=3,262N/m f_t=14.7Hz x=0.684m y=0.257m
+  res2: m=0.644kg k=63,532N/m f_t=62.8Hz x=0.581m y=0.195m
+  res3: m=0.501kg k=154,323N/m f_t=78.5Hz x=1.083m y=0.188m
+sample 6: score=-1.7180  relative_confidence= 15.2%  recon_MSE=94.9329
+  res1: m=0.231kg k=-4,145N/m f_t=16.0Hz x=0.758m y=0.078m
+  res2: m=0.798kg k=70,308N/m f_t=58.8Hz x=0.634m y=0.241m
+  res3: m=0.391kg k=38,844N/m f_t=75.8Hz x=0.672m y=0.143m
 
 ==========================================================================================
 Example 3
 ==========================================================================================
 
 --- MDN (log p(design|spectrum)) ---
-sample 1: score=-8.9169  relative_confidence=  2.3%  recon_MSE=122.4243
-  res1: m=0.551kg k=61,916N/m f_t=54.7Hz x=0.653m y=0.285m
-  res2: m=0.389kg k=69,745N/m f_t=65.2Hz x=1.324m y=0.179m
-  res3: m=0.148kg k=198,334N/m f_t=117.1Hz x=0.931m y=0.212m
-sample 2: score=-13.2173  relative_confidence=  0.0%  recon_MSE=117.2007
-  res1: m=0.783kg k=58,955N/m f_t=52.6Hz x=0.927m y=0.498m
-  res2: m=0.314kg k=95,333N/m f_t=89.8Hz x=0.581m y=0.387m
-  res3: m=0.704kg k=312,022N/m f_t=145.6Hz x=1.132m y=0.154m
-sample 3: score=-14.7172  relative_confidence=  0.0%  recon_MSE=123.4663
-  res1: m=0.371kg k=137,952N/m f_t=85.4Hz x=0.978m y=0.271m
-  res2: m=0.949kg k=75,811N/m f_t=110.2Hz x=1.012m y=0.153m
-  res3: m=0.738kg k=328,613N/m f_t=105.9Hz x=1.080m y=0.108m
-sample 4: score=-8.7361  relative_confidence=  2.7%  recon_MSE=225.6694
-  res1: m=0.714kg k=105,147N/m f_t=64.8Hz x=0.537m y=0.301m
-  res2: m=0.316kg k=94,458N/m f_t=75.7Hz x=0.647m y=0.345m
-  res3: m=0.890kg k=681,826N/m f_t=133.2Hz x=0.863m y=0.272m
-sample 5: score=-8.4195  relative_confidence=  3.7%  recon_MSE=81.6860
-  res1: m=0.274kg k=57,422N/m f_t=58.5Hz x=0.898m y=0.088m
-  res2: m=0.743kg k=212,038N/m f_t=105.2Hz x=0.619m y=0.331m
-  res3: m=0.728kg k=359,094N/m f_t=132.3Hz x=1.094m y=0.172m
-sample 6: score=-5.2224  relative_confidence= 91.2%  recon_MSE=110.1996 <-- best
-  res1: m=0.372kg k=52,988N/m f_t=60.1Hz x=0.474m y=0.242m
-  res2: m=0.498kg k=107,560N/m f_t=81.8Hz x=0.730m y=0.408m
-  res3: m=0.801kg k=562,707N/m f_t=132.7Hz x=0.814m y=0.176m
+sample 1: score=-9.7991  relative_confidence= 38.5%  recon_MSE=112.5435 <-- best
+  res1: m=0.656kg k=82,536N/m f_t=64.5Hz x=0.595m y=0.301m
+  res2: m=0.344kg k=147,322N/m f_t=101.6Hz x=0.131m y=0.244m
+  res3: m=0.574kg k=548,914N/m f_t=119.8Hz x=0.934m y=0.101m
+sample 2: score=-11.8091  relative_confidence=  5.2%  recon_MSE=91.6876
+  res1: m=0.727kg k=149,939N/m f_t=72.0Hz x=0.500m y=0.271m
+  res2: m=0.351kg k=56,405N/m f_t=78.9Hz x=0.968m y=0.146m
+  res3: m=0.632kg k=727,071N/m f_t=140.0Hz x=0.713m y=0.252m
+sample 3: score=-10.1702  relative_confidence= 26.6%  recon_MSE=75.4494
+  res1: m=0.267kg k=77,973N/m f_t=60.3Hz x=0.841m y=0.251m
+  res2: m=0.649kg k=127,501N/m f_t=89.3Hz x=0.986m y=0.355m
+  res3: m=0.595kg k=182,798N/m f_t=133.3Hz x=0.976m y=0.247m
+sample 4: score=-11.0694  relative_confidence= 10.8%  recon_MSE=77.7271
+  res1: m=0.383kg k=96,894N/m f_t=51.9Hz x=1.151m y=0.053m
+  res2: m=0.336kg k=284,608N/m f_t=94.5Hz x=0.766m y=0.193m
+  res3: m=0.277kg k=125,152N/m f_t=98.1Hz x=0.837m y=0.152m
+sample 5: score=-14.1106  relative_confidence=  0.5%  recon_MSE=108.3421
+  res1: m=0.228kg k=77,146N/m f_t=54.3Hz x=1.026m y=0.224m
+  res2: m=0.430kg k=184,231N/m f_t=77.4Hz x=0.822m y=0.332m
+  res3: m=0.472kg k=228,956N/m f_t=101.5Hz x=0.448m y=0.283m
+sample 6: score=-10.5369  relative_confidence= 18.4%  recon_MSE=188.8012
+  res1: m=0.379kg k=25,426N/m f_t=58.0Hz x=1.277m y=0.314m
+  res2: m=0.776kg k=416,900N/m f_t=113.4Hz x=0.826m y=0.232m
+  res3: m=0.779kg k=340,858N/m f_t=129.8Hz x=0.991m y=0.365m
 
 --- cVAE (log p(design|spectrum)) ---
-sample 1: score=-6.4141  relative_confidence=  2.8%  recon_MSE=127.0622
-  res1: m=0.499kg k=207,916N/m f_t=86.6Hz x=0.696m y=0.387m
-  res2: m=0.353kg k=122,960N/m f_t=72.7Hz x=0.669m y=0.303m
-  res3: m=0.579kg k=482,774N/m f_t=149.5Hz x=0.464m y=0.264m
-sample 2: score=-11.0738  relative_confidence=  0.0%  recon_MSE=144.1079
-  res1: m=0.663kg k=219,749N/m f_t=59.8Hz x=0.850m y=0.323m
-  res2: m=0.581kg k=118,800N/m f_t=77.6Hz x=0.982m y=0.281m
-  res3: m=0.434kg k=293,736N/m f_t=53.1Hz x=0.553m y=0.298m
-sample 3: score=-14.3052  relative_confidence=  0.0%  recon_MSE=111.9344
-  res1: m=0.506kg k=108,242N/m f_t=27.3Hz x=0.481m y=0.259m
-  res2: m=0.510kg k=267,270N/m f_t=121.3Hz x=-0.061m y=0.303m
-  res3: m=0.783kg k=380,500N/m f_t=110.6Hz x=1.082m y=0.188m
-sample 4: score=-3.1784  relative_confidence= 70.3%  recon_MSE=166.0395 <-- best
-  res1: m=0.648kg k=59,804N/m f_t=24.1Hz x=0.900m y=0.186m
-  res2: m=0.474kg k=220,593N/m f_t=74.3Hz x=1.105m y=0.130m
-  res3: m=0.641kg k=274,104N/m f_t=91.8Hz x=1.552m y=0.304m
-sample 5: score=-4.2174  relative_confidence= 24.9%  recon_MSE=127.2244
-  res1: m=0.896kg k=151,019N/m f_t=71.0Hz x=0.961m y=0.300m
-  res2: m=0.699kg k=340,354N/m f_t=103.2Hz x=1.171m y=0.310m
-  res3: m=0.320kg k=52,945N/m f_t=91.4Hz x=0.632m y=0.329m
-sample 6: score=-6.7077  relative_confidence=  2.1%  recon_MSE=154.3052
-  res1: m=0.802kg k=86,955N/m f_t=35.5Hz x=0.892m y=0.301m
-  res2: m=0.561kg k=108,472N/m f_t=101.3Hz x=1.064m y=0.259m
-  res3: m=0.314kg k=110,015N/m f_t=124.0Hz x=0.605m y=0.441m
+sample 1: score=-8.7661  relative_confidence= 53.1%  recon_MSE=112.6741 <-- best
+  res1: m=0.776kg k=107,007N/m f_t=73.4Hz x=0.703m y=0.394m
+  res2: m=0.439kg k=84,718N/m f_t=84.5Hz x=0.598m y=0.281m
+  res3: m=0.563kg k=63,247N/m f_t=62.4Hz x=1.156m y=0.168m
+sample 2: score=-14.8151  relative_confidence=  0.1%  recon_MSE=107.7563
+  res1: m=0.537kg k=164,728N/m f_t=102.9Hz x=1.149m y=0.250m
+  res2: m=0.864kg k=435,598N/m f_t=108.3Hz x=-0.160m y=0.244m
+  res3: m=0.395kg k=270,883N/m f_t=153.0Hz x=0.534m y=0.076m
+sample 3: score=-18.3285  relative_confidence=  0.0%  recon_MSE=99.8952
+  res1: m=0.563kg k=175,044N/m f_t=75.9Hz x=0.789m y=0.116m
+  res2: m=0.748kg k=23,101N/m f_t=79.0Hz x=0.849m y=0.239m
+  res3: m=0.481kg k=-200,863N/m f_t=78.3Hz x=0.806m y=0.116m
+sample 4: score=-8.9758  relative_confidence= 43.0%  recon_MSE=143.8850
+  res1: m=0.661kg k=55,016N/m f_t=78.1Hz x=0.686m y=0.303m
+  res2: m=0.735kg k=369,908N/m f_t=92.4Hz x=0.572m y=0.257m
+  res3: m=0.609kg k=330,495N/m f_t=117.7Hz x=0.360m y=0.143m
+sample 5: score=-23.9867  relative_confidence=  0.0%  recon_MSE=120.9055
+  res1: m=1.111kg k=639,552N/m f_t=166.8Hz x=-0.284m y=0.438m
+  res2: m=0.682kg k=582,457N/m f_t=19.9Hz x=0.576m y=0.190m
+  res3: m=0.495kg k=-25,618N/m f_t=73.6Hz x=1.211m y=0.202m
+sample 6: score=-11.4175  relative_confidence=  3.7%  recon_MSE=108.2688
+  res1: m=0.388kg k=59,172N/m f_t=38.9Hz x=0.920m y=0.219m
+  res2: m=0.481kg k=146,257N/m f_t=83.5Hz x=1.092m y=0.277m
+  res3: m=0.647kg k=152,874N/m f_t=54.3Hz x=0.433m y=0.457m
 
 --- Flow (log p(design|spectrum)) ---
-sample 1: score=+7.8387  relative_confidence= 17.6%  recon_MSE=85.7860
-  res1: m=0.550kg k=85,837N/m f_t=62.9Hz x=0.936m y=0.384m
-  res2: m=0.239kg k=123,355N/m f_t=114.2Hz x=1.089m y=0.206m
-  res3: m=0.629kg k=399,496N/m f_t=126.9Hz x=1.019m y=0.423m
-sample 2: score=+7.0142  relative_confidence=  7.7%  recon_MSE=83.0967
-  res1: m=0.712kg k=93,312N/m f_t=57.6Hz x=1.307m y=0.355m
-  res2: m=0.800kg k=225,537N/m f_t=84.5Hz x=1.040m y=0.408m
-  res3: m=0.278kg k=106,782N/m f_t=98.7Hz x=0.849m y=0.293m
-sample 3: score=+9.0710  relative_confidence= 60.5%  recon_MSE=107.0570 <-- best
-  res1: m=0.168kg k=20,324N/m f_t=55.3Hz x=0.967m y=0.247m
-  res2: m=0.872kg k=179,317N/m f_t=72.2Hz x=0.568m y=0.193m
-  res3: m=0.643kg k=235,202N/m f_t=96.3Hz x=0.657m y=0.223m
-sample 4: score=+7.4454  relative_confidence= 11.9%  recon_MSE=117.1880
-  res1: m=0.384kg k=66,420N/m f_t=66.2Hz x=0.641m y=0.370m
-  res2: m=0.758kg k=255,427N/m f_t=92.4Hz x=0.473m y=0.147m
-  res3: m=0.777kg k=520,069N/m f_t=130.2Hz x=0.698m y=0.281m
-sample 5: score=+5.7527  relative_confidence=  2.2%  recon_MSE=151.5210
-  res1: m=0.348kg k=122,473N/m f_t=94.5Hz x=1.097m y=0.122m
-  res2: m=0.626kg k=310,686N/m f_t=112.1Hz x=0.956m y=0.160m
-  res3: m=1.117kg k=661,843N/m f_t=122.3Hz x=0.775m y=0.325m
-sample 6: score=+2.3465  relative_confidence=  0.1%  recon_MSE=110.4323
-  res1: m=0.148kg k=39,439N/m f_t=82.8Hz x=0.655m y=0.116m
-  res2: m=0.871kg k=273,806N/m f_t=89.2Hz x=0.601m y=0.155m
-  res3: m=0.702kg k=257,902N/m f_t=96.4Hz x=0.561m y=0.296m
+sample 1: score=+2.8152  relative_confidence=  0.0%  recon_MSE=125.4888
+  res1: m=0.873kg k=233,145N/m f_t=82.3Hz x=1.032m y=0.303m
+  res2: m=0.636kg k=249,467N/m f_t=99.7Hz x=1.165m y=0.313m
+  res3: m=0.647kg k=450,001N/m f_t=132.8Hz x=0.429m y=0.138m
+sample 2: score=+10.1985  relative_confidence= 77.1%  recon_MSE=126.9497 <-- best
+  res1: m=0.604kg k=75,770N/m f_t=56.4Hz x=0.879m y=0.332m
+  res2: m=0.391kg k=102,419N/m f_t=81.5Hz x=0.320m y=0.205m
+  res3: m=0.484kg k=400,510N/m f_t=144.8Hz x=0.959m y=0.252m
+sample 3: score=+3.6849  relative_confidence=  0.1%  recon_MSE=143.1718
+  res1: m=0.951kg k=179,827N/m f_t=69.2Hz x=1.129m y=0.223m
+  res2: m=1.171kg k=376,656N/m f_t=90.1Hz x=1.015m y=0.323m
+  res3: m=0.134kg k=73,296N/m f_t=118.2Hz x=1.091m y=0.224m
+sample 4: score=-0.2217  relative_confidence=  0.0%  recon_MSE=144.8334
+  res1: m=0.604kg k=237,236N/m f_t=99.8Hz x=1.701m y=0.093m
+  res2: m=0.478kg k=148,355N/m f_t=88.6Hz x=1.034m y=-0.048m
+  res3: m=1.069kg k=457,442N/m f_t=104.0Hz x=1.369m y=0.187m
+sample 5: score=+8.9733  relative_confidence= 22.7%  recon_MSE=132.3836
+  res1: m=0.570kg k=95,802N/m f_t=65.3Hz x=0.917m y=0.172m
+  res2: m=0.200kg k=27,952N/m f_t=59.5Hz x=1.256m y=0.296m
+  res3: m=0.652kg k=257,379N/m f_t=100.0Hz x=0.663m y=0.175m
+sample 6: score=+2.8737  relative_confidence=  0.1%  recon_MSE=68.2818
+  res1: m=0.997kg k=111,103N/m f_t=53.1Hz x=1.600m y=0.273m
+  res2: m=0.246kg k=29,452N/m f_t=55.1Hz x=1.350m y=0.251m
+  res3: m=0.346kg k=159,581N/m f_t=108.1Hz x=0.995m y=0.318m
 
 --- Diffusion (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-125.9164  relative_confidence=  0.0%  recon_MSE=125.9164
-  res1: m=0.978kg k=139,454N/m f_t=59.4Hz x=1.009m y=0.300m
-  res2: m=0.303kg k=59,180N/m f_t=73.6Hz x=1.172m y=0.166m
-  res3: m=0.350kg k=309,184N/m f_t=149.9Hz x=0.785m y=0.168m
-sample 2: score=-77.4026  relative_confidence=  0.0%  recon_MSE=77.4026
-  res1: m=0.194kg k=34,109N/m f_t=63.7Hz x=0.951m y=0.065m
-  res2: m=0.899kg k=283,266N/m f_t=87.8Hz x=0.797m y=0.267m
-  res3: m=0.276kg k=112,770N/m f_t=103.3Hz x=1.232m y=0.198m
-sample 3: score=-109.1650  relative_confidence=  0.0%  recon_MSE=109.1650
-  res1: m=0.495kg k=105,567N/m f_t=78.7Hz x=0.953m y=0.269m
-  res2: m=0.546kg k=121,829N/m f_t=75.6Hz x=1.173m y=0.268m
-  res3: m=0.421kg k=254,974N/m f_t=124.6Hz x=1.061m y=0.142m
-sample 4: score=-57.9473  relative_confidence=100.0%  recon_MSE=57.9473 <-- best
-  res1: m=0.319kg k=58,588N/m f_t=69.9Hz x=0.970m y=0.374m
-  res2: m=0.477kg k=151,992N/m f_t=88.1Hz x=0.983m y=0.457m
-  res3: m=0.863kg k=630,795N/m f_t=134.0Hz x=1.000m y=0.172m
-sample 5: score=-96.1980  relative_confidence=  0.0%  recon_MSE=96.1980
-  res1: m=0.236kg k=22,574N/m f_t=53.1Hz x=1.233m y=0.185m
-  res2: m=0.811kg k=131,593N/m f_t=62.1Hz x=0.860m y=0.136m
-  res3: m=0.477kg k=430,852N/m f_t=150.3Hz x=0.958m y=0.301m
-sample 6: score=-79.6879  relative_confidence=  0.0%  recon_MSE=79.6879
-  res1: m=0.295kg k=47,900N/m f_t=67.1Hz x=1.091m y=0.398m
-  res2: m=0.424kg k=87,662N/m f_t=66.9Hz x=0.769m y=0.347m
-  res3: m=1.024kg k=745,173N/m f_t=135.0Hz x=0.930m y=0.177m
+sample 1: score=-78.9333  relative_confidence=100.0%  recon_MSE=78.9333 <-- best
+  res1: m=0.695kg k=220,741N/m f_t=85.0Hz x=1.100m y=0.141m
+  res2: m=0.988kg k=319,717N/m f_t=87.8Hz x=0.931m y=0.252m
+  res3: m=0.138kg k=76,145N/m f_t=118.8Hz x=1.099m y=0.412m
+sample 2: score=-90.1804  relative_confidence=  0.0%  recon_MSE=90.1804
+  res1: m=0.865kg k=238,104N/m f_t=81.4Hz x=1.100m y=0.109m
+  res2: m=0.699kg k=268,225N/m f_t=99.9Hz x=0.730m y=0.300m
+  res3: m=0.151kg k=80,594N/m f_t=118.1Hz x=0.542m y=0.103m
+sample 3: score=-113.8065  relative_confidence=  0.0%  recon_MSE=113.8065
+  res1: m=0.369kg k=68,609N/m f_t=69.3Hz x=1.158m y=0.167m
+  res2: m=0.522kg k=153,552N/m f_t=84.4Hz x=0.884m y=0.262m
+  res3: m=0.789kg k=443,260N/m f_t=120.3Hz x=1.141m y=0.257m
+sample 4: score=-119.3285  relative_confidence=  0.0%  recon_MSE=119.3285
+  res1: m=0.804kg k=169,678N/m f_t=71.9Hz x=1.178m y=0.213m
+  res2: m=0.187kg k=51,646N/m f_t=91.3Hz x=0.431m y=0.237m
+  res3: m=0.762kg k=479,133N/m f_t=126.7Hz x=1.123m y=0.184m
+sample 5: score=-93.6995  relative_confidence=  0.0%  recon_MSE=93.6995
+  res1: m=0.447kg k=78,524N/m f_t=68.0Hz x=0.988m y=0.248m
+  res2: m=0.894kg k=250,274N/m f_t=84.5Hz x=0.955m y=0.154m
+  res3: m=0.360kg k=207,084N/m f_t=120.5Hz x=1.316m y=0.155m
+sample 6: score=-156.5408  relative_confidence=  0.0%  recon_MSE=156.5408
+  res1: m=0.457kg k=118,324N/m f_t=81.9Hz x=0.927m y=0.075m
+  res2: m=0.515kg k=202,330N/m f_t=99.8Hz x=0.745m y=0.070m
+  res3: m=0.957kg k=740,098N/m f_t=137.6Hz x=0.788m y=0.278m
 
 --- BasisFlow (log p(design|spectrum)) ---
-sample 1: score=-9.5360  relative_confidence= 89.8%  recon_MSE=79.5787 <-- best
-  res1: m=0.768kg k=227,276N/m f_t=86.6Hz x=1.462m y=0.246m
-  res2: m=0.710kg k=255,077N/m f_t=95.4Hz x=0.925m y=0.282m
-  res3: m=0.379kg k=221,111N/m f_t=121.7Hz x=1.159m y=0.183m
-sample 2: score=-14.4979  relative_confidence=  0.6%  recon_MSE=128.0439
-  res1: m=0.433kg k=61,949N/m f_t=60.2Hz x=0.606m y=0.261m
-  res2: m=0.955kg k=173,175N/m f_t=67.8Hz x=0.745m y=0.250m
-  res3: m=0.307kg k=314,040N/m f_t=160.9Hz x=0.237m y=0.026m
-sample 3: score=-12.9506  relative_confidence=  3.0%  recon_MSE=117.5358
-  res1: m=0.330kg k=121,671N/m f_t=96.7Hz x=0.920m y=0.203m
-  res2: m=0.534kg k=207,103N/m f_t=99.1Hz x=0.721m y=0.050m
-  res3: m=0.658kg k=437,941N/m f_t=129.9Hz x=0.588m y=0.218m
-sample 4: score=-13.4975  relative_confidence=  1.7%  recon_MSE=104.2616
-  res1: m=1.051kg k=430,232N/m f_t=101.8Hz x=0.531m y=0.336m
-  res2: m=0.270kg k=99,048N/m f_t=96.4Hz x=1.327m y=0.311m
-  res3: m=0.420kg k=239,974N/m f_t=120.3Hz x=0.770m y=0.222m
-sample 5: score=-12.5970  relative_confidence=  4.2%  recon_MSE=137.9305
-  res1: m=0.373kg k=163,889N/m f_t=105.5Hz x=0.705m y=0.268m
-  res2: m=0.975kg k=666,641N/m f_t=131.6Hz x=1.133m y=0.117m
-  res3: m=0.649kg k=480,765N/m f_t=137.0Hz x=0.844m y=0.374m
-sample 6: score=-14.3574  relative_confidence=  0.7%  recon_MSE=145.1834
-  res1: m=0.834kg k=365,422N/m f_t=105.3Hz x=1.208m y=0.315m
-  res2: m=0.487kg k=208,020N/m f_t=104.0Hz x=0.852m y=0.303m
-  res3: m=0.294kg k=148,747N/m f_t=113.1Hz x=0.694m y=0.036m
+sample 1: score=-15.0087  relative_confidence=  1.6%  recon_MSE=130.4924
+  res1: m=0.215kg k=40,788N/m f_t=69.2Hz x=0.445m y=0.504m
+  res2: m=0.808kg k=374,663N/m f_t=108.3Hz x=1.502m y=0.181m
+  res3: m=0.701kg k=508,056N/m f_t=135.6Hz x=0.595m y=0.296m
+sample 2: score=-13.5249  relative_confidence=  7.0%  recon_MSE=132.3724
+  res1: m=0.950kg k=205,179N/m f_t=74.0Hz x=0.557m y=0.258m
+  res2: m=0.223kg k=78,918N/m f_t=94.6Hz x=0.590m y=0.161m
+  res3: m=0.947kg k=554,768N/m f_t=121.8Hz x=1.135m y=0.255m
+sample 3: score=-13.9582  relative_confidence=  4.6%  recon_MSE=63.3553
+  res1: m=0.605kg k=183,059N/m f_t=87.6Hz x=-0.033m y=0.177m
+  res2: m=0.576kg k=202,336N/m f_t=94.3Hz x=1.396m y=0.117m
+  res3: m=0.523kg k=183,283N/m f_t=94.3Hz x=0.630m y=0.233m
+sample 4: score=-11.1703  relative_confidence= 74.1%  recon_MSE=128.3680 <-- best
+  res1: m=0.990kg k=217,877N/m f_t=74.7Hz x=0.727m y=0.171m
+  res2: m=0.741kg k=427,836N/m f_t=120.9Hz x=0.561m y=0.349m
+  res3: m=0.314kg k=176,063N/m f_t=119.3Hz x=0.860m y=0.221m
+sample 5: score=-12.9389  relative_confidence= 12.6%  recon_MSE=80.7482
+  res1: m=0.795kg k=285,911N/m f_t=95.5Hz x=0.590m y=0.161m
+  res2: m=0.668kg k=261,721N/m f_t=99.6Hz x=0.660m y=0.168m
+  res3: m=0.133kg k=83,945N/m f_t=126.6Hz x=1.412m y=0.273m
+sample 6: score=-18.8656  relative_confidence=  0.0%  recon_MSE=95.3764
+  res1: m=0.424kg k=233,808N/m f_t=118.1Hz x=1.236m y=0.409m
+  res2: m=0.641kg k=215,657N/m f_t=92.3Hz x=1.347m y=0.127m
+  res3: m=0.683kg k=397,374N/m f_t=121.4Hz x=0.764m y=0.068m
 
 --- PadINN (spectrum-consistency (-MSE, NOT a probability)) ---
-sample 1: score=-84.5475  relative_confidence=  0.0%  recon_MSE=84.5475
-  res1: m=0.522kg k=83,193N/m f_t=50.1Hz x=1.001m y=0.207m
-  res2: m=0.603kg k=169,517N/m f_t=86.5Hz x=0.861m y=0.179m
-  res3: m=0.590kg k=296,930N/m f_t=115.6Hz x=0.995m y=0.152m
-sample 2: score=-83.2451  relative_confidence=  0.0%  recon_MSE=83.2451
-  res1: m=0.537kg k=88,582N/m f_t=52.2Hz x=0.998m y=0.202m
-  res2: m=0.608kg k=182,125N/m f_t=91.1Hz x=0.841m y=0.175m
-  res3: m=0.611kg k=297,020N/m f_t=115.5Hz x=0.975m y=0.162m
-sample 3: score=-78.1010  relative_confidence=  2.2%  recon_MSE=78.1010
-  res1: m=0.520kg k=82,399N/m f_t=50.0Hz x=0.977m y=0.204m
-  res2: m=0.609kg k=174,688N/m f_t=85.4Hz x=0.855m y=0.178m
-  res3: m=0.577kg k=301,214N/m f_t=116.9Hz x=0.995m y=0.154m
-sample 4: score=-74.3799  relative_confidence= 92.3%  recon_MSE=74.3799 <-- best
-  res1: m=0.541kg k=86,112N/m f_t=51.2Hz x=0.973m y=0.206m
-  res2: m=0.610kg k=168,547N/m f_t=85.0Hz x=0.862m y=0.178m
-  res3: m=0.549kg k=270,222N/m f_t=112.2Hz x=1.005m y=0.162m
-sample 5: score=-77.4328  relative_confidence=  4.4%  recon_MSE=77.4328
-  res1: m=0.533kg k=87,316N/m f_t=50.9Hz x=0.989m y=0.202m
-  res2: m=0.613kg k=174,953N/m f_t=87.2Hz x=0.858m y=0.175m
-  res3: m=0.588kg k=287,874N/m f_t=114.8Hz x=0.996m y=0.158m
-sample 6: score=-78.7893  relative_confidence=  1.1%  recon_MSE=78.7893
-  res1: m=0.532kg k=85,957N/m f_t=50.6Hz x=0.992m y=0.205m
-  res2: m=0.609kg k=174,664N/m f_t=85.8Hz x=0.857m y=0.174m
-  res3: m=0.571kg k=292,046N/m f_t=116.7Hz x=0.984m y=0.157m
+sample 1: score=-79.5566  relative_confidence=  0.0%  recon_MSE=79.5566
+  res1: m=0.527kg k=90,626N/m f_t=51.9Hz x=1.009m y=0.200m
+  res2: m=0.609kg k=180,005N/m f_t=90.8Hz x=0.843m y=0.178m
+  res3: m=0.595kg k=284,268N/m f_t=114.4Hz x=0.993m y=0.161m
+sample 2: score=-81.1005  relative_confidence=  0.0%  recon_MSE=81.1005
+  res1: m=0.548kg k=88,381N/m f_t=51.4Hz x=1.015m y=0.201m
+  res2: m=0.601kg k=172,700N/m f_t=87.0Hz x=0.861m y=0.172m
+  res3: m=0.563kg k=277,233N/m f_t=114.7Hz x=0.983m y=0.161m
+sample 3: score=-73.9892  relative_confidence=  1.2%  recon_MSE=73.9892
+  res1: m=0.510kg k=83,722N/m f_t=50.6Hz x=0.991m y=0.204m
+  res2: m=0.603kg k=172,798N/m f_t=86.5Hz x=0.858m y=0.180m
+  res3: m=0.587kg k=295,433N/m f_t=115.7Hz x=1.009m y=0.153m
+sample 4: score=-75.9838  relative_confidence=  0.2%  recon_MSE=75.9838
+  res1: m=0.511kg k=79,472N/m f_t=50.9Hz x=0.940m y=0.205m
+  res2: m=0.613kg k=170,453N/m f_t=83.5Hz x=0.860m y=0.180m
+  res3: m=0.604kg k=311,169N/m f_t=115.2Hz x=1.007m y=0.154m
+sample 5: score=-78.3775  relative_confidence=  0.0%  recon_MSE=78.3775
+  res1: m=0.530kg k=86,348N/m f_t=50.9Hz x=1.007m y=0.203m
+  res2: m=0.599kg k=173,894N/m f_t=88.0Hz x=0.848m y=0.179m
+  res3: m=0.586kg k=292,170N/m f_t=115.5Hz x=1.001m y=0.156m
+sample 6: score=-69.6067  relative_confidence= 98.6%  recon_MSE=69.6067 <-- best
+  res1: m=0.530kg k=84,814N/m f_t=50.9Hz x=0.996m y=0.203m
+  res2: m=0.596kg k=169,535N/m f_t=86.8Hz x=0.850m y=0.181m
+  res3: m=0.580kg k=284,155N/m f_t=113.0Hz x=1.022m y=0.155m
 
 --- Surrogate (log p(design|spectrum)) ---
-sample 1: score=-10.3857  relative_confidence= 10.9%  recon_MSE=65.7038
-  res1: m=0.736kg k=75,337N/m f_t=67.5Hz x=1.094m y=0.047m
-  res2: m=0.471kg k=132,234N/m f_t=104.6Hz x=0.545m y=0.100m
-  res3: m=0.267kg k=344,167N/m f_t=125.8Hz x=0.420m y=0.115m
-sample 2: score=-10.4783  relative_confidence= 10.0%  recon_MSE=90.4872
-  res1: m=0.696kg k=90,711N/m f_t=65.3Hz x=0.718m y=0.326m
-  res2: m=0.227kg k=173,765N/m f_t=85.0Hz x=0.778m y=0.447m
-  res3: m=0.462kg k=51,611N/m f_t=117.1Hz x=0.419m y=0.148m
-sample 3: score=-11.2126  relative_confidence=  4.8%  recon_MSE=158.0383
-  res1: m=0.765kg k=85,452N/m f_t=59.4Hz x=1.051m y=0.200m
-  res2: m=0.796kg k=78,436N/m f_t=116.6Hz x=0.761m y=0.282m
-  res3: m=0.569kg k=88,648N/m f_t=125.4Hz x=0.271m y=0.158m
-sample 4: score=-9.8440  relative_confidence= 18.8%  recon_MSE=120.1186
-  res1: m=0.927kg k=77,781N/m f_t=60.0Hz x=0.739m y=0.460m
-  res2: m=0.517kg k=201,240N/m f_t=96.4Hz x=0.685m y=0.159m
-  res3: m=0.401kg k=59,517N/m f_t=114.6Hz x=0.906m y=0.137m
-sample 5: score=-9.7454  relative_confidence= 20.8%  recon_MSE=76.6610
-  res1: m=0.438kg k=54,612N/m f_t=58.7Hz x=1.180m y=0.292m
-  res2: m=0.542kg k=171,046N/m f_t=98.2Hz x=0.818m y=0.240m
-  res3: m=0.218kg k=404,735N/m f_t=127.8Hz x=0.769m y=0.397m
-sample 6: score=-9.2315  relative_confidence= 34.7%  recon_MSE=116.9828 <-- best
-  res1: m=0.684kg k=88,539N/m f_t=62.9Hz x=0.984m y=0.218m
-  res2: m=0.621kg k=268,345N/m f_t=100.2Hz x=0.557m y=0.330m
-  res3: m=0.356kg k=94,072N/m f_t=128.0Hz x=1.264m y=0.387m
+sample 1: score=-15.2347  relative_confidence=  1.2%  recon_MSE=90.6483
+  res1: m=0.485kg k=114,891N/m f_t=47.2Hz x=1.322m y=0.174m
+  res2: m=0.296kg k=106,105N/m f_t=96.8Hz x=0.625m y=0.332m
+  res3: m=0.565kg k=453,542N/m f_t=161.8Hz x=1.130m y=0.084m
+sample 2: score=-11.1856  relative_confidence= 69.4%  recon_MSE=141.0609 <-- best
+  res1: m=0.797kg k=46,534N/m f_t=64.9Hz x=0.683m y=0.285m
+  res2: m=0.258kg k=256,116N/m f_t=109.6Hz x=0.358m y=0.241m
+  res3: m=0.471kg k=279,802N/m f_t=134.7Hz x=1.103m y=0.172m
+sample 3: score=-20.4790  relative_confidence=  0.0%  recon_MSE=73.6260
+  res1: m=1.058kg k=-83,767N/m f_t=68.0Hz x=0.777m y=0.366m
+  res2: m=0.274kg k=334,229N/m f_t=93.7Hz x=0.019m y=0.374m
+  res3: m=0.575kg k=372,371N/m f_t=130.3Hz x=0.878m y=0.185m
+sample 4: score=-12.1957  relative_confidence= 25.3%  recon_MSE=111.7539
+  res1: m=0.424kg k=79,352N/m f_t=72.6Hz x=1.341m y=0.219m
+  res2: m=0.426kg k=352,422N/m f_t=87.4Hz x=0.908m y=0.180m
+  res3: m=0.650kg k=368,309N/m f_t=129.9Hz x=1.475m y=0.166m
+sample 5: score=-14.3028  relative_confidence=  3.1%  recon_MSE=91.8491
+  res1: m=0.797kg k=146,017N/m f_t=60.0Hz x=0.904m y=0.300m
+  res2: m=0.862kg k=325,192N/m f_t=99.1Hz x=1.320m y=0.356m
+  res3: m=0.447kg k=261,335N/m f_t=129.8Hz x=1.336m y=0.210m
+sample 6: score=-15.3812  relative_confidence=  1.0%  recon_MSE=86.5317
+  res1: m=0.731kg k=2,271N/m f_t=73.4Hz x=0.570m y=0.213m
+  res2: m=0.124kg k=116,324N/m f_t=97.1Hz x=1.082m y=0.213m
+  res3: m=1.051kg k=343,492N/m f_t=132.1Hz x=0.794m y=0.072m
