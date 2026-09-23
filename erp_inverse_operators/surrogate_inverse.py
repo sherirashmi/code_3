@@ -28,9 +28,12 @@ Design:
        - design_nll: the TRUE design's Gaussian NLL under q(.|spectrum) --
          direct ground-truth supervision, exactly analogous to cVAE's own
          reconstruction NLL, giving gradient to both mu and log_var.
-       - surrogate_mse: reparameterize-sample a design from q(.|spectrum),
-         run it through the frozen DCO surrogate, and MSE the resulting
-         predicted ERP spectrum against the TRUE target spectrum -- an
+       - surrogate_spectrum_loss: reparameterize-sample a design from
+         q(.|spectrum), run it through the frozen DCO surrogate, and score
+         the resulting predicted ERP spectrum against the TRUE target
+         spectrum using the SAME ``erp_spectrum_loss`` every forward
+         operator in this repo trains against (MSE + a first-difference/
+         slope penalty + a true-peak-value penalty, not plain MSE) -- an
          ERP-space consistency signal ground-truth design MSE alone can't
          give (two different designs producing the same spectrum are
          equally right under this term, unlike raw design MSE).
@@ -57,10 +60,9 @@ from typing import Mapping
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from erp_forward_operators.dco import build_model as build_dco_surrogate
-from erp_forward_operators.neural_operator_utils import MLP
+from erp_forward_operators.neural_operator_utils import MLP, erp_spectrum_loss
 
 from .common import SpectrumEncoder, flatten_configuration
 
@@ -180,6 +182,8 @@ class SurrogateInverse(nn.Module):
         design: torch.Tensor,
         own_norm_params: Mapping[str, object],
         surrogate_weight: float = 1.0,
+        slope_weight: float = 0.5,
+        peak_weight: float = 0.05,
     ) -> torch.Tensor:
         flat_design = flatten_configuration(design)
         mu, log_var = self.encode(spectrum)
@@ -189,9 +193,11 @@ class SurrogateInverse(nn.Module):
         std = torch.exp(0.5 * log_var)
         design_sample = mu + std * torch.randn_like(std)
         predicted_spectrum = self._surrogate_predicted_erp(design_sample, own_norm_params)
-        surrogate_mse = F.mse_loss(predicted_spectrum, spectrum)
+        surrogate_loss = erp_spectrum_loss(
+            predicted_spectrum, spectrum, slope_weight=slope_weight, peak_weight=peak_weight
+        )
 
-        return design_nll + float(surrogate_weight) * surrogate_mse
+        return design_nll + float(surrogate_weight) * surrogate_loss
 
     @torch.no_grad()
     def sample(self, spectrum: torch.Tensor, num_samples: int = 1):
