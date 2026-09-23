@@ -459,6 +459,112 @@ def erp_spectrum_loss(
     return loss
 
 
+class UncertaintyWeightedERPLoss(nn.Module):
+    """Homoscedastic-uncertainty weighting (Kendall, Gal & Cipolla, 2018)
+    for ``erp_spectrum_loss``'s slope and peak terms.
+
+    The base MSE term stays a fixed anchor (so the total loss can't be
+    trivially driven toward zero by inflating every uncertainty at once);
+    the slope/peak terms are each weighted by ``exp(-log_var)`` and pay a
+    ``+log_var`` penalty for doing so, so down-weighting a term costs
+    something and the model can't get it for free. ``log_var_slope`` and
+    ``log_var_peak`` are ``nn.Parameter``s -- include this module's own
+    parameters in the optimizer (e.g. ``itertools.chain(model.parameters(),
+    weighting.parameters())``) alongside the network's.
+    """
+
+    def __init__(self, init_slope_weight: float = 0.5, init_peak_weight: float = 0.05) -> None:
+        super().__init__()
+        self.log_var_slope = nn.Parameter(torch.tensor(-math.log(init_slope_weight), dtype=torch.float32))
+        self.log_var_peak = nn.Parameter(torch.tensor(-math.log(init_peak_weight), dtype=torch.float32))
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        loss = F.mse_loss(prediction, target)
+        if prediction.shape[1] >= 2:
+            dp = prediction[:, 1:] - prediction[:, :-1]
+            dt = target[:, 1:] - target[:, :-1]
+            slope_loss = F.mse_loss(dp, dt)
+            loss = loss + torch.exp(-self.log_var_slope) * slope_loss + self.log_var_slope
+        peak_idx = target.argmax(dim=1, keepdim=True)
+        pred_at_peak = torch.gather(prediction, 1, peak_idx)
+        true_at_peak = torch.gather(target, 1, peak_idx)
+        peak_loss = F.mse_loss(pred_at_peak, true_at_peak)
+        loss = loss + torch.exp(-self.log_var_peak) * peak_loss + self.log_var_peak
+        return loss
+
+    def current_weights(self) -> dict[str, float]:
+        return {
+            "slope_weight": torch.exp(-self.log_var_slope).item(),
+            "peak_weight": torch.exp(-self.log_var_peak).item(),
+        }
+
+
+class DWAWeightedERPLoss:
+    """Dynamic Weight Averaging (Liu, Johns & Davison, 2019) for
+    ``erp_spectrum_loss``'s slope and peak terms.
+
+    Applied as a per-epoch multiplicative *adjustment factor* on top of
+    fixed base weights, rather than replacing them outright -- DWA's
+    original formulation assumes the weighted terms start on comparable
+    scales, which slope/peak MSE don't (different units), so the base
+    weight keeps that scale-appropriate starting point and DWA only
+    adjusts the relative *pace* of the two terms epoch to epoch (a term
+    whose raw loss is dropping slower than the other gets upweighted).
+
+    Not an ``nn.Module`` -- carries no learnable parameters, only a little
+    per-epoch loss-history state. Call it like a loss function inside the
+    training step (returns ``(loss, raw_term_losses)``); call
+    :meth:`end_epoch` once per epoch with that epoch's mean raw
+    (unweighted) slope/peak losses to update next epoch's factors.
+    """
+
+    def __init__(
+        self,
+        temperature: float = 2.0,
+        base_slope_weight: float = 0.5,
+        base_peak_weight: float = 0.05,
+    ) -> None:
+        self.temperature = temperature
+        self.base_weight = {"slope": base_slope_weight, "peak": base_peak_weight}
+        self.factor = {"slope": 1.0, "peak": 1.0}
+        self._history: list[dict[str, float]] = []
+
+    def __call__(self, prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, dict[str, float]]:
+        loss = F.mse_loss(prediction, target)
+        raw: dict[str, float] = {}
+        if prediction.shape[1] >= 2:
+            dp = prediction[:, 1:] - prediction[:, :-1]
+            dt = target[:, 1:] - target[:, :-1]
+            slope_loss = F.mse_loss(dp, dt)
+            loss = loss + self.base_weight["slope"] * self.factor["slope"] * slope_loss
+            raw["slope"] = slope_loss.detach().item()
+        peak_idx = target.argmax(dim=1, keepdim=True)
+        pred_at_peak = torch.gather(prediction, 1, peak_idx)
+        true_at_peak = torch.gather(target, 1, peak_idx)
+        peak_loss = F.mse_loss(pred_at_peak, true_at_peak)
+        loss = loss + self.base_weight["peak"] * self.factor["peak"] * peak_loss
+        raw["peak"] = peak_loss.detach().item()
+        return loss, raw
+
+    def end_epoch(self, epoch_avg_raw: Mapping[str, float]) -> None:
+        self._history.append(dict(epoch_avg_raw))
+        if len(self._history) < 2:
+            return
+        prev, curr = self._history[-2], self._history[-1]
+        ratio = {k: curr[k] / max(prev[k], 1e-8) for k in ("slope", "peak")}
+        exp_val = {k: math.exp(ratio[k] / self.temperature) for k in ("slope", "peak")}
+        denom = sum(exp_val.values())
+        num_terms = len(exp_val)
+        for k in ("slope", "peak"):
+            self.factor[k] = num_terms * exp_val[k] / denom
+
+    def current_weights(self) -> dict[str, float]:
+        return {
+            "slope_weight": self.base_weight["slope"] * self.factor["slope"],
+            "peak_weight": self.base_weight["peak"] * self.factor["peak"],
+        }
+
+
 def train_operator(
     model: nn.Module,
     loaders: Mapping[str, DataLoader],
@@ -1183,6 +1289,8 @@ __all__ = [
     "build_spectrum_loaders",
     "prepare_operator_data",
     "erp_spectrum_loss",
+    "UncertaintyWeightedERPLoss",
+    "DWAWeightedERPLoss",
     "train_operator",
     "evaluate_operator",
     "predict_erp_spectrum",
