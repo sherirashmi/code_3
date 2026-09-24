@@ -233,6 +233,66 @@ class ResonatorSetEncoder(nn.Module):
         return self.fusion_net(pooled)
 
 
+class SortedResonatorEncoder(nn.Module):
+    """Lossless, order-canonicalized counterpart to ``ResonatorSetEncoder``.
+
+    ``ResonatorSetEncoder`` gets permutation invariance from mean+max
+    pooling: invariant and smooth everywhere, but not injective -- distinct
+    resonator sets can collide onto the same pooled vector (mean is a
+    many-to-one average over the 3 resonators; per-channel max keeps each
+    channel's winning value but not which resonator won which channel, so
+    two different triples can share an identical max vector).
+
+    This encoder gets permutation invariance the opposite way: canonicalize
+    resonator order by sorting on ascending ``f_t`` (the same convention
+    ``erp_inverse_operators.common.canonicalize_by_ft`` uses for its
+    targets), then keep every resonator's full augmented feature vector,
+    concatenated rather than pooled. Nothing is discarded, so it can't
+    collide the way pooling can -- at the cost of a new failure mode pooling
+    doesn't have: right where two resonators' ``f_t`` values cross, which
+    one lands in which slot flips, so the flattened feature vector jumps
+    discontinuously even though the true spectrum varies smoothly through
+    that crossing. That's exactly the region (near-degenerate resonators)
+    where this dataset is already hardest, so this encoder is meant to
+    augment ``ResonatorSetEncoder``, not replace it: concatenate both
+    branches so the smooth pooled summary is always available as a
+    fallback, with this branch supplying the individual-resonator detail
+    pooling throws away.
+    """
+
+    def __init__(
+        self,
+        num_res: int,
+        feature_dim: int = 5,
+        hidden_dim: int = 128,
+        output_dim: int = 128,
+        modal_harmonics: int = 10,
+    ) -> None:
+        super().__init__()
+        if int(feature_dim) != 5:
+            raise ValueError("SortedResonatorEncoder expects [m,k,f_t,x,y] feature_dim=5.")
+        self.num_res = int(num_res)
+        self.modal_harmonics = int(modal_harmonics)
+        augmented_dim = 5 + 2 * self.modal_harmonics + self.modal_harmonics**2
+        self.net = MLP(
+            [self.num_res * augmented_dim, hidden_dim, hidden_dim, output_dim],
+            activation=nn.Tanh,
+        )
+
+    def forward(self, configuration: torch.Tensor) -> torch.Tensor:
+        if configuration.ndim != 3 or configuration.shape[-1] != 5:
+            raise ValueError("configuration must have shape (batch, num_res, 5).")
+        order = torch.argsort(configuration[..., 2], dim=-1)
+        sorted_configuration = torch.gather(
+            configuration, dim=1, index=order[..., None].expand(-1, -1, 5)
+        )
+        features = physics_aware_resonator_features(
+            sorted_configuration, harmonics=self.modal_harmonics
+        )
+        flat = features.reshape(features.shape[0], -1)
+        return self.net(flat)
+
+
 class ResonanceQueryEncoder(nn.Module):
     """Permutation-invariant resonator/query interaction encoder.
 
