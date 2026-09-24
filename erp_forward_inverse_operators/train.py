@@ -1,7 +1,9 @@
-"""Three-step training for iFNO (paper Sec 3.3), then forward + inverse
-evaluation on this project's config<->ERP problem.
+"""Three-step training (Long et al. arXiv:2402.11722, Sec 3.3) for any
+model in this package's registry, then forward + inverse evaluation on
+this project's config<->ERP problem. Generalized from the original iFNO-
+only training script so the same schedule drives iFNO, iDCO and iGNO.
 
-Step 1: train the invertible Fourier blocks + P/Q/P'/Q' (every parameter
+Step 1: train the invertible coupling blocks + P/Q/P'/Q' (every parameter
 except the VAE) with J_IFB = J_FWD + J_INV + J_{P,Q'} + J_{P',Q}.
 Step 2: train the beta-VAE alone, directly on TRUE designs (no spectrum,
 no invertible blocks involved) -- pure design-space pretraining.
@@ -25,6 +27,7 @@ import copy
 import os
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Mapping
 
 import matplotlib
 
@@ -32,18 +35,19 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
 
-from ifno.model import DEFAULT_MODEL_CONFIG, IFNO
+from erp_forward_inverse_operators.common import InvertibleOperatorBase
+from erp_forward_inverse_operators.registry import INVERTIBLE_OPERATORS
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_array
 from utils.plotting import plot_erp_comparison, plot_prediction_scatter
-from utils.solver import compute_erp_spectrum
 from utils.support import seed_everything
 
-OUT_DIR = Path("ifno/plots")
-MODEL_DIR = Path("ifno/models")
+OUT_DIR = Path("erp_forward_inverse_operators/plots")
+MODEL_DIR = Path("erp_forward_inverse_operators/models")
 
 STAGE1_EPOCHS = 6
 STAGE2_EPOCHS = 25
@@ -56,11 +60,11 @@ DATASET_FILE = ("datasets/dataset_erp_ft_100k_part1.pth", "datasets/dataset_erp_
 SEED = 727
 
 
-def _non_vae_parameters(model: IFNO):
+def _non_vae_parameters(model: InvertibleOperatorBase):
     return [p for name, p in model.named_parameters() if not name.startswith("vae.")]
 
 
-def train_stage1(model: IFNO, loaders, epochs: int, lr: float = 5e-4):
+def train_stage1(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, lr: float = 5e-4):
     optimizer = torch.optim.Adam(_non_vae_parameters(model), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
@@ -95,15 +99,15 @@ def train_stage1(model: IFNO, loaders, epochs: int, lr: float = 5e-4):
         if val_loss < best_val:
             best_val = val_loss
             best_state = copy.deepcopy(model.state_dict())
-        print(f"[iFNO stage1] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
+        print(f"[{tag} stage1] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-        print(f"[iFNO stage1] restored best-validation checkpoint (val={best_val:.4f})")
+        print(f"[{tag} stage1] restored best-validation checkpoint (val={best_val:.4f})")
     return history
 
 
-def train_stage2(model: IFNO, loaders, epochs: int, lr: float = 1e-3):
+def train_stage2(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, lr: float = 1e-3):
     optimizer = torch.optim.Adam(model.vae.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
@@ -139,15 +143,15 @@ def train_stage2(model: IFNO, loaders, epochs: int, lr: float = 1e-3):
         if val_loss < best_val:
             best_val = val_loss
             best_state = copy.deepcopy(model.vae.state_dict())
-        print(f"[iFNO stage2] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f} | beta={beta:.4f}")
+        print(f"[{tag} stage2] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f} | beta={beta:.4f}")
 
     if best_state is not None:
         model.vae.load_state_dict(best_state)
-        print(f"[iFNO stage2] restored best-validation VAE checkpoint (val={best_val:.4f})")
+        print(f"[{tag} stage2] restored best-validation VAE checkpoint (val={best_val:.4f})")
     return history
 
 
-def train_stage3(model: IFNO, loaders, epochs: int, lr: float = 3e-4):
+def train_stage3(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, lr: float = 3e-4):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
@@ -182,33 +186,33 @@ def train_stage3(model: IFNO, loaders, epochs: int, lr: float = 3e-4):
         if val_loss < best_val:
             best_val = val_loss
             best_state = copy.deepcopy(model.state_dict())
-        print(f"[iFNO stage3] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
+        print(f"[{tag} stage3] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-        print(f"[iFNO stage3] restored best-validation checkpoint (val={best_val:.4f})")
+        print(f"[{tag} stage3] restored best-validation checkpoint (val={best_val:.4f})")
     return history
 
 
-def plot_stage_losses(histories: dict[str, dict[str, list[float]]], save_path: Path):
+def plot_stage_losses(tag: str, histories: dict[str, dict[str, list[float]]], save_path: Path):
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
     for ax, (stage, history) in zip(axes, histories.items()):
         ax.plot(history["train"], label="train", lw=2)
         ax.plot(history["val"], label="val", lw=2)
-        ax.set_title(f"iFNO {stage}")
+        ax.set_title(f"{tag} {stage}")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Loss")
         ax.legend()
         ax.grid(alpha=0.3)
-    fig.suptitle("iFNO three-step training (Long et al., arXiv:2402.11722, Sec 3.3)")
+    fig.suptitle(f"{tag} three-step training (Long et al., arXiv:2402.11722, Sec 3.3)")
     fig.tight_layout()
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     print(f"Saved {save_path}")
 
 
-def evaluate_forward(model: IFNO, dataset, loaders, norm, num_plot: int = 5):
+def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, norm, num_plot: int = 5):
     model.eval()
     true_curves, pred_curves, configs_used = [], [], []
     with torch.no_grad():
@@ -232,10 +236,10 @@ def evaluate_forward(model: IFNO, dataset, loaders, norm, num_plot: int = 5):
     r2 = float(1.0 - np.sum((pred.ravel() - true.ravel()) ** 2) / r2_denom) if r2_denom > 0 else float("nan")
 
     print("=" * 68)
-    print(f"[iFNO forward] test RMSE : {rmse:.4f} dB")
-    print(f"[iFNO forward] test MAE  : {mae:.4f} dB")
-    print(f"[iFNO forward] Pearson    : {pearson:.4f}")
-    print(f"[iFNO forward] R^2        : {r2:.4f}")
+    print(f"[{tag} forward] test RMSE : {rmse:.4f} dB")
+    print(f"[{tag} forward] test MAE  : {mae:.4f} dB")
+    print(f"[{tag} forward] Pearson    : {pearson:.4f}")
+    print(f"[{tag} forward] R^2        : {r2:.4f}")
     print("=" * 68)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -244,20 +248,21 @@ def evaluate_forward(model: IFNO, dataset, loaders, norm, num_plot: int = 5):
     for i in range(min(num_plot, true.shape[0])):
         plot_erp_comparison(
             freq_hz, true[i], pred[i],
-            title=f"iFNO (forward) - test configuration {i + 1}",
+            title=f"{tag} (forward) - test configuration {i + 1}",
             configuration=physical_configs[i],
-            save_path=OUT_DIR / f"forward_erp_test_config_{i + 1:02d}.png",
+            save_path=OUT_DIR / f"{tag.lower()}_forward_erp_test_config_{i + 1:02d}.png",
             show=False,
         )
     plot_prediction_scatter(
-        true, pred, xlabel="Ground Truth ERP (dB)", ylabel="Predicted ERP (dB, iFNO forward)",
-        title="iFNO - predicted vs. ground truth ERP", save_path=OUT_DIR / "forward_prediction_vs_ground_truth.png",
+        true, pred, xlabel="Ground Truth ERP (dB)", ylabel=f"Predicted ERP (dB, {tag} forward)",
+        title=f"{tag} - predicted vs. ground truth ERP",
+        save_path=OUT_DIR / f"{tag.lower()}_forward_prediction_vs_ground_truth.png",
         show=False,
     )
     return {"rmse": rmse, "mae": mae, "pearson": pearson, "r2": r2}
 
 
-def evaluate_inverse(model: IFNO, dataset, loaders, norm, num_examples: int = 5, num_samples: int = 6):
+def evaluate_inverse(model: InvertibleOperatorBase, tag: str, dataset, loaders, norm, num_examples: int = 5, num_samples: int = 6):
     model.eval()
     test_spectrum, test_design = [], []
     for spectrum, design in loaders["test"]:
@@ -275,12 +280,10 @@ def evaluate_inverse(model: IFNO, dataset, loaders, norm, num_examples: int = 5,
 
     solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
     fig, axes = plt.subplots(1, num_examples, figsize=(4.8 * num_examples, 4.2))
-    best_indices = []
     for row in range(num_examples):
         predicted_erp = solve_configs(solver_pool, physical[row], freq_hz)  # (num_samples, n_freq)
         recon_mse = ((predicted_erp - true_erp[row][None, :]) ** 2).mean(axis=1)
         best_idx = int(recon_mse.argmin())
-        best_indices.append(best_idx)
 
         ax = axes[row] if num_examples > 1 else axes
         for i in range(num_samples):
@@ -298,58 +301,76 @@ def evaluate_inverse(model: IFNO, dataset, loaders, norm, num_examples: int = 5,
     solver_pool.shutdown()
 
     fig.suptitle(
-        f"iFNO inverse-design validation: {num_samples} posterior samples/target, "
+        f"{tag} inverse-design validation: {num_samples} posterior samples/target, "
         "best-scoring (vs. actual solver) highlighted red",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_DIR / "inverse_validation_reconstructions.png", dpi=150)
+    out_path = OUT_DIR / f"{tag.lower()}_inverse_validation_reconstructions.png"
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
-    print(f"Saved {OUT_DIR / 'inverse_validation_reconstructions.png'}")
+    print(f"Saved {out_path}")
 
 
-def main(
+def train_one(
+    key: str,
     num_configurations: int = NUM_CONFIGURATIONS,
     batch_size: int = BATCH_SIZE,
-    dataset_file: str = DATASET_FILE,
+    dataset_file=DATASET_FILE,
     seed: int = SEED,
+    stage1_epochs: int = STAGE1_EPOCHS,
+    stage2_epochs: int = STAGE2_EPOCHS,
+    stage3_epochs: int = STAGE3_EPOCHS,
 ):
+    """Train+evaluate exactly one registry entry (e.g. key="2" for iDCO)."""
+    spec = INVERTIBLE_OPERATORS[key]
+    tag = spec["short"]
+
     seed_everything(seed)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
     )
     norm = dataset.norm_params
 
-    model = IFNO(design_dim=DESIGN_DIM, **DEFAULT_MODEL_CONFIG)
-    print(f"iFNO params: {sum(p.numel() for p in model.parameters()):,}")
+    model: InvertibleOperatorBase = spec["build"](design_dim=DESIGN_DIM, **spec["model_config"])
+    print(f"{tag} params: {sum(p.numel() for p in model.parameters()):,}")
 
-    print("\n" + "#" * 70 + "\nStage 1: invertible Fourier blocks + P/Q/P'/Q'\n" + "#" * 70)
-    history1 = train_stage1(model, loaders, epochs=STAGE1_EPOCHS)
+    print("\n" + "#" * 70 + f"\n{tag} Stage 1: invertible coupling blocks + P/Q/P'/Q'\n" + "#" * 70)
+    history1 = train_stage1(model, loaders, epochs=stage1_epochs, tag=tag)
 
-    print("\n" + "#" * 70 + "\nStage 2: beta-VAE pretraining (design space only)\n" + "#" * 70)
-    history2 = train_stage2(model, loaders, epochs=STAGE2_EPOCHS)
+    print("\n" + "#" * 70 + f"\n{tag} Stage 2: beta-VAE pretraining (design space only)\n" + "#" * 70)
+    history2 = train_stage2(model, loaders, epochs=stage2_epochs, tag=tag)
 
-    print("\n" + "#" * 70 + "\nStage 3: joint fine-tuning\n" + "#" * 70)
-    history3 = train_stage3(model, loaders, epochs=STAGE3_EPOCHS)
+    print("\n" + "#" * 70 + f"\n{tag} Stage 3: joint fine-tuning\n" + "#" * 70)
+    history3 = train_stage3(model, loaders, epochs=stage3_epochs, tag=tag)
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = MODEL_DIR / f"{tag.lower()}.pth"
     torch.save(
-        {"model_state_dict": model.state_dict(), "norm_params": dict(norm), "model_config": DEFAULT_MODEL_CONFIG},
-        MODEL_DIR / "ifno.pth",
+        {"model_state_dict": model.state_dict(), "norm_params": dict(norm), "model_config": dict(spec["model_config"])},
+        checkpoint_path,
     )
-    print(f"Saved {MODEL_DIR / 'ifno.pth'}")
+    print(f"Saved {checkpoint_path}")
 
     plot_stage_losses(
+        tag,
         {"stage1 (invertible blocks)": history1, "stage2 (beta-VAE)": history2, "stage3 (joint fine-tune)": history3},
-        OUT_DIR / "training_curves.png",
+        OUT_DIR / f"{tag.lower()}_training_curves.png",
     )
 
-    forward_metrics = evaluate_forward(model, dataset, loaders, norm)
-    evaluate_inverse(model, dataset, loaders, norm)
+    forward_metrics = evaluate_forward(model, tag, dataset, loaders, norm)
+    evaluate_inverse(model, tag, dataset, loaders, norm)
 
-    print("\nDONE")
+    print(f"\n{tag} DONE")
     return model, {"stage1": history1, "stage2": history2, "stage3": history3}, forward_metrics
+
+
+def main(keys: tuple[str, ...] = ("1", "2", "3"), **kwargs):
+    results = {}
+    for key in keys:
+        results[key] = train_one(key, **kwargs)
+    return results
 
 
 if __name__ == "__main__":

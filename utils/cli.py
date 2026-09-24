@@ -50,6 +50,8 @@ from erp_inverse_operators import evaluate_design as inverse_evaluate_design
 
 from displacement_forward_operators.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
 
+from erp_forward_inverse_operators.registry import INVERTIBLE_OPERATORS
+
 
 DATASET_FILE = DEFAULT_DATASET_FILE
 
@@ -979,22 +981,23 @@ def main():
     """Interactive entry point: choose the problem, then dispatch.
 
     ERP and Displacement field are the two physical problems this project
-    solves; iFNO is a separate architecture that answers the ERP problem's
-    forward AND inverse directions from one set of weights, so it gets its
-    own top-level slot instead of living inside the ERP submenu's
-    single-optimizer forward/inverse machinery (see ifno/model.py's
-    docstring for why it can't share that training loop).
+    solves; the invertible operators (iFNO/iDCO/iGNO) are a separate
+    architecture family that answers the ERP problem's forward AND inverse
+    directions from one set of weights, so they get their own top-level
+    slot instead of living inside the ERP submenu's single-optimizer
+    forward/inverse machinery (see erp_forward_inverse_operators/__init__.py's
+    docstring for why they can't share that training loop).
     """
     print("\nWhich problem would you like to work on?")
     print("1. ERP           (resonator configuration <-> ERP spectrum)")
     print("2. Displacement  (configuration, frequency, position -> velocity field)")
-    print("3. iFNO          (joint forward+inverse invertible Fourier operator, ERP problem)")
+    print("3. Invertible    (joint forward+inverse operator, ERP problem: iFNO/iDCO/iGNO)")
     problem = _prompt_choice("Select problem: ", {"1": None, "2": None, "3": None})
     if problem == "1":
         return main_erp()
     if problem == "2":
         return main_displacement()
-    return main_ifno()
+    return main_invertible_operators()
 
 
 def main_erp():
@@ -1045,24 +1048,39 @@ def main_displacement():
     return results
 
 
-def main_ifno():
-    """Interactive entry point for iFNO (Long et al., arXiv:2402.11722).
+def _print_invertible_menu() -> None:
+    print("\nAvailable invertible (joint forward+inverse) operators")
+    print("=" * 56)
+    for key, spec in INVERTIBLE_OPERATORS.items():
+        print(f"{key}. {spec['name']} ({spec['short']})")
+    print(f"{len(INVERTIBLE_OPERATORS) + 1}. Train and evaluate ALL three")
+    print("=" * 56)
 
-    One architecture, one fixed 3-step training schedule
-    (invertible-block pretraining -> beta-VAE pretraining -> joint
-    fine-tune, see ifno/train.py), so there is no per-model menu -- just a
-    confirmation before committing to the ~1-2 hour CPU run.
+
+def main_invertible_operators():
+    """Interactive entry point for the invertible-operator family (Long et
+    al., arXiv:2402.11722, adapted three ways -- see
+    erp_forward_inverse_operators/__init__.py). Each shares the same fixed
+    3-step training schedule (invertible-block pretraining -> beta-VAE
+    pretraining -> joint fine-tune, see
+    erp_forward_inverse_operators/train.py), so this menu only needs to ask
+    which architecture(s) to run, same pattern as the displacement menu.
     """
-    print("\niFNO: invertible Fourier Neural Operator (joint forward+inverse).")
-    print("Runs the paper's 3-step schedule on the full 100k-configuration ERP "
-          "dataset, then forward (config->ERP) and inverse (ERP->config, "
-          "solver-validated) evaluation.")
+    _print_invertible_menu()
+    all_key = str(len(INVERTIBLE_OPERATORS) + 1)
+    choices = {**INVERTIBLE_OPERATORS, all_key: None}
+    key = _prompt_choice("Select architecture/workflow: ", choices)
+    keys = list(INVERTIBLE_OPERATORS.keys()) if key == all_key else [key]
+
+    print(f"\nRuns the paper's 3-step schedule on the full 100k-configuration ERP "
+          f"dataset for {'all three' if key == all_key else INVERTIBLE_OPERATORS[key]['short']}, "
+          "then forward (config->ERP) and inverse (ERP->config, solver-validated) evaluation.")
     if not _prompt_yes_no(
-        "Proceed with iFNO training (100k configurations, ~1-2h on CPU)", default=True
+        f"Proceed with training ({len(keys)} model(s), 100k configurations, ~1-2h/model on CPU)", default=True
     ):
         print("Cancelled.")
         return None
 
-    from ifno.train import main as ifno_main
+    from erp_forward_inverse_operators.train import main as invertible_main
 
-    return ifno_main()
+    return invertible_main(keys=tuple(keys))
