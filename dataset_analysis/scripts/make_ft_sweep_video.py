@@ -4,13 +4,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import imageio_ffmpeg
 
 from utils.physics import freqs, omega_n
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_erp_spectrum
-
-matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 # One resonator, fixed spatial position; only f_t varies frame to frame.
 X0, Y0 = 0.70, 0.25
@@ -66,6 +63,6 @@ anim = animation.FuncAnimation(
     fig, update, frames=ft_values.size, init_func=init, blit=True, interval=1000 / fps
 )
 
-out_path = "dataset_analysis/videos/erp_ft_sweep_1_resonator.mp4"
-anim.save(out_path, writer=animation.FFMpegWriter(fps=fps, bitrate=2000))
+out_path = "dataset_analysis/videos/erp_ft_sweep_1_resonator.gif"
+anim.save(out_path, writer=animation.PillowWriter(fps=fps))
 print("Saved:", out_path)

@@ -4,13 +4,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import imageio_ffmpeg
 
 from utils.physics import freqs, omega_n, Lx, Ly, xf, yf, X_grid, Y_grid
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_erp_spectrum, compute_displacement
-
-matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 F_T_FIXED = 90.0
 
@@ -96,6 +93,6 @@ fps = 15
 anim = animation.FuncAnimation(
     fig, update, frames=n, init_func=init, blit=False, interval=1000 / fps
 )
-out_path = "dataset_analysis/videos/erp_y_sweep_maxdisp.mp4"
-anim.save(out_path, writer=animation.FFMpegWriter(fps=fps, bitrate=2500))
+out_path = "dataset_analysis/videos/erp_y_sweep_maxdisp.gif"
+anim.save(out_path, writer=animation.PillowWriter(fps=fps))
 print("Saved:", out_path)

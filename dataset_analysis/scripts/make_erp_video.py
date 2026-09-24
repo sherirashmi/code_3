@@ -3,12 +3,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import imageio_ffmpeg
 
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_erp_spectrum
-
-matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 # Three resonators, fixed positions/tuning -- [f_t, x, y] within the project's
 # real sampling bounds (edge_margin=0.05, Lx=1.4, Ly=0.5, f_t in [10,160]).
@@ -64,6 +61,6 @@ anim = animation.FuncAnimation(
     fig, update, frames=freqs_fine.size, init_func=init, blit=True, interval=1000 / fps
 )
 
-out_path = "dataset_analysis/videos/erp_sweep_3_resonators.mp4"
-anim.save(out_path, writer=animation.FFMpegWriter(fps=fps, bitrate=2000))
+out_path = "dataset_analysis/videos/erp_sweep_3_resonators.gif"
+anim.save(out_path, writer=animation.PillowWriter(fps=fps))
 print("Saved:", out_path)

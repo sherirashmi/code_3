@@ -4,13 +4,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import imageio_ffmpeg
 
 from utils.physics import freqs, omega_n, Lx, Ly, xf, yf, X_grid, Y_grid
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_erp_spectrum, compute_displacement
-
-matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 F_T_FIXED = 90.0  # resonator tuning frequency, held fixed for both sweeps
 plate_modes_in_range = [f for f in (omega_n / (2*np.pi)) if freqs.min() <= f <= freqs.max()]
@@ -89,7 +86,7 @@ def build_sweep(sweep_axis, fixed_value, sweep_values, out_path):
     anim = animation.FuncAnimation(
         fig, update, frames=n, init_func=init, blit=False, interval=1000 / fps
     )
-    anim.save(out_path, writer=animation.FFMpegWriter(fps=fps, bitrate=2500))
+    anim.save(out_path, writer=animation.PillowWriter(fps=fps))
     plt.close(fig)
     print("Saved:", out_path)
 
@@ -100,9 +97,9 @@ y_values = np.linspace(edge, Ly - edge, 121)
 
 build_sweep(
     "x", fixed_value=0.25, sweep_values=x_values,
-    out_path="dataset_analysis/videos/erp_x_sweep.mp4",
+    out_path="dataset_analysis/videos/erp_x_sweep.gif",
 )
 build_sweep(
     "y", fixed_value=0.70, sweep_values=y_values,
-    out_path="dataset_analysis/videos/erp_y_sweep.mp4",
+    out_path="dataset_analysis/videos/erp_y_sweep.gif",
 )

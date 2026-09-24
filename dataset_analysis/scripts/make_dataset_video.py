@@ -4,14 +4,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import imageio_ffmpeg
 
 from utils.support import load_dataset
 from utils.physics import omega_n, Lx, Ly, xf, yf, X_grid, Y_grid
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_displacement
-
-matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 payload = load_dataset("datasets/dataset_erp_ft.pth")
 freqs = np.asarray(payload["frequency_values"], dtype=np.float64)
@@ -98,6 +95,6 @@ fps = 6
 anim = animation.FuncAnimation(
     fig, update, frames=N_SHOW, init_func=init, blit=False, interval=1000 / fps
 )
-out_path = "dataset_analysis/videos/erp_dataset_configs.mp4"
-anim.save(out_path, writer=animation.FFMpegWriter(fps=fps, bitrate=2500))
+out_path = "dataset_analysis/videos/erp_dataset_configs.gif"
+anim.save(out_path, writer=animation.PillowWriter(fps=fps))
 print("Saved:", out_path)
