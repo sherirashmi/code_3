@@ -483,27 +483,98 @@ def prepare_operator_data(
 # ==================================================
 
 
+def spectrum_peak_mask(spectrum: torch.Tensor, window: int = 7) -> torch.Tensor:
+    """Boolean mask, ``(batch, n_freq, 1)``: True at every local-maximum
+    frequency of ``spectrum`` -- ALL of that spectrum's resonance peaks
+    (multiple resonators plus the bare-plate's own modes can each produce
+    one), not just its single global maximum.
+
+    Two stages, both vectorized (no per-spectrum Python loop, since
+    ``target`` has no gradient here -- only indexing into ``prediction`` at
+    the resulting positions needs one):
+
+    1. A point is a *candidate* if it's strictly greater than both
+       immediate neighbors (edges compared to their one real neighbor, via
+       ``-inf`` padding rather than replicate-padding). Strict (``>``, not
+       ``>=``) matters: a flat run of exactly-tied values -- e.g. a
+       background region where several far-off resonance tails have
+       underflowed to the same float32 value -- correctly yields NO
+       candidate there, where a ``>=``-against-a-window test would mark
+       the entire tied plateau as "peaks".
+    2. Non-maximum suppression keeps only the locally dominant candidate
+       within ``window`` bins, so numerical jitter that produces two
+       candidates immediately next to one real resonance doesn't get
+       double-counted, without needing exact-tie handling (two genuine
+       candidate peak heights coinciding exactly is not a real concern for
+       continuous physics values).
+
+    The spectrum's global maximum is always included even if both stages
+    above miss it (a perfectly monotonic spectrum still needs one peak
+    term).
+    """
+    if spectrum.dim() != 3 or spectrum.shape[-1] != 1:
+        raise ValueError("spectrum must have shape (batch, n_freq, 1).")
+    if window < 1 or window % 2 == 0:
+        raise ValueError("window must be a positive odd integer.")
+    x = spectrum.detach().transpose(1, 2)  # (B, 1, n_freq); no grad needed for peak *locations*
+
+    neg_inf = float("-inf")
+    left = F.pad(x, (1, 0), mode="constant", value=neg_inf)[..., :-1]
+    right = F.pad(x, (0, 1), mode="constant", value=neg_inf)[..., 1:]
+    candidate = (x > left) & (x > right)
+
+    candidate_values = torch.where(candidate, x, torch.full_like(x, neg_inf))
+    pooled_candidates = F.max_pool1d(candidate_values, kernel_size=window, stride=1, padding=window // 2)
+    dominant = candidate & (x >= pooled_candidates)
+
+    mask = dominant.transpose(1, 2)  # (B, n_freq, 1)
+    global_idx = spectrum.argmax(dim=1, keepdim=True)
+    mask = mask.scatter(1, global_idx, True)
+    return mask
+
+
+def _peak_squared_error_sum(
+    prediction: torch.Tensor, target: torch.Tensor, window: int = 7
+) -> torch.Tensor:
+    """Per-spectrum SUM (not mean) of squared error at every one of the
+    TRUE spectrum's local-maximum frequencies -- see ``spectrum_peak_mask``.
+    Returns ``(batch,)``; the number of frequencies summed over varies per
+    spectrum with how many resonance peaks it actually has, so a spectrum
+    with more distinguishable peaks contributes more to this term.
+    """
+    peak_mask = spectrum_peak_mask(target, window=window).to(prediction.dtype)
+    squared_error = (prediction - target) ** 2
+    return (squared_error * peak_mask).sum(dim=1).squeeze(-1)
+
+
 def erp_spectrum_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
     slope_weight: float = 0.5,
     peak_weight: float = 0.05,
+    peak_window: int = 7,
 ) -> torch.Tensor:
-    """Normalized ERP MSE plus a first-difference penalty and a peak-value penalty.
+    """Normalized ERP MSE plus a first-difference penalty and a multi-peak penalty.
 
     ``prediction``/``target``: ``(batch, n_freq, 1)``.
 
     The peak term reads off BOTH curves at the TRUE spectrum's own peak
-    frequency index (``target.argmax(dim=1)``) and MSEs those two values --
-    NOT the model's own predicted peak location, which would need a
+    frequencies (every local maximum, via ``spectrum_peak_mask`` -- not
+    just the single tallest one) and sums the squared error at each --
+    NOT the model's own predicted peak locations, which would need a
     differentiable stand-in for argmax (e.g. soft-argmax) since
-    ``torch.argmax`` has zero gradient almost everywhere. Using the true
-    peak index is fully differentiable w.r.t. the prediction (a plain
-    ``gather``, not an index-selection operation on the prediction itself)
-    and directly targets the failure mode plain MSE allows: a model can
-    reach a low average error by slightly smoothing over a sharp resonance
-    peak, since a pointwise loss spreads that error thinly across many
-    frequency bins instead of concentrating it where the peak actually is.
+    ``torch.argmax``/local-max tests have zero gradient almost everywhere.
+    Using the true peak locations is fully differentiable w.r.t. the
+    prediction (a plain mask-and-sum, not an index-selection operation on
+    the prediction itself) and directly targets the failure mode plain MSE
+    allows: a model can reach a low average error by slightly smoothing
+    over a sharp resonance peak, since a pointwise loss spreads that error
+    thinly across many frequency bins instead of concentrating it where
+    the peaks actually are. Summing (not averaging) over each spectrum's
+    own peaks means a configuration with more resolvable resonances -- more
+    terms in this sum -- contributes proportionally more peak-error, rather
+    than every spectrum being treated as if it had exactly one peak to get
+    right.
     """
     mse = F.mse_loss(prediction, target)
     loss = mse
@@ -512,10 +583,8 @@ def erp_spectrum_loss(
         dt = target[:, 1:] - target[:, :-1]
         loss = loss + float(slope_weight) * F.mse_loss(dp, dt)
     if peak_weight > 0.0:
-        peak_idx = target.argmax(dim=1, keepdim=True)  # (B, 1, 1), from target only -- no grad needed here
-        pred_at_peak = torch.gather(prediction, 1, peak_idx)
-        true_at_peak = torch.gather(target, 1, peak_idx)
-        loss = loss + float(peak_weight) * F.mse_loss(pred_at_peak, true_at_peak)
+        peak_loss = _peak_squared_error_sum(prediction, target, window=peak_window).mean()
+        loss = loss + float(peak_weight) * peak_loss
     return loss
 
 
@@ -533,10 +602,16 @@ class UncertaintyWeightedERPLoss(nn.Module):
     weighting.parameters())``) alongside the network's.
     """
 
-    def __init__(self, init_slope_weight: float = 0.5, init_peak_weight: float = 0.05) -> None:
+    def __init__(
+        self,
+        init_slope_weight: float = 0.5,
+        init_peak_weight: float = 0.05,
+        peak_window: int = 7,
+    ) -> None:
         super().__init__()
         self.log_var_slope = nn.Parameter(torch.tensor(-math.log(init_slope_weight), dtype=torch.float32))
         self.log_var_peak = nn.Parameter(torch.tensor(-math.log(init_peak_weight), dtype=torch.float32))
+        self.peak_window = int(peak_window)
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         loss = F.mse_loss(prediction, target)
@@ -545,10 +620,7 @@ class UncertaintyWeightedERPLoss(nn.Module):
             dt = target[:, 1:] - target[:, :-1]
             slope_loss = F.mse_loss(dp, dt)
             loss = loss + torch.exp(-self.log_var_slope) * slope_loss + self.log_var_slope
-        peak_idx = target.argmax(dim=1, keepdim=True)
-        pred_at_peak = torch.gather(prediction, 1, peak_idx)
-        true_at_peak = torch.gather(target, 1, peak_idx)
-        peak_loss = F.mse_loss(pred_at_peak, true_at_peak)
+        peak_loss = _peak_squared_error_sum(prediction, target, window=self.peak_window).mean()
         loss = loss + torch.exp(-self.log_var_peak) * peak_loss + self.log_var_peak
         return loss
 
@@ -583,10 +655,12 @@ class DWAWeightedERPLoss:
         temperature: float = 2.0,
         base_slope_weight: float = 0.5,
         base_peak_weight: float = 0.05,
+        peak_window: int = 7,
     ) -> None:
         self.temperature = temperature
         self.base_weight = {"slope": base_slope_weight, "peak": base_peak_weight}
         self.factor = {"slope": 1.0, "peak": 1.0}
+        self.peak_window = int(peak_window)
         self._history: list[dict[str, float]] = []
 
     def __call__(self, prediction: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, dict[str, float]]:
@@ -598,10 +672,7 @@ class DWAWeightedERPLoss:
             slope_loss = F.mse_loss(dp, dt)
             loss = loss + self.base_weight["slope"] * self.factor["slope"] * slope_loss
             raw["slope"] = slope_loss.detach().item()
-        peak_idx = target.argmax(dim=1, keepdim=True)
-        pred_at_peak = torch.gather(prediction, 1, peak_idx)
-        true_at_peak = torch.gather(target, 1, peak_idx)
-        peak_loss = F.mse_loss(pred_at_peak, true_at_peak)
+        peak_loss = _peak_squared_error_sum(prediction, target, window=self.peak_window).mean()
         loss = loss + self.base_weight["peak"] * self.factor["peak"] * peak_loss
         raw["peak"] = peak_loss.detach().item()
         return loss, raw

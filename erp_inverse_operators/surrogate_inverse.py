@@ -33,7 +33,8 @@ Design:
          the resulting predicted ERP spectrum against the TRUE target
          spectrum using the SAME ``erp_spectrum_loss`` every forward
          operator in this repo trains against (MSE + a first-difference/
-         slope penalty + a true-peak-value penalty, not plain MSE) -- an
+         slope penalty + a multi-peak value penalty summed over every one
+         of the true spectrum's resonance peaks, not plain MSE) -- an
          ERP-space consistency signal ground-truth design MSE alone can't
          give (two different designs producing the same spectrum are
          equally right under this term, unlike raw design MSE).
