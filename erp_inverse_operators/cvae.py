@@ -76,10 +76,19 @@ class ConditionalVAE(nn.Module):
         return mean, log_var
 
     def forward(self, design: torch.Tensor, spectrum: torch.Tensor):
-        mu, log_var, embedding = self.encode(design, spectrum)
+        mu, log_var, _ = self.encode(design, spectrum)
         std = torch.exp(0.5 * log_var)
         z = mu + std * torch.randn_like(std)
-        design_mean, design_log_var = self.decode(z, embedding)
+        # decode() must condition on decoder_spectrum's embedding here too
+        # (not encoder_spectrum's, which only exists to help the posterior
+        # network q(z|design,spectrum) -- design is unavailable at sample()
+        # time) -- otherwise decoder_net is trained against one embedding
+        # distribution and queried at sampling time with a DIFFERENT,
+        # never-trained network's embedding (decoder_spectrum previously
+        # received zero gradient the entire time, since nothing in training
+        # ever called it).
+        decoder_embedding = self.decoder_spectrum(spectrum)
+        design_mean, design_log_var = self.decode(z, decoder_embedding)
         return design_mean, design_log_var, mu, log_var
 
     def training_loss(
