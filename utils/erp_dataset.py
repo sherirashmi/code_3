@@ -422,6 +422,12 @@ class ERPDataset(Dataset):
         num_res = int(first["num_res"])
         frequency_values = np.asarray(first["frequency_values"], dtype=np.float32)
         for filename, payload in zip(filenames[1:], payloads[1:], strict=True):
+            shard_feature_names = tuple(payload.get("feature_names", ()))
+            if shard_feature_names != feature_names:
+                raise ValueError(
+                    f"{filename} has different feature_names than {filenames[0]} "
+                    f"({shard_feature_names or 'missing'} vs. {feature_names})."
+                )
             if int(payload["num_res"]) != num_res:
                 raise ValueError(f"{filename} has a different num_res than {filenames[0]}.")
             if not np.array_equal(
