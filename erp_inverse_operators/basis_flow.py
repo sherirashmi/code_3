@@ -234,9 +234,25 @@ class BasisFlow(nn.Module):
 
         Samples coefficients from the encoder's spectrum-conditioned
         Gaussian, inverts the flow to get a design, and reports the exact
-        ``log p(design|spectrum)`` of each returned design (same
-        change-of-variables identity as ``training_loss``, evaluated in the
-        inverse direction: log q(coeff) + log|det dT^-1/dcoeff|).
+        ``log p(design|spectrum)`` of each returned design.
+
+        For ``design = flow.inverse(coefficients)`` -- i.e. design is a
+        function of coefficients via the flow's INVERSE map -- the
+        change-of-variables identity is
+        ``log p(design) = log q(coeff) - log|det d(design)/d(coeff)|``
+        (divide by the inverse map's own Jacobian determinant, not
+        multiply), which is exactly ``log_q_coeff - log_det_inv`` below:
+        ``self.flow.inverse``'s returned ``log_det_inv`` already IS
+        ``log|det d(design)/d(coeff)|`` (verified numerically -- it's the
+        negative of what the forward direction's ``log_det`` would be for
+        the same transformation, since forward and inverse Jacobians are
+        exact reciprocals). ``training_loss`` uses the FORWARD direction
+        instead (``coefficients = flow(design)``), where the analogous
+        identity adds its own forward ``log_det`` -- that's a different
+        map with the opposite Jacobian sign convention, not the same
+        formula reused here; the earlier version of this method incorrectly
+        copied that addition onto the inverse-direction call, which gave
+        every sampled design's reported confidence the wrong sign.
         """
         b = spectrum.shape[0]
         mu, log_var = self.basis.encode(spectrum)
@@ -249,6 +265,6 @@ class BasisFlow(nn.Module):
 
         flat_design, log_det_inv = self.flow.inverse(coefficients)
         log_q_coeff = _gaussian_log_prob(coefficients, mu_e, log_var_e)
-        log_prob = log_q_coeff + log_det_inv
+        log_prob = log_q_coeff - log_det_inv
 
         return flat_design.view(b, num_samples, self.design_dim), log_prob.view(b, num_samples)
