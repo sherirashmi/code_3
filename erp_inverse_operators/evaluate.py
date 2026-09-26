@@ -71,6 +71,7 @@ import torch
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
+from erp_inverse_operators.surrogate_inverse import SurrogateInverse
 from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 
@@ -80,7 +81,17 @@ OUT_DIR = Path("erp_inverse_operators/plots")
 # keys, matching this module's own reporting convention; built from the same
 # INVERSE_MODELS registry train_all.py and the CLI use, so there is exactly
 # one place these 4 models' constructors are defined.
+#
+# "Surrogate" is added on top of the registry itself (rather than inside
+# INVERSE_MODELS) -- it is intentionally NOT in that registry (its training
+# loss needs the calling dataset's own norm_params, see
+# surrogate_inverse.py's docstring), but ITS CHECKPOINT is still just an
+# ordinary state_dict + norm_params .pth like every other model's (saved by
+# train_all.py's main() alongside the other 6), so it loads and evaluates
+# here identically -- every constructor arg besides design_dim already
+# has a usable default.
 MODEL_BUILDERS = {spec["short"]: spec["build"] for spec in INVERSE_MODELS.values()}
+MODEL_BUILDERS["Surrogate"] = lambda: SurrogateInverse(design_dim=DESIGN_DIM)
 
 
 def load_inverse_model(name: str):

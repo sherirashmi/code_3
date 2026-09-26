@@ -47,6 +47,7 @@ OUT_DIR = Path("erp_inverse_operators/plots")
 PARAMS = [
     ("m", 0, "Mass (kg)"),
     ("k", 1, "Spring constant (N/m)"),
+    ("f_t", 2, "Tuned frequency (Hz)"),
     ("x", 3, "x position (m)"),
     ("y", 4, "y position (m)"),
 ]
