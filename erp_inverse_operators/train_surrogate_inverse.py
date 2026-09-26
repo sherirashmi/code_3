@@ -4,9 +4,9 @@ docstring for the model itself).
 Not registered in erp_inverse_operators/registry.py's INVERSE_MODELS dict,
 for the same structural reason iFNO isn't: this model's loss needs the
 CALLING dataset's own norm_params (to bridge between its own normalized
-design/ERP space and the frozen DCO surrogate's own, since the two are fit
-from potentially different dataset subsets -- see surrogate_inverse.py's
-module docstring), but the registry's uniform ``build()`` is a zero-arg
+design/ERP space and each frozen surrogate's own, since they may be fit
+from different dataset subsets -- see surrogate_inverse.py's module
+docstring), but the registry's uniform ``build()`` is a zero-arg
 lambda evaluated before any dataset is prepared, and train_all.py's
 ``loss_fn(model, spectrum, design, epoch)`` has no way to receive that
 norm_params either. Giving this model its own small script sidesteps that
@@ -34,7 +34,7 @@ import torch
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data, save_checkpoint
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
-from erp_inverse_operators.surrogate_inverse import SurrogateInverse
+from erp_inverse_operators.surrogate_inverse import DEFAULT_SURROGATE_CHECKPOINTS, SurrogateInverse
 from erp_inverse_operators.train_all import train_one
 from utils.erp_dataset import denormalize_erp_array
 
@@ -50,19 +50,30 @@ def main(
     surrogate_weight: float = 1.0,
     dataset_file: str = "datasets/dataset_erp_ft.pth",
     seed: int = 727,
-    surrogate_checkpoint: str = "erp_forward_operators/models/dco_erp.pth",
+    surrogate_checkpoints=DEFAULT_SURROGATE_CHECKPOINTS,
+    num_components: int = 4,
+    num_surrogate_samples: int = 4,
 ):
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
     )
     norm_params = dataset.norm_params
 
-    model = SurrogateInverse(design_dim=DESIGN_DIM, surrogate_checkpoint=surrogate_checkpoint)
-    print(f"SurrogateInverse params (excl. frozen surrogate): "
-          f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    model = SurrogateInverse(
+        design_dim=DESIGN_DIM, surrogate_checkpoints=surrogate_checkpoints, num_components=num_components
+    )
+    print(f"SurrogateInverse params (excl. frozen surrogate ensemble): "
+          f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,} "
+          f"({model.num_surrogates} surrogate(s), {num_components} mixture components)")
 
     def loss_fn(model, spectrum, design, epoch):
-        return model.training_loss(spectrum, design, own_norm_params=norm_params, surrogate_weight=surrogate_weight)
+        return model.training_loss(
+            spectrum,
+            design,
+            own_norm_params=norm_params,
+            surrogate_weight=surrogate_weight,
+            num_surrogate_samples=num_surrogate_samples,
+        )
 
     history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name="SurrogateInverse")
     save_checkpoint(model, norm_params, CHECKPOINT_PATH)
@@ -72,8 +83,8 @@ def main(
     ax.plot(history["train"], label="train", lw=2)
     ax.plot(history["val"], label="val", lw=2)
     ax.set_xlabel("Epoch")
-    ax.set_ylabel("design_NLL + surrogate_weight * surrogate_MSE")
-    ax.set_title("SurrogateInverse training curves (frozen DCO surrogate-in-the-loop)")
+    ax.set_ylabel("mixture design_NLL + surrogate_weight * surrogate_MSE")
+    ax.set_title("SurrogateInverse training curves (frozen surrogate ensemble-in-the-loop)")
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()

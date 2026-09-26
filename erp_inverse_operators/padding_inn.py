@@ -60,6 +60,16 @@ No tractable log p(design|spectrum): this model is trained by MSE + MMD
 distribution-matching, not maximum likelihood, so ``sample()`` returns a
 plain tensor (no log-probability), matching ConditionalDiffusion's
 convention rather than MDN/Flow/BasisFlow's.
+
+Post-hoc recalibration: a project-wide calibration check found this
+model's raw (z ~ N(0, I)) samples badly overconfident (empirical coverage
+far below nominal). Since there's no tractable density to recalibrate
+directly, ``sample()`` takes an optional ``temperature`` that scales the
+input noise (z ~ N(0, temperature**2 * I)) to widen the sampled spread
+without retraining; ``calibrate_temperature()`` picks a good value from a
+held-out (spectrum, true_design) batch. ``train_all.py`` runs this once
+right after training and stores the result in the checkpoint, so
+``evaluate.py``'s loader applies it automatically thereafter.
 """
 
 from __future__ import annotations
@@ -204,15 +214,65 @@ class PadINN(nn.Module):
         return y_loss + x_weight * x_loss + z_mmd_weight * z_loss
 
     @torch.no_grad()
-    def sample(self, spectrum: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(self, spectrum: torch.Tensor, num_samples: int = 1, temperature: float = 1.0) -> torch.Tensor:
         """Returns ``(B, num_samples, design_dim)``, no tractable density
         (see module docstring) -- same convention as
         ConditionalDiffusion.sample(): a plain tensor, not a
         ``(samples, log_prob)`` tuple.
+
+        ``temperature`` scales the ``z ~ N(0, I)`` noise fed into the
+        trained inverse flow (``z ~ N(0, temperature**2 * I)``) -- a cheap,
+        standard post-hoc recalibration knob. PadINN has no tractable
+        density to recalibrate directly (unlike Flow/MDN), and its raw
+        (temperature=1) samples were found to be severely overconfident on
+        this project's own calibration check (empirical coverage near zero
+        across almost the whole nominal range). Widening the input noise
+        widens the resulting design spread without retraining; see
+        :meth:`calibrate_temperature` to pick a good value from data.
         """
         b = spectrum.shape[0]
         spectrum_e = spectrum[:, None, :].expand(-1, num_samples, -1).reshape(b * num_samples, -1)
-        z = torch.randn(b * num_samples, self.z_dim, device=spectrum.device)
+        z = float(temperature) * torch.randn(b * num_samples, self.z_dim, device=spectrum.device)
         x_pad_rec = self.flow.inverse(torch.cat([spectrum_e, z], dim=-1))
         x_rec = x_pad_rec[:, : self.design_dim]
         return x_rec.view(b, num_samples, self.design_dim)
+
+    @torch.no_grad()
+    def calibrate_temperature(
+        self,
+        spectrum: torch.Tensor,
+        true_design: torch.Tensor,
+        candidate_temperatures: tuple[float, ...] = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0),
+        num_samples: int = 64,
+        target_coverage: float = 0.8,
+    ) -> float:
+        """Pick the ``sample()`` temperature whose empirical per-dimension
+        coverage at ``target_coverage`` is closest to nominal, evaluated on
+        a held-out ``(spectrum, true_design)`` batch (e.g. the validation
+        split).
+
+        For each candidate temperature: draw ``num_samples`` designs per
+        spectrum, take the empirical ``[lower_q, upper_q]`` quantile band of
+        those samples (in this model's own normalized design space, matching
+        what ``sample()`` returns), and measure the fraction of true designs
+        actually falling inside that band across the whole batch and every
+        design dimension. Returns whichever candidate's coverage is closest
+        to ``target_coverage``. A simple grid search, not a gradient-based
+        fit -- this only ever needs to tune one scalar, on data ``sample()``
+        never trains on, so anything fancier isn't warranted.
+        """
+        true_flat = flatten_configuration(true_design) if true_design.dim() == 3 else true_design
+        lower_q = (1.0 - target_coverage) / 2.0
+        upper_q = 1.0 - lower_q
+
+        best_temperature, best_gap = candidate_temperatures[0], float("inf")
+        for temperature in candidate_temperatures:
+            samples = self.sample(spectrum, num_samples=num_samples, temperature=temperature)  # (B, S, D)
+            lower = torch.quantile(samples, lower_q, dim=1)
+            upper = torch.quantile(samples, upper_q, dim=1)
+            covered = ((true_flat >= lower) & (true_flat <= upper)).float().mean().item()
+            gap = abs(covered - target_coverage)
+            if gap < best_gap:
+                best_gap = gap
+                best_temperature = temperature
+        return best_temperature

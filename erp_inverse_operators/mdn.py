@@ -10,6 +10,11 @@ simulation-based-inference (neural posterior estimation) baseline: cheap,
 exact-form density, and already able to represent genuine multi-modality
 (one target spectrum -> several distinct plausible designs) as long as the
 number of mixture components is enough to cover them.
+
+Mixture components are prone to collapsing onto each other under plain
+random init (see ``initialize_from_data``'s docstring); ``train_all.py``
+warm-starts them via k-means++ on a batch of real training designs right
+after construction, before any gradient step.
 """
 
 from __future__ import annotations
@@ -94,3 +99,69 @@ class MDN(nn.Module):
         flat = mu_s + std_s * eps  # (B, S, D)
         log_prob = self._mixture_log_prob(flat, logits, mu, std)  # (B, S)
         return flat, log_prob
+
+    @torch.no_grad()
+    def initialize_from_data(self, designs: torch.Tensor, iters: int = 25, seed: int = 0) -> None:
+        """Warm-start the K mixture-component means via k-means++ clustering
+        on a batch of real (flat or (num_res,5)) training designs, instead
+        of leaving them at random init.
+
+        Why: MDN mixtures are a well-documented pain to train well -- with
+        components starting scattered randomly, gradient descent often lets
+        several of them collapse onto the same region or never specialize
+        at all ("component collapse"), simply because of a bad starting
+        point, not any fundamental limit of the mixture-density idea. Since
+        the training loss the first several epochs shows exactly this
+        project's MDN never getting as sharp/confident as Flow or BasisFlow
+        (its NLL never goes negative -- see the training-curves discussion),
+        giving every component a sensible starting region of real design
+        space to own, before gradient descent ever begins, costs nothing at
+        training time and directly targets that failure mode.
+
+        Sets the shared head's final layer so the FIRST forward pass's
+        predicted mu for every component is close to its cluster center
+        regardless of what the (still randomly initialized) spectrum
+        encoder's embedding looks like; training then refines both freely
+        from there. Call this once, right after constructing the model and
+        before training starts, with a batch of real training designs.
+        """
+        flat = flatten_configuration(designs) if designs.dim() == 3 else designs
+        flat = flat.to(torch.float32)
+        n, d = flat.shape
+        k = self.num_components
+        if n < k:
+            raise ValueError(f"Need at least num_components={k} designs to warm-start from, got {n}.")
+        if d != self.design_dim:
+            raise ValueError(f"designs' flat dim {d} does not match design_dim={self.design_dim}.")
+
+        # k-means++ init (spread the starting centers out, rather than
+        # picking them uniformly at random, which can start two centers
+        # right next to each other and waste a component immediately).
+        generator = torch.Generator().manual_seed(seed)
+        first_idx = int(torch.randint(0, n, (1,), generator=generator).item())
+        centers = [flat[first_idx]]
+        for _ in range(k - 1):
+            stacked = torch.stack(centers, dim=0)
+            dist_sq = ((flat[:, None, :] - stacked[None, :, :]) ** 2).sum(dim=-1).min(dim=-1).values
+            probs = dist_sq / dist_sq.sum().clamp(min=1e-12)
+            next_idx = int(torch.multinomial(probs, 1, generator=generator).item())
+            centers.append(flat[next_idx])
+        centers = torch.stack(centers, dim=0)  # (K, D)
+
+        # Plain Lloyd's-algorithm refinement.
+        for _ in range(iters):
+            dists = ((flat[:, None, :] - centers[None, :, :]) ** 2).sum(dim=-1)  # (N, K)
+            assignment = dists.argmin(dim=-1)
+            new_centers = centers.clone()
+            for component in range(k):
+                mask = assignment == component
+                if mask.any():
+                    new_centers[component] = flat[mask].mean(dim=0)
+            centers = new_centers
+
+        final_linear = self.head.net[-1]
+        if not isinstance(final_linear, nn.Linear):
+            raise TypeError("Expected self.head's final layer to be an nn.Linear.")
+        mu_slice = slice(k, k + k * d)
+        final_linear.bias[mu_slice] = centers.reshape(-1)
+        final_linear.weight[mu_slice].mul_(0.01)

@@ -59,6 +59,8 @@ SPAWN_CONTEXT = multiprocessing.get_context("spawn")
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import functools
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -67,6 +69,7 @@ import numpy as np
 import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
@@ -87,6 +90,14 @@ def load_inverse_model(name: str):
     model = MODEL_BUILDERS[name]()
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+    if isinstance(model, PadINN) and "padinn_temperature" in checkpoint:
+        # Rebind this instance's sample() default to the temperature
+        # calibrated once at training time (train_all.py), rather than the
+        # class default of 1.0 -- makes every caller that goes through this
+        # loader (evaluate.py/predict.py/evaluate_design.py/
+        # paper_style_report.py) use the calibrated value automatically,
+        # without each needing its own PadINN special-case.
+        model.sample = functools.partial(model.sample, temperature=checkpoint["padinn_temperature"])
     return model, checkpoint["norm_params"]
 
 

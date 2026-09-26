@@ -1,55 +1,89 @@
-"""SurrogateInverse: an inverse-design model trained with a FROZEN, already-
-trained forward-operator checkpoint acting as a differentiable simulator,
+"""SurrogateInverse: an inverse-design model trained with FROZEN, already-
+trained forward-operator checkpoints acting as differentiable simulators,
 instead of ground-truth designs being the only training signal.
 
 Every other model in this package (MDN/cVAE/Flow/Diffusion/BasisFlow/PadINN)
 is trained purely to match designs (or, for BasisFlow/PadINN, ALSO a
 spectrum predicted by a small forward component *trained jointly* alongside
-the inverse direction, from scratch). This model instead reuses one of the
-already-trained, already-verified erp_forward_operators/ checkpoints (DCO by
-default, the best-performing of the 10 on the 100k dataset, RMSE=2.52 dB) as
-a frozen "simulator-in-the-loop": sample a candidate design from the
-predicted posterior, run it through the frozen DCO surrogate, and score how
-well the resulting predicted ERP spectrum matches the true target spectrum.
-This is standard amortized-variational-inference-with-a-simulator practice
-(the surrogate plays the role a real physics simulator would in "simulation-
-based inference," except here it is itself differentiable, so gradients flow
-through it into the posterior network without needing a score-function
+the inverse direction, from scratch). This model instead reuses
+already-trained, already-verified erp_forward_operators/ checkpoints as a
+frozen "simulator-in-the-loop": sample candidate designs from the predicted
+posterior, run them through the frozen surrogate(s), and score how well the
+resulting predicted ERP spectra match the true target spectrum. This is
+standard amortized-variational-inference-with-a-simulator practice (the
+surrogate plays the role a real physics simulator would in "simulation-
+based inference," except here it is itself differentiable, so gradients
+flow through it into the posterior network without needing a score-function
 estimator).
+
+Three design points, each fixing a real limitation found by inspection this
+session:
+
+1. **Mixture-of-Gaussians posterior, not a single Gaussian.** A single
+   diagonal Gaussian can only ever represent ONE region of design space --
+   but this project's inverse problem is genuinely multi-modal (the m/k
+   degeneracy f_t=sqrt(k/m)/2pi alone means several distinct (m,k) pairs
+   can produce the same spectrum). A single-Gaussian posterior is
+   structurally forced to average distinct valid solutions into one wide,
+   low-quality blob sitting between them. Swapping in an MDN-style mixture
+   head (same convention as mdn.py: K components, softmax-mixture NLL,
+   multinomial + gather sampling) keeps everything else about this model
+   unchanged while removing that structural ceiling.
+
+2. **Multiple reparameterized samples per training step for the surrogate
+   consistency term, not one.** The original version drew exactly one
+   design sample per training example to check against the surrogate --
+   a single noisy draw standing in for "how good is the whole posterior,"
+   which is a high-variance gradient estimate. Averaging the surrogate
+   loss over ``num_surrogate_samples`` draws (batched, not looped) gives a
+   materially less noisy training signal for negligible extra cost (the
+   surrogate forward pass is frozen and cheap).
+
+3. **An ensemble of surrogates, not one.** Trusting a single forward
+   operator's predicted spectrum as if it were ground truth silently
+   teaches this model to satisfy THAT operator's own idiosyncrasies (e.g.
+   any near-degenerate-peak blind spots) rather than the real physics.
+   Averaging the consistency loss across multiple, architecturally
+   different frozen forward operators (DCO + GNO by default) makes the
+   training signal robust to any one architecture's particular quirks.
 
 Design:
   1. Encode the target spectrum (shared ``SpectrumEncoder``, same tool every
      model in this package conditions on).
-  2. Predict a diagonal Gaussian posterior q(design | spectrum): (mu, log_var)
-     over the flat design_dim-sized design vector, in THIS model's own
-     normalized design space (z-scored the same way every other inverse
-     model's training target is, via common.py's conventions).
+  2. Predict a Gaussian-mixture posterior q(design | spectrum): (logits,
+     mu, std) over K components, each a diagonal Gaussian over the flat
+     design_dim-sized design vector, in THIS model's own normalized design
+     space (z-scored the same way every other inverse model's training
+     target is, via common.py's conventions).
   3. Two loss terms:
-       - design_nll: the TRUE design's Gaussian NLL under q(.|spectrum) --
-         direct ground-truth supervision, exactly analogous to cVAE's own
-         reconstruction NLL, giving gradient to both mu and log_var.
-       - surrogate_spectrum_loss: reparameterize-sample a design from
-         q(.|spectrum), run it through the frozen DCO surrogate, and score
-         the resulting predicted ERP spectrum against the TRUE target
-         spectrum using the SAME ``erp_spectrum_loss`` every forward
-         operator in this repo trains against (MSE + a first-difference/
-         slope penalty + a multi-peak value penalty summed over every one
-         of the true spectrum's resonance peaks, not plain MSE) -- an
-         ERP-space consistency signal ground-truth design MSE alone can't
-         give (two different designs producing the same spectrum are
-         equally right under this term, unlike raw design MSE).
-  4. Both terms cross between this model's own normalization and DCO's own
-     (the two are fit from different dataset subsets/sizes -- see
-     ``prepare_inverse_data``'s 10k default vs. DCO's 100k training run --
-     so they are NOT guaranteed numerically identical). All such crossings
-     go through PHYSICAL units (m/k/f_t/x/y in real values, ERP in real dB)
-     as the common intermediate, never assuming the two normalizations
-     happen to match.
+       - design_nll: the TRUE design's exact mixture log-density under
+         q(.|spectrum) -- direct ground-truth supervision, analogous to
+         MDN's own NLL, giving gradient to logits/mu/std alike.
+       - surrogate_spectrum_loss: reparameterize-sample ``num_surrogate_
+         samples`` designs from q(.|spectrum) (each from an independently
+         drawn mixture component), run each through EVERY frozen surrogate
+         in the ensemble, and score the resulting predicted ERP spectra
+         against the TRUE target spectrum using the SAME
+         ``erp_spectrum_loss`` every forward operator in this repo trains
+         against (MSE + a first-difference/slope penalty + a multi-peak
+         value penalty summed over every one of the true spectrum's
+         resonance peaks, not plain MSE) -- an ERP-space consistency
+         signal ground-truth design MSE alone can't give (two different
+         designs producing the same spectrum are equally right under this
+         term, unlike raw design MSE). Averaged over both the sample draws
+         and the surrogate ensemble.
+  4. Both terms cross between this model's own normalization and EACH
+     surrogate's own (each may be fit from a different dataset
+     subset/size -- see ``prepare_inverse_data``'s 10k default vs. the
+     forward operators' 100k training runs -- so they are NOT guaranteed
+     numerically identical). All such crossings go through PHYSICAL units
+     (m/k/f_t/x/y in real values, ERP in real dB) as the common
+     intermediate, never assuming normalizations happen to match.
 
-The surrogate's own parameters are frozen (``requires_grad_(False)``) and
-never touched by the optimizer -- only used as a fixed differentiable
-function. It stays in ``eval()`` mode permanently (a ``train()`` call on
-this whole model does not affect the frozen submodule, see ``train()``
+Every surrogate's own parameters are frozen (``requires_grad_(False)``) and
+never touched by the optimizer -- only used as fixed differentiable
+functions. They stay in ``eval()`` mode permanently (a ``train()`` call on
+this whole model does not affect the frozen submodules, see ``train()``
 override below).
 """
 
@@ -57,98 +91,182 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import torch
 import torch.nn as nn
 
-from erp_forward_operators.dco import build_model as build_dco_surrogate
+from erp_forward_operators.dco import build_model as _build_dco
+from erp_forward_operators.gno import build_model as _build_gno
 from erp_forward_operators.neural_operator_utils import MLP, erp_spectrum_loss
 
 from .common import SpectrumEncoder, flatten_configuration
 
 _CONFIG_FIELDS = ("m", "k", "f_t", "x", "y")
 
+# Extend this if a surrogate checkpoint from a different forward-operator
+# architecture is ever used -- keyed by the "operator_name" every checkpoint
+# already carries (see erp_forward_operators.neural_operator_utils.
+# save_operator_checkpoint), so a new architecture only needs one new entry.
+_SURROGATE_BUILDERS = {"dco": _build_dco, "gno": _build_gno}
 
-def _gaussian_log_prob(x: torch.Tensor, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
-    """Diagonal Gaussian log-density, summed over the last dim."""
-    return (-0.5 * ((x - mu) ** 2 / torch.exp(log_var) + log_var + math.log(2 * math.pi))).sum(dim=-1)
+DEFAULT_SURROGATE_CHECKPOINTS = (
+    "erp_forward_operators/models/dco_erp.pth",
+    "erp_forward_operators/models/gno_erp.pth",
+)
+
+
+def _mixture_log_prob(flat: torch.Tensor, logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+    """Same convention/formula as mdn.py's ``MDN._mixture_log_prob``.
+
+    ``flat``: (B, D) or (B, S, D); ``logits``: (B, K); ``mu``/``std``: (B, K, D).
+    """
+    log_weights = torch.log_softmax(logits, dim=-1)  # (B, K)
+    if flat.dim() == 3:
+        x = flat[:, :, None, :]  # (B, S, 1, D)
+        mu_e = mu[:, None, :, :]  # (B, 1, K, D)
+        std_e = std[:, None, :, :]
+        weights_e = log_weights[:, None, :]  # (B, 1, K)
+    else:
+        x = flat[:, None, :]  # (B, 1, D)
+        mu_e, std_e, weights_e = mu, std, log_weights
+    component_log_prob = (
+        -0.5 * (((x - mu_e) / std_e) ** 2 + 2 * torch.log(std_e) + math.log(2 * math.pi))
+    ).sum(dim=-1)
+    return torch.logsumexp(weights_e + component_log_prob, dim=-1)
 
 
 class SurrogateInverse(nn.Module):
     def __init__(
         self,
         design_dim: int,
-        surrogate_checkpoint: str = "erp_forward_operators/models/dco_erp.pth",
+        surrogate_checkpoints: Sequence[str] = DEFAULT_SURROGATE_CHECKPOINTS,
+        num_components: int = 4,
         embed_dim: int = 96,
         hidden: int = 128,
+        min_std: float = 1e-3,
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
         if self.design_dim % 5 != 0:
             raise ValueError("design_dim must be num_res*5 ([m,k,f_t,x,y] per resonator).")
         self.num_res = self.design_dim // 5
+        self.num_components = int(num_components)
+        self.min_std = float(min_std)
 
         self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim)
-        self.head = MLP([embed_dim, hidden, hidden, 2 * self.design_dim], activation=nn.SiLU)
+        out_dim = self.num_components * (1 + 2 * self.design_dim)
+        self.head = MLP([embed_dim, hidden, hidden, out_dim], activation=nn.SiLU)
 
-        checkpoint = torch.load(Path(surrogate_checkpoint), map_location="cpu", weights_only=False)
-        surrogate_norm = checkpoint["preprocessing_state"]["norm_params"]
-        if int(surrogate_norm["num_res"]) != self.num_res:
-            raise ValueError(
-                f"Surrogate checkpoint was trained with num_res="
-                f"{surrogate_norm['num_res']}, but design_dim={design_dim} implies num_res={self.num_res}."
+        if len(surrogate_checkpoints) == 0:
+            raise ValueError("surrogate_checkpoints must not be empty.")
+
+        surrogates: list[nn.Module] = []
+        config_means, config_stds, erp_means, erp_stds, freq_norms = [], [], [], [], []
+        raw_frequency_hz = torch.from_numpy(_load_frequency_grid())
+        for checkpoint_path in surrogate_checkpoints:
+            checkpoint = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
+            operator_name = str(checkpoint["operator_name"]).lower()
+            if operator_name not in _SURROGATE_BUILDERS:
+                raise ValueError(
+                    f"Unsupported surrogate architecture '{operator_name}' in {checkpoint_path}; "
+                    f"supported: {sorted(_SURROGATE_BUILDERS)}."
+                )
+            surrogate_norm = checkpoint["preprocessing_state"]["norm_params"]
+            if int(surrogate_norm["num_res"]) != self.num_res:
+                raise ValueError(
+                    f"Surrogate checkpoint {checkpoint_path} was trained with num_res="
+                    f"{surrogate_norm['num_res']}, but design_dim={design_dim} implies num_res={self.num_res}."
+                )
+            surrogate = _SURROGATE_BUILDERS[operator_name](num_res=self.num_res, **checkpoint["model_config"])
+            surrogate.load_state_dict(checkpoint["model_state_dict"])
+            surrogate.eval()
+            for parameter in surrogate.parameters():
+                parameter.requires_grad_(False)
+            surrogates.append(surrogate)
+
+            config_means.append([float(surrogate_norm[f"{f}_mean"]) for f in _CONFIG_FIELDS])
+            config_stds.append([float(surrogate_norm[f"{f}_std"]) for f in _CONFIG_FIELDS])
+            erp_means.append(float(surrogate_norm["erp_mean"]))
+            erp_stds.append(float(surrogate_norm["erp_std"]))
+            freq_norms.append(
+                (raw_frequency_hz - float(surrogate_norm["freq_mean"])) / float(surrogate_norm["freq_std"])
             )
-        self.surrogate = build_dco_surrogate(num_res=self.num_res, **checkpoint["model_config"])
-        self.surrogate.load_state_dict(checkpoint["model_state_dict"])
-        self.surrogate.eval()
-        for parameter in self.surrogate.parameters():
-            parameter.requires_grad_(False)
 
-        # Surrogate's own normalization stats, as buffers -- (1, num_res, 5)
-        # for the config fields, scalars for frequency/ERP -- registered so
-        # model.to(device) moves them with everything else.
-        surrogate_mean = torch.tensor([float(surrogate_norm[f"{f}_mean"]) for f in _CONFIG_FIELDS])
-        surrogate_std = torch.tensor([float(surrogate_norm[f"{f}_std"]) for f in _CONFIG_FIELDS])
-        self.register_buffer("surrogate_config_mean", surrogate_mean.view(1, 1, 5))
-        self.register_buffer("surrogate_config_std", surrogate_std.view(1, 1, 5))
-        self.register_buffer("surrogate_erp_mean", torch.tensor(float(surrogate_norm["erp_mean"])))
-        self.register_buffer("surrogate_erp_std", torch.tensor(float(surrogate_norm["erp_std"])))
+        self.surrogates = nn.ModuleList(surrogates)
+        self.num_surrogates = len(surrogates)
 
-        frequency_hz = torch.from_numpy(_load_frequency_grid())
-        freq_norm = (frequency_hz - float(surrogate_norm["freq_mean"])) / float(surrogate_norm["freq_std"])
-        self.register_buffer("surrogate_frequency_norm", freq_norm.float())
+        # Stacked per-surrogate normalization stats, registered as buffers so
+        # model.to(device) moves them with everything else -- (S,1,1,5) for
+        # the config fields, (S,) for ERP, (S, n_freq) for frequency.
+        self.register_buffer(
+            "surrogate_config_mean", torch.tensor(config_means).view(self.num_surrogates, 1, 1, 5)
+        )
+        self.register_buffer(
+            "surrogate_config_std", torch.tensor(config_stds).view(self.num_surrogates, 1, 1, 5)
+        )
+        self.register_buffer("surrogate_erp_mean", torch.tensor(erp_means))
+        self.register_buffer("surrogate_erp_std", torch.tensor(erp_stds))
+        self.register_buffer("surrogate_frequency_norm", torch.stack(freq_norms).float())
 
     def train(self, mode: bool = True):
-        """Keep the frozen surrogate in eval() regardless of this model's own mode."""
+        """Keep every frozen surrogate in eval() regardless of this model's own mode."""
         super().train(mode)
-        self.surrogate.eval()
+        for surrogate in self.surrogates:
+            surrogate.eval()
         return self
 
     # ---------------------------------------------------------
-    # Posterior q(design | spectrum)
+    # Posterior q(design | spectrum): mixture of Gaussians (mdn.py convention)
     # ---------------------------------------------------------
 
-    def encode(self, spectrum: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        h = self.spectrum_encoder(spectrum)
-        mu, log_var = self.head(h).chunk(2, dim=-1)
-        log_var = log_var.clamp(min=-8.0, max=4.0)
-        return mu, log_var
+    def _params(self, spectrum: torch.Tensor):
+        embedding = self.spectrum_encoder(spectrum)
+        raw = self.head(embedding)
+        k, d = self.num_components, self.design_dim
+        logits = raw[:, :k]
+        mu = raw[:, k : k + k * d].view(-1, k, d)
+        log_std = raw[:, k + k * d :].view(-1, k, d)
+        std = nn.functional.softplus(log_std) + self.min_std
+        return logits, mu, std
+
+    @staticmethod
+    def _reparameterized_samples(
+        logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor, num_draws: int
+    ) -> torch.Tensor:
+        """Draw ``num_draws`` reparameterized, mixture-weighted samples per
+        batch element. Which COMPONENT is used per draw is a non-differentiable
+        categorical choice (same as MDN's own ``sample()``) -- the mixture
+        weights still get gradient through ``design_nll``'s exact log-density,
+        not through this sampling path; only mu/std of the chosen component
+        need to be (and are) differentiable here, via the reparameterization
+        trick. Returns flat ``(B*num_draws, design_dim)``.
+        """
+        b, k, d = mu.shape
+        weights = torch.softmax(logits, dim=-1)
+        component = torch.multinomial(weights, num_draws, replacement=True)  # (B, num_draws)
+        mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
+        std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
+        samples = mu_s + std_s * torch.randn_like(std_s)  # (B, num_draws, D)
+        return samples.reshape(b * num_draws, d)
 
     # ---------------------------------------------------------
-    # Frozen-surrogate forward pass, with the physical-units bridge
+    # Frozen-surrogate-ensemble forward pass, with the physical-units bridge
     # ---------------------------------------------------------
 
     def _surrogate_predicted_erp(
         self, design_norm: torch.Tensor, own_norm_params: Mapping[str, object]
     ) -> torch.Tensor:
-        """Flat design (THIS model's own normalized space) -> predicted ERP
-        in THIS model's own normalized ERP space (so callers can MSE it
-        directly against a ``spectrum`` batch from this model's own loaders).
+        """Flat design (THIS model's own normalized space) -> predicted ERP,
+        one row per frozen surrogate in the ensemble, each in THIS model's
+        own normalized ERP space (so callers can score it directly against a
+        ``spectrum`` batch from this model's own loaders). Returns
+        ``(num_surrogates, batch, n_freq)``.
 
-        Bridges through physical units: this model's own normalization ->
-        physical [m,k,f_t,x,y]/Hz/dB -> the surrogate's own normalization ->
-        DCO forward pass -> physical dB -> this model's own ERP normalization.
+        Bridges through physical units, independently per surrogate: this
+        model's own normalization -> physical [m,k,f_t,x,y]/Hz/dB -> that
+        surrogate's own normalization -> its forward pass -> physical dB ->
+        this model's own ERP normalization.
         """
         batch = design_norm.shape[0]
         configuration_own = design_norm.view(batch, self.num_res, 5)
@@ -161,17 +279,17 @@ class SurrogateInverse(nn.Module):
         ).view(1, 1, 5)
         configuration_physical = configuration_own * own_std + own_mean
 
-        configuration_surrogate = (
-            configuration_physical - self.surrogate_config_mean
-        ) / self.surrogate_config_std
-
-        frequency = self.surrogate_frequency_norm[None, :, None].expand(batch, -1, -1)
-        erp_surrogate_norm = self.surrogate(configuration_surrogate, frequency).squeeze(-1)  # (B, n_freq)
-        erp_physical = erp_surrogate_norm * self.surrogate_erp_std + self.surrogate_erp_mean
-
         own_erp_mean = float(own_norm_params["erp_mean"])
         own_erp_std = float(own_norm_params["erp_std"])
-        return (erp_physical - own_erp_mean) / own_erp_std
+
+        predictions = []
+        for s, surrogate in enumerate(self.surrogates):
+            configuration_s = (configuration_physical - self.surrogate_config_mean[s]) / self.surrogate_config_std[s]
+            frequency_s = self.surrogate_frequency_norm[s][None, :, None].expand(batch, -1, -1)
+            erp_s_norm = surrogate(configuration_s, frequency_s).squeeze(-1)  # (B, n_freq)
+            erp_physical = erp_s_norm * self.surrogate_erp_std[s] + self.surrogate_erp_mean[s]
+            predictions.append((erp_physical - own_erp_mean) / own_erp_std)
+        return torch.stack(predictions, dim=0)  # (S, B, n_freq)
 
     # ---------------------------------------------------------
     # Training / sampling
@@ -185,37 +303,46 @@ class SurrogateInverse(nn.Module):
         surrogate_weight: float = 1.0,
         slope_weight: float = 0.5,
         peak_weight: float = 0.05,
+        num_surrogate_samples: int = 4,
     ) -> torch.Tensor:
         flat_design = flatten_configuration(design)
-        mu, log_var = self.encode(spectrum)
+        logits, mu, std = self._params(spectrum)
 
-        design_nll = -_gaussian_log_prob(flat_design, mu, log_var).mean()
+        design_nll = -_mixture_log_prob(flat_design, logits, mu, std).mean()
 
-        std = torch.exp(0.5 * log_var)
-        design_sample = mu + std * torch.randn_like(std)
-        predicted_spectrum = self._surrogate_predicted_erp(design_sample, own_norm_params)
-        surrogate_loss = erp_spectrum_loss(
-            predicted_spectrum, spectrum, slope_weight=slope_weight, peak_weight=peak_weight
+        b = spectrum.shape[0]
+        design_samples = self._reparameterized_samples(logits, mu, std, num_surrogate_samples)  # (B*M, D)
+        predicted = self._surrogate_predicted_erp(design_samples, own_norm_params)  # (S, B*M, n_freq)
+
+        spectrum_expanded = (
+            spectrum[:, None, :].expand(-1, num_surrogate_samples, -1).reshape(b * num_surrogate_samples, -1)
         )
+        target = spectrum_expanded[..., None]  # (B*M, n_freq, 1) -- erp_spectrum_loss expects a trailing dim
+        surrogate_losses = [
+            erp_spectrum_loss(predicted[s][..., None], target, slope_weight=slope_weight, peak_weight=peak_weight)
+            for s in range(self.num_surrogates)
+        ]
+        surrogate_loss = torch.stack(surrogate_losses).mean()
 
         return design_nll + float(surrogate_weight) * surrogate_loss
 
     @torch.no_grad()
     def sample(self, spectrum: torch.Tensor, num_samples: int = 1):
         """Returns ``(flat_designs, log_prob)``, both ``(B, num_samples, ...)``,
-        matching MDN/cVAE/Flow's convention -- the posterior here is an
-        explicit diagonal Gaussian, so its log-density is exact and cheap.
+        matching MDN/cVAE/Flow's convention -- the posterior here is a
+        mixture of Gaussians (same family as MDN), so its exact mixture
+        log-density is cheap and reported for every returned sample, not
+        just the sampled component's.
         """
-        b = spectrum.shape[0]
-        mu, log_var = self.encode(spectrum)
-        std = torch.exp(0.5 * log_var)
-
-        mu_e = mu[:, None, :].expand(-1, num_samples, -1).reshape(b * num_samples, -1)
-        std_e = std[:, None, :].expand(-1, num_samples, -1).reshape(b * num_samples, -1)
-        log_var_e = log_var[:, None, :].expand(-1, num_samples, -1).reshape(b * num_samples, -1)
-        z = mu_e + std_e * torch.randn_like(std_e)
-        log_prob = _gaussian_log_prob(z, mu_e, log_var_e)
-        return z.view(b, num_samples, self.design_dim), log_prob.view(b, num_samples)
+        logits, mu, std = self._params(spectrum)
+        b, k, d = mu.shape
+        weights = torch.softmax(logits, dim=-1)
+        component = torch.multinomial(weights, num_samples, replacement=True)  # (B, S)
+        mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
+        std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
+        flat = mu_s + std_s * torch.randn_like(std_s)  # (B, S, D)
+        log_prob = _mixture_log_prob(flat, logits, mu, std)  # (B, S)
+        return flat, log_prob
 
 
 def _load_frequency_grid():

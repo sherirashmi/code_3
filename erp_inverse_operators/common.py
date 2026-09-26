@@ -151,8 +151,16 @@ def denormalize_design(flat_design: np.ndarray, num_res: int, norm_params: Mappi
     return denormalize_configuration_array(configuration, norm_params)
 
 
-def save_checkpoint(model: nn.Module, norm_params: Mapping[str, object], filename: str) -> None:
+def save_checkpoint(
+    model: nn.Module,
+    norm_params: Mapping[str, object],
+    filename: str,
+    extra: Mapping[str, object] | None = None,
+) -> None:
     path = Path(filename)
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"model_state_dict": model.state_dict(), "norm_params": dict(norm_params)}, path)
+    payload = {"model_state_dict": model.state_dict(), "norm_params": dict(norm_params)}
+    if extra:
+        payload.update(dict(extra))
+    torch.save(payload, path)
     print(f"Checkpoint saved: {path}")

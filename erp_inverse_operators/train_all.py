@@ -52,8 +52,61 @@ from utils.erp_dataset import denormalize_erp_array
 
 from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
+from erp_inverse_operators.mdn import MDN
+from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM
 from erp_inverse_operators.surrogate_inverse import SurrogateInverse
+
+
+def _warm_start_if_mdn(model, loaders) -> None:
+    """MDN's mixture-component means benefit from a k-means warm-start on
+    real designs (see MDN.initialize_from_data's docstring) -- every other
+    registry model has no equivalent hook, so this is a targeted no-op for
+    them. Pulls one batch's worth of real training designs from the loader
+    already in hand, so no extra data loading is needed.
+    """
+    if not isinstance(model, MDN):
+        return
+    for _spectrum, design in loaders["train"]:
+        model.initialize_from_data(design)
+        break
+
+
+def _padinn_checkpoint_extra(model, loaders, max_calibration_examples: int = 500) -> dict | None:
+    """PadINN's raw (temperature=1) samples were found to be severely
+    overconfident (see padding_inn.py's calibrate_temperature docstring);
+    picking a good temperature needs held-out data, so this runs once right
+    after training and stores the result in the checkpoint, where
+    evaluate.py's load_inverse_model picks it up and makes it every later
+    caller's (predict.py/evaluate_design.py/paper_style_report.py's, via
+    that same loader) default -- rather than leaving calibrate_temperature
+    a correct but never-invoked method.
+
+    Capped to ``max_calibration_examples`` validation rows: calibration draws
+    ``num_samples`` (64 by default) posterior samples per row per candidate
+    temperature, each requiring a full flow forward pass -- on the full
+    validation split (thousands of rows for the 100k-configuration dataset)
+    that's an expensive one-off pass on this project's CPU-only environment
+    for no added statistical benefit (500 rows x design_dim already gives a
+    coverage estimate over thousands of values).
+    """
+    if not isinstance(model, PadINN):
+        return None
+    val_spectrum, val_design = [], []
+    collected = 0
+    for spectrum, design in loaders["val"]:
+        val_spectrum.append(spectrum)
+        val_design.append(design)
+        collected += spectrum.shape[0]
+        if collected >= max_calibration_examples:
+            break
+    val_spectrum = torch.cat(val_spectrum, dim=0)[:max_calibration_examples]
+    val_design = torch.cat(val_design, dim=0)[:max_calibration_examples]
+    model.eval()
+    temperature = model.calibrate_temperature(val_spectrum, val_design)
+    print(f"[PadINN] calibrated sample() temperature = {temperature} (validation coverage check, "
+          f"{val_spectrum.shape[0]} examples)")
+    return {"padinn_temperature": temperature}
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
@@ -128,8 +181,12 @@ def train_one_inverse_model(
         dataset_file=dataset_file, seed=seed,
     )
     model = spec["build"]()
+    _warm_start_if_mdn(model, loaders)
     history = train_one(model, loaders, spec["loss_fn"], epochs=epochs, lr=spec["lr"], name=spec["short"])
-    save_checkpoint(model, dataset.norm_params, f"erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth")
+    extra = _padinn_checkpoint_extra(model, loaders)
+    save_checkpoint(
+        model, dataset.norm_params, f"erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth", extra=extra
+    )
     return model, history, dataset
 
 
@@ -145,10 +202,11 @@ def main(
     )
     norm = dataset.norm_params
 
-    models = {
-        spec["short"]: (spec["build"](), spec["loss_fn"], spec["lr"])
-        for spec in INVERSE_MODELS.values()
-    }
+    models = {}
+    for spec in INVERSE_MODELS.values():
+        built_model = spec["build"]()
+        _warm_start_if_mdn(built_model, loaders)
+        models[spec["short"]] = (built_model, spec["loss_fn"], spec["lr"])
 
     # SurrogateInverse isn't in INVERSE_MODELS (its loss needs this dataset's
     # own norm_params, unavailable to a zero-arg registry build() lambda --
@@ -166,7 +224,8 @@ def main(
         print("#" * 70)
         history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name=name)
         histories[name] = history
-        save_checkpoint(model, norm, f"erp_inverse_operators/models/inverse_{name.lower()}.pth")
+        extra = _padinn_checkpoint_extra(model, loaders)
+        save_checkpoint(model, norm, f"erp_inverse_operators/models/inverse_{name.lower()}.pth", extra=extra)
 
     # ------------------------------------------------------------------
     # Validation + per-sample reporting.
