@@ -34,7 +34,12 @@ import torch
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data, save_checkpoint
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
-from erp_inverse_operators.surrogate_inverse import DEFAULT_SURROGATE_CHECKPOINTS, SurrogateInverse
+from erp_inverse_operators.surrogate_inverse import (
+    _CONFIG_FIELDS,
+    _DESIGN_PHYSICAL_BOUNDS,
+    DEFAULT_SURROGATE_CHECKPOINTS,
+    SurrogateInverse,
+)
 from erp_inverse_operators.train_all import train_one
 from utils.erp_dataset import denormalize_erp_array
 
@@ -97,6 +102,7 @@ def main(
     print(f"Saved {OUT_DIR / 'surrogate_inverse_training_curves.png'}")
 
     _evaluate(model, dataset, loaders, norm_params)
+    _plot_parameter_recovery(model, loaders, norm_params)
     return model, history, dataset
 
 
@@ -148,6 +154,89 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
     fig.savefig(OUT_DIR / "surrogate_inverse_validation_reconstructions.png", dpi=150)
     plt.close(fig)
     print(f"Saved {OUT_DIR / 'surrogate_inverse_validation_reconstructions.png'}")
+
+
+def _plot_parameter_recovery(model, loaders, norm_params, num_bins: int = 8, max_examples: int = 3000):
+    """Predicted-vs-true design parameters, binned across the COMPLETE
+    physical range each field was Latin-Hypercube-sampled within (same
+    ``_DESIGN_PHYSICAL_BOUNDS`` this model soft-clamps to, not just the
+    empirical min/max of whatever test examples happen to be drawn) --
+    not a scatter plot, a box plot per bin, since with a deterministic
+    point-estimate model the interesting question per parameter is "given
+    the true value falls in this range, what's the SPREAD of predictions
+    the model makes" rather than one point per example.
+
+    Every one of up to ``max_examples`` held-out test targets contributes
+    ``NUM_RES`` (m,k,f_t,x,y) tuples (flattened across resonators, same
+    convention as evaluate_design.py), giving enough points per bin for a
+    meaningful box plot even though there's only one prediction per
+    target (no posterior to draw multiple samples from anymore).
+    """
+    model.eval()
+    test_spectrum, test_design = [], []
+    for spectrum, design in loaders["test"]:
+        test_spectrum.append(spectrum)
+        test_design.append(design)
+        if sum(s.shape[0] for s in test_spectrum) >= max_examples:
+            break
+    test_spectrum = torch.cat(test_spectrum, dim=0)[:max_examples]
+    test_design = torch.cat(test_design, dim=0)[:max_examples]
+    n = test_spectrum.shape[0]
+
+    with torch.no_grad():
+        predicted = model.sample(test_spectrum, num_samples=1)[:, 0, :]  # (n, D)
+    predicted_physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)  # (n, num_res, 5)
+    true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm_params)
+
+    fig, axes = plt.subplots(1, len(_CONFIG_FIELDS), figsize=(4.6 * len(_CONFIG_FIELDS), 4.6))
+    for col, field in enumerate(_CONFIG_FIELDS):
+        true_vals = true_physical[..., col].ravel()
+        pred_vals = predicted_physical[..., col].ravel()
+
+        lo, hi = _DESIGN_PHYSICAL_BOUNDS[field]  # complete dataset-generation range, not the sample's own min/max
+        edges = np.linspace(lo, hi, num_bins + 1)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax = axes[col]
+        box_data, positions, labels = [], [], []
+        for b in range(num_bins):
+            in_bin = (true_vals >= edges[b]) & (true_vals < edges[b + 1] if b < num_bins - 1 else true_vals <= edges[b + 1])
+            values = pred_vals[in_bin]
+            if values.size == 0:
+                continue
+            box_data.append(values)
+            positions.append(centers[b])
+            labels.append(f"{edges[b]:.2g}–{edges[b + 1]:.2g}")
+
+        width = 0.7 * (edges[1] - edges[0])
+        ax.boxplot(
+            box_data, positions=positions, widths=width, showfliers=False,
+            patch_artist=True, boxprops=dict(facecolor="#4C72B0", alpha=0.6),
+            medianprops=dict(color="black"),
+        )
+        # Overrides boxplot's own (unreadable, full-float-precision) auto
+        # ticks with one short label per bin EDGE, so the x-axis reads as
+        # the complete range split into num_bins intervals.
+        ax.set_xticks(edges)
+        ax.set_xticklabels([f"{e:.3g}" for e in edges], rotation=45, ha="right", fontsize=7)
+        ax.plot([lo, hi], [lo, hi], "k--", lw=1.3, label="predicted = true" if col == 0 else None)
+        ax.set_xlim(lo, hi)
+        ax.set_xlabel(f"True {field} (complete range)")
+        if col == 0:
+            ax.set_ylabel("Predicted value (box = distribution per true-value bin)")
+            ax.legend(fontsize=8, loc="upper left")
+        ax.set_title(field, fontsize=11)
+        ax.grid(alpha=0.3)
+
+    fig.suptitle(
+        f"SurrogateInverse parameter recovery: predicted value spread per true-value bin "
+        f"({n} test targets x {NUM_RES} resonators = {n * NUM_RES} points/field, {num_bins} bins across each field's full generation range)",
+        fontsize=12,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.savefig(OUT_DIR / "surrogate_inverse_parameter_recovery.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved {OUT_DIR / 'surrogate_inverse_parameter_recovery.png'}")
 
 
 if __name__ == "__main__":
