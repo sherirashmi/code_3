@@ -99,10 +99,26 @@ import torch.nn as nn
 from erp_forward_operators.dco import build_model as _build_dco
 from erp_forward_operators.gno import build_model as _build_gno
 from erp_forward_operators.neural_operator_utils import MLP, erp_spectrum_loss
+from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
 
 from .common import SpectrumEncoder, flatten_configuration
 
 _CONFIG_FIELDS = ("m", "k", "f_t", "x", "y")
+
+# The actual generation bounds every training design was Latin-Hypercube-
+# sampled within (see utils.erp_dataset.generate's resonator_bounds() call)
+# -- i.e. literally "the range of the training dataset", not a guess. k has
+# no independent bound of its own (it's derived as m*(2*pi*f_t)**2), so its
+# range here is the loosest box implied by m's and f_t's own corners; this
+# doesn't require every (m, k, f_t) to be mutually consistent, only that
+# each field individually stays where the surrogates actually saw data.
+_DESIGN_PHYSICAL_BOUNDS = {
+    "m": (m_min, m_max),
+    "k": (m_min * (2 * math.pi * fmin) ** 2, m_max * (2 * math.pi * fmax) ** 2),
+    "f_t": (fmin, fmax),
+    "x": (edge_margin, Lx - edge_margin),
+    "y": (edge_margin, Ly - edge_margin),
+}
 
 # Extend this if a surrogate checkpoint from a different forward-operator
 # architecture is ever used -- keyed by the "operator_name" every checkpoint
@@ -209,6 +225,17 @@ class SurrogateInverse(nn.Module):
         self.register_buffer("surrogate_erp_std", torch.tensor(erp_stds))
         self.register_buffer("surrogate_frequency_norm", torch.stack(freq_norms).float())
 
+        # Clamp bounds for the physical configuration fed to the frozen
+        # surrogates -- see _surrogate_predicted_erp's docstring for why.
+        self.register_buffer(
+            "design_physical_min",
+            torch.tensor([_DESIGN_PHYSICAL_BOUNDS[f][0] for f in _CONFIG_FIELDS]).view(1, 1, 5),
+        )
+        self.register_buffer(
+            "design_physical_max",
+            torch.tensor([_DESIGN_PHYSICAL_BOUNDS[f][1] for f in _CONFIG_FIELDS]).view(1, 1, 5),
+        )
+
     def train(self, mode: bool = True):
         """Keep every frozen surrogate in eval() regardless of this model's own mode."""
         super().train(mode)
@@ -267,6 +294,21 @@ class SurrogateInverse(nn.Module):
         model's own normalization -> physical [m,k,f_t,x,y]/Hz/dB -> that
         surrogate's own normalization -> its forward pass -> physical dB ->
         this model's own ERP normalization.
+
+        The physical configuration is clamped to ``_DESIGN_PHYSICAL_BOUNDS``
+        (the real training-dataset generation range) before being handed to
+        the surrogates. ``design_norm`` comes from a reparameterized Gaussian
+        sample (``_reparameterized_samples``), which has unbounded support --
+        early in training especially, a sample can land far outside every
+        design field's physical range, querying the frozen surrogates on
+        inputs wildly outside what they were ever trained on. Their output
+        there is meaningless (not "wrong physics", just extrapolation noise),
+        which otherwise pollutes the consistency-loss gradient with signal
+        that has nothing to do with the actual posterior quality. Clamping
+        keeps every surrogate query inside its trusted input distribution;
+        ``torch.clamp`` is differentiable (gradient 1 inside the bounds, 0
+        outside), so this doesn't block training -- it just stops rewarding
+        the posterior for wandering into physically impossible territory.
         """
         batch = design_norm.shape[0]
         configuration_own = design_norm.view(batch, self.num_res, 5)
@@ -278,6 +320,9 @@ class SurrogateInverse(nn.Module):
             [float(own_norm_params[f"{f}_std"]) for f in _CONFIG_FIELDS], device=design_norm.device
         ).view(1, 1, 5)
         configuration_physical = configuration_own * own_std + own_mean
+        configuration_physical = torch.clamp(
+            configuration_physical, self.design_physical_min, self.design_physical_max
+        )
 
         own_erp_mean = float(own_norm_params["erp_mean"])
         own_erp_std = float(own_norm_params["erp_std"])
