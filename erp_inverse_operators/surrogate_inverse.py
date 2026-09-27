@@ -95,10 +95,13 @@ _DESIGN_PHYSICAL_BOUNDS = {
 # architecture is ever used -- keyed by the "operator_name" every checkpoint
 # already carries (see erp_forward_operators.neural_operator_utils.
 # save_operator_checkpoint), so a new architecture only needs one new entry.
-_SURROGATE_BUILDERS = {"dco": _build_dco, "gno": _build_gno}
+# "dco_staged" is the staged-curriculum DCO variant (peak term introduced
+# only in a late fine-tuning phase) -- same architecture/build function as
+# plain DCO, just a different checkpoint's worth of trained weights.
+_SURROGATE_BUILDERS = {"dco": _build_dco, "dco_staged": _build_dco, "gno": _build_gno}
 
 DEFAULT_SURROGATE_CHECKPOINTS = (
-    "erp_forward_operators/models/dco_erp.pth",
+    "erp_forward_operators/models/dco_staged_erp.pth",
     "erp_forward_operators/models/gno_erp.pth",
 )
 
@@ -320,7 +323,16 @@ class SurrogateInverse(nn.Module):
         surrogate_weight: float = 1.0,
         slope_weight: float = 0.5,
         peak_weight: float = 0.05,
+        peak_window: int = 7,
     ) -> torch.Tensor:
+        """``slope_weight``/``peak_weight``/``peak_window`` are passed straight
+        through to ``erp_spectrum_loss`` -- the EXACT SAME loss function, same
+        default weights, that every forward operator (including this model's
+        own frozen DCO/GNO ensemble) trains against: MSE + a first-difference
+        slope penalty + a peak-value penalty summed over EVERY one of the
+        true spectrum's resonance peaks (not just the tallest one -- see
+        ``erp_spectrum_loss``'s own docstring for the "ALL peaks" detail).
+        """
         flat_design = flatten_configuration(design)
         predicted_design = self._predict_design(spectrum)  # (B, D)
 
@@ -329,7 +341,10 @@ class SurrogateInverse(nn.Module):
         predicted = self._surrogate_predicted_erp(predicted_design, own_norm_params)  # (S, B, n_freq)
         target = spectrum[..., None]  # (B, n_freq, 1) -- erp_spectrum_loss expects a trailing dim
         surrogate_losses = [
-            erp_spectrum_loss(predicted[s][..., None], target, slope_weight=slope_weight, peak_weight=peak_weight)
+            erp_spectrum_loss(
+                predicted[s][..., None], target,
+                slope_weight=slope_weight, peak_weight=peak_weight, peak_window=peak_window,
+            )
             for s in range(self.num_surrogates)
         ]
         surrogate_loss = torch.stack(surrogate_losses).mean()

@@ -43,12 +43,18 @@ CHECKPOINT_PATH = "erp_inverse_operators/models/inverse_surrogate.pth"
 
 
 def main(
-    num_configurations: int = 10000,
-    epochs: int = 150,
+    num_configurations: int = 100000,
+    epochs: int = 100,
     batch_size: int = 64,
     lr: float = 5e-4,
     surrogate_weight: float = 1.0,
-    dataset_file: str = "datasets/dataset_erp_ft.pth",
+    slope_weight: float = 0.5,
+    peak_weight: float = 0.05,
+    peak_window: int = 7,
+    dataset_file=(
+        "datasets/dataset_erp_ft_100k_part1.pth",
+        "datasets/dataset_erp_ft_100k_part2.pth",
+    ),
     seed: int = 727,
     surrogate_checkpoints=DEFAULT_SURROGATE_CHECKPOINTS,
 ):
@@ -68,6 +74,9 @@ def main(
             design,
             own_norm_params=norm_params,
             surrogate_weight=surrogate_weight,
+            slope_weight=slope_weight,
+            peak_weight=peak_weight,
+            peak_window=peak_window,
         )
 
     history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name="SurrogateInverse")
