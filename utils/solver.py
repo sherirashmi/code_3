@@ -14,7 +14,21 @@ import numpy as np
 import torch
 from scipy.signal import find_peaks
 
-from utils.physics import *
+from utils.physics import (
+    F0,
+    N,
+    P_ref,
+    X_grid,
+    Y_grid,
+    c_L,
+    dA,
+    freqs,
+    mode_shapes,
+    omega_n,
+    rho_L,
+    xf,
+    yf,
+)
 
 
 # Cached full-grid modal basis and its spatial Gram matrix.

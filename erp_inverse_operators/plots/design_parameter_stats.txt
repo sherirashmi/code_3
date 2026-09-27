@@ -1,0 +1,53 @@
+Design-parameter recovery (150 held-out targets x 3 resonators = 450 points per model/parameter)
+Caveat: the inverse problem is non-unique -- see this file's module docstring.
+==========================================================================================
+
+--- Mass (kg) ---
+Model                 MAE  Pearson r
+MDN                 0.174     0.5512
+cVAE               0.2611     0.0169
+Flow               0.2098     0.4177
+Diffusion          0.2095     0.4401
+BasisFlow          0.2139     0.3970
+PadINN             0.3034     0.1531
+Surrogate          0.2137     0.3204
+
+--- Spring constant (N/m) ---
+Model                 MAE  Pearson r
+MDN             7.856e+04     0.7506
+cVAE            1.433e+05     0.3225
+Flow            8.415e+04     0.7361
+Diffusion       9.332e+04     0.6855
+BasisFlow       8.663e+04     0.7056
+PadINN          3.262e+05     0.2250
+Surrogate       9.398e+04     0.7512
+
+--- Tuned frequency (Hz) ---
+Model                 MAE  Pearson r
+MDN                  10.3     0.9181
+cVAE                 32.8     0.4595
+Flow                14.22     0.8852
+Diffusion            12.1     0.9133
+BasisFlow           13.15     0.9006
+PadINN              30.52     0.5037
+Surrogate           31.45     0.6444
+
+--- x position (m) ---
+Model                 MAE  Pearson r
+MDN                 0.296     0.3110
+cVAE               0.3814     0.0186
+Flow               0.3154     0.2778
+Diffusion          0.2976     0.3314
+BasisFlow          0.3459     0.1906
+PadINN             0.3968     0.1901
+Surrogate          0.3085     0.1299
+
+--- y position (m) ---
+Model                 MAE  Pearson r
+MDN                0.1175     0.0093
+cVAE               0.1159     0.0582
+Flow               0.1123     0.0322
+Diffusion          0.1208     0.0679
+BasisFlow          0.1228     0.0167
+PadINN             0.1303     0.0772
+Surrogate          0.1077    -0.0186

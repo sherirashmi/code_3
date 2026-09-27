@@ -1,0 +1,11 @@
+Inverse-design prediction quality (150 held-out target spectra, best of 8 samples per target, scored with the actual coupled plate-resonator solver -- not a neural forward surrogate)
+====================================================================================================
+Model        MAE (dB)  RMSE (dB)  Pearson r  Mean spec. r      R^2
+----------------------------------------------------------------------------------------------------
+MDN             5.967      9.481     0.5579        0.5575   0.1134
+cVAE            7.752     11.321     0.3690        0.3757  -0.2640
+Flow            6.367      9.860     0.5205        0.5184   0.0411
+Diffusion       4.155      7.253     0.7393        0.7372   0.4811
+BasisFlow       6.056      9.545     0.5479        0.5467   0.1014
+PadINN          5.354      8.574     0.6320        0.6301   0.2750
+Surrogate       7.051     10.596     0.4263        0.4251  -0.1074
