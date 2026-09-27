@@ -132,28 +132,46 @@ DEFAULT_SURROGATE_CHECKPOINTS = (
 )
 
 
-def _soft_clamp(x: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor) -> torch.Tensor:
-    """Smooth alternative to ``torch.clamp`` with a much wider live-gradient region.
+_SOFT_CLAMP_SHARPNESS = 3.0
 
-    ``mid + half_range * tanh((x - mid) / half_range)`` maps all of R into
-    the open interval ``(lo, hi)``. At ``x = mid`` this is exactly the
-    identity with slope 1 (``tanh`` is linear near 0), so values already
-    well inside the range pass through essentially unchanged; moving away
-    from ``mid`` it saturates smoothly toward ``lo``/``hi`` instead of
-    hard-clipping. Unlike ``torch.clamp``, whose gradient is exactly 0 the
-    instant ``x`` leaves ``[lo, hi]``, this one's gradient only shrinks --
-    an input several half-ranges past the boundary (empirically, up to
-    ~8x) still gets a real, if smaller, corrective push back toward the
-    trusted region. In float32, ``tanh`` itself saturates to exactly 1.0
-    for large enough arguments, so truly extreme outliers (~10x+ the
-    half-range out) do round to a zero gradient too -- the same standard
-    precision limit any bounded squashing function hits, not a flaw
-    specific to this use -- but that dead zone sits many multiples of the
-    range's width farther out than a hard clamp's immediate one.
+
+def _soft_clamp(x: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor, sharpness: float = _SOFT_CLAMP_SHARPNESS) -> torch.Tensor:
+    """Smooth alternative to ``torch.clamp`` whose live-gradient region roughly
+    matches the dataset's own range, instead of extending several multiples
+    beyond it.
+
+    ``mid + half_range * tanh(sharpness * (x - mid) / half_range)`` maps all
+    of R into the open interval ``(lo, hi)``. At ``x = mid`` this is exactly
+    the identity scaled by ``sharpness`` (``tanh`` is linear near 0), so
+    values near the range's center pass through with that same slope;
+    moving away from ``mid`` it saturates smoothly toward ``lo``/``hi``
+    instead of hard-clipping.
+
+    ``sharpness`` controls how tightly the saturation hugs the true
+    boundary. With ``sharpness=1`` (plain tanh), a value sitting exactly at
+    the true boundary (``x = hi``) only reaches ~89% of the way there
+    (``tanh(1) ~= 0.762``), and the gradient stays meaningfully nonzero for
+    inputs several range-widths *beyond* the boundary too (empirically, up
+    to ~8x) -- i.e. the "still gets corrective signal" zone is much wider
+    than the dataset's own range, which is more permissive than intended.
+    The default ``sharpness=3`` instead: (a) maps the true boundary itself
+    to ~99.8% of the way to ``hi``/``lo`` (barely any compression of
+    legitimate boundary-adjacent training values), and (b) concentrates the
+    nonzero-gradient recovery zone to roughly the dataset's own width past
+    the edge (empirically negligible by ~1.5x, versus ~8x before) -- an
+    input a little outside the true range still gets pulled back, but the
+    "still meaningfully responsive" region no longer reaches implausibly
+    far into physically-impossible territory. Unlike ``torch.clamp``,
+    whose gradient is exactly 0 the instant ``x`` leaves ``[lo, hi]``, this
+    keeps a real (if small) gradient right at and just past the boundary.
+    In float32, ``tanh`` itself saturates to exactly 1.0 for large enough
+    arguments, so truly extreme outliers do still round to a zero
+    gradient -- the same standard precision limit any bounded squashing
+    function hits, not a flaw specific to this use.
     """
     mid = (lo + hi) / 2
     half_range = (hi - lo) / 2
-    return mid + half_range * torch.tanh((x - mid) / half_range)
+    return mid + half_range * torch.tanh(sharpness * (x - mid) / half_range)
 
 
 def _mixture_log_prob(flat: torch.Tensor, logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
