@@ -3,71 +3,45 @@ trained forward-operator checkpoints acting as differentiable simulators,
 instead of ground-truth designs being the only training signal.
 
 Every other model in this package (MDN/cVAE/Flow/Diffusion/BasisFlow/PadINN)
-is trained purely to match designs (or, for BasisFlow/PadINN, ALSO a
-spectrum predicted by a small forward component *trained jointly* alongside
-the inverse direction, from scratch). This model instead reuses
-already-trained, already-verified erp_forward_operators/ checkpoints as a
-frozen "simulator-in-the-loop": sample candidate designs from the predicted
-posterior, run them through the frozen surrogate(s), and score how well the
-resulting predicted ERP spectra match the true target spectrum. This is
-standard amortized-variational-inference-with-a-simulator practice (the
-surrogate plays the role a real physics simulator would in "simulation-
-based inference," except here it is itself differentiable, so gradients
-flow through it into the posterior network without needing a score-function
-estimator).
+predicts a DISTRIBUTION over designs. This model instead predicts a single
+DETERMINISTIC point estimate -- no posterior, no sampling, no log-density --
+and reuses already-trained, already-verified erp_forward_operators/
+checkpoints as a frozen "simulator-in-the-loop" to give it an ERP-space
+training signal on top of plain design-matching MSE: run the predicted
+design through the frozen surrogate(s), and score how well the resulting
+predicted ERP spectra match the true target spectrum. Gradients flow
+through the frozen surrogates into the design-prediction network, but
+never update the surrogates themselves.
 
-Two design points, each fixing a real limitation found by inspection this
-session:
-
-1. **Mixture-of-Gaussians posterior, not a single Gaussian.** A single
-   diagonal Gaussian can only ever represent ONE region of design space --
-   but this project's inverse problem is genuinely multi-modal (the m/k
-   degeneracy f_t=sqrt(k/m)/2pi alone means several distinct (m,k) pairs
-   can produce the same spectrum). A single-Gaussian posterior is
-   structurally forced to average distinct valid solutions into one wide,
-   low-quality blob sitting between them. Swapping in an MDN-style mixture
-   head (same convention as mdn.py: K components, softmax-mixture NLL,
-   multinomial + gather sampling) keeps everything else about this model
-   unchanged while removing that structural ceiling.
-
-2. **An ensemble of surrogates, not one.** Trusting a single forward
-   operator's predicted spectrum as if it were ground truth silently
-   teaches this model to satisfy THAT operator's own idiosyncrasies (e.g.
-   any near-degenerate-peak blind spots) rather than the real physics.
-   Averaging the consistency loss across multiple, architecturally
-   different frozen forward operators (DCO + GNO by default) makes the
-   training signal robust to any one architecture's particular quirks.
-
-   (A third design point, drawing several reparameterized samples per
-   training step to reduce the surrogate-consistency term's gradient
-   variance, was tried and then removed -- back to exactly one
-   reparameterized sample per example per step, same as the original
-   version.)
+(A posterior -- first a single diagonal Gaussian, later an MDN-style
+Gaussian mixture -- was implemented and used earlier in this project, but
+was removed by explicit request: this model is deterministic point-
+estimate only now. Its ``sample()`` therefore returns a plain tensor, not
+a ``(samples, log_prob)`` tuple -- same convention already used by
+``ConditionalDiffusion``/``PadINN`` for "no tractable density.")
 
 Design:
   1. Encode the target spectrum (shared ``SpectrumEncoder``, same tool every
      model in this package conditions on).
-  2. Predict a Gaussian-mixture posterior q(design | spectrum): (logits,
-     mu, std) over K components, each a diagonal Gaussian over the flat
-     design_dim-sized design vector, in THIS model's own normalized design
-     space (z-scored the same way every other inverse model's training
-     target is, via common.py's conventions).
+  2. Predict a single flat design_dim-sized point estimate, in THIS
+     model's own normalized design space (z-scored the same way every
+     other inverse model's training target is, via common.py's
+     conventions).
   3. Two loss terms:
-       - design_nll: the TRUE design's exact mixture log-density under
-         q(.|spectrum) -- direct ground-truth supervision, analogous to
-         MDN's own NLL, giving gradient to logits/mu/std alike.
-       - surrogate_spectrum_loss: reparameterize-sample one design from
-         q(.|spectrum) (from a randomly drawn mixture component), run it
-         through EVERY frozen surrogate in the ensemble, and score the
-         resulting predicted ERP spectra against the TRUE target spectrum
-         using the SAME ``erp_spectrum_loss`` every forward operator in this
-         repo trains against (MSE + a first-difference/slope penalty + a
+       - design_mse: plain MSE between the predicted point and the TRUE
+         design -- direct ground-truth supervision.
+       - surrogate_spectrum_loss: run the predicted design through EVERY
+         frozen surrogate in the ensemble, and score the resulting
+         predicted ERP spectra against the TRUE target spectrum using the
+         SAME ``erp_spectrum_loss`` every forward operator in this repo
+         trains against (MSE + a first-difference/slope penalty + a
          multi-peak value penalty summed over every one of the true
          spectrum's resonance peaks, not plain MSE) -- an ERP-space
          consistency signal ground-truth design MSE alone can't give (two
          different designs producing the same spectrum are equally right
          under this term, unlike raw design MSE). Averaged over the
-         surrogate ensemble.
+         surrogate ensemble (DCO + GNO by default) so the training signal
+         isn't tied to any one forward operator's own idiosyncrasies.
   4. Both terms cross between this model's own normalization and EACH
      surrogate's own (each may be fit from a different dataset
      subset/size -- see ``prepare_inverse_data``'s 10k default vs. the
@@ -91,6 +65,7 @@ from typing import Mapping, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from erp_forward_operators.dco import build_model as _build_dco
 from erp_forward_operators.gno import build_model as _build_gno
@@ -170,47 +145,22 @@ def _soft_clamp(x: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor, sharpness: 
     return mid + half_range * torch.tanh(sharpness * (x - mid) / half_range)
 
 
-def _mixture_log_prob(flat: torch.Tensor, logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
-    """Same convention/formula as mdn.py's ``MDN._mixture_log_prob``.
-
-    ``flat``: (B, D) or (B, S, D); ``logits``: (B, K); ``mu``/``std``: (B, K, D).
-    """
-    log_weights = torch.log_softmax(logits, dim=-1)  # (B, K)
-    if flat.dim() == 3:
-        x = flat[:, :, None, :]  # (B, S, 1, D)
-        mu_e = mu[:, None, :, :]  # (B, 1, K, D)
-        std_e = std[:, None, :, :]
-        weights_e = log_weights[:, None, :]  # (B, 1, K)
-    else:
-        x = flat[:, None, :]  # (B, 1, D)
-        mu_e, std_e, weights_e = mu, std, log_weights
-    component_log_prob = (
-        -0.5 * (((x - mu_e) / std_e) ** 2 + 2 * torch.log(std_e) + math.log(2 * math.pi))
-    ).sum(dim=-1)
-    return torch.logsumexp(weights_e + component_log_prob, dim=-1)
-
-
 class SurrogateInverse(nn.Module):
     def __init__(
         self,
         design_dim: int,
         surrogate_checkpoints: Sequence[str] = DEFAULT_SURROGATE_CHECKPOINTS,
-        num_components: int = 4,
         embed_dim: int = 96,
         hidden: int = 128,
-        min_std: float = 1e-3,
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
         if self.design_dim % 5 != 0:
             raise ValueError("design_dim must be num_res*5 ([m,k,f_t,x,y] per resonator).")
         self.num_res = self.design_dim // 5
-        self.num_components = int(num_components)
-        self.min_std = float(min_std)
 
         self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim)
-        out_dim = self.num_components * (1 + 2 * self.design_dim)
-        self.head = MLP([embed_dim, hidden, hidden, out_dim], activation=nn.SiLU)
+        self.head = MLP([embed_dim, hidden, hidden, self.design_dim], activation=nn.SiLU)
 
         if len(surrogate_checkpoints) == 0:
             raise ValueError("surrogate_checkpoints must not be empty.")
@@ -282,38 +232,15 @@ class SurrogateInverse(nn.Module):
         return self
 
     # ---------------------------------------------------------
-    # Posterior q(design | spectrum): mixture of Gaussians (mdn.py convention)
+    # Deterministic point-estimate prediction (no posterior)
     # ---------------------------------------------------------
 
-    def _params(self, spectrum: torch.Tensor):
-        embedding = self.spectrum_encoder(spectrum)
-        raw = self.head(embedding)
-        k, d = self.num_components, self.design_dim
-        logits = raw[:, :k]
-        mu = raw[:, k : k + k * d].view(-1, k, d)
-        log_std = raw[:, k + k * d :].view(-1, k, d)
-        std = nn.functional.softplus(log_std) + self.min_std
-        return logits, mu, std
-
-    @staticmethod
-    def _reparameterized_sample(
-        logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor
-    ) -> torch.Tensor:
-        """Draw one reparameterized, mixture-weighted sample per batch element.
-        Which COMPONENT is used is a non-differentiable categorical choice
-        (same as MDN's own ``sample()``) -- the mixture weights still get
-        gradient through ``design_nll``'s exact log-density, not through this
-        sampling path; only mu/std of the chosen component need to be (and
-        are) differentiable here, via the reparameterization trick. Returns
-        ``(B, design_dim)``.
+    def _predict_design(self, spectrum: torch.Tensor) -> torch.Tensor:
+        """Spectrum -> single flat design point estimate, ``(B, design_dim)``,
+        in this model's own normalized design space.
         """
-        b, k, d = mu.shape
-        weights = torch.softmax(logits, dim=-1)
-        component = torch.multinomial(weights, 1, replacement=True)  # (B, 1)
-        mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
-        std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
-        sample = mu_s + std_s * torch.randn_like(std_s)  # (B, 1, D)
-        return sample.reshape(b, d)
+        embedding = self.spectrum_encoder(spectrum)
+        return self.head(embedding)
 
     # ---------------------------------------------------------
     # Frozen-surrogate-ensemble forward pass, with the physical-units bridge
@@ -336,25 +263,24 @@ class SurrogateInverse(nn.Module):
         The physical configuration is soft-bounded to ``_DESIGN_PHYSICAL_BOUNDS``
         (the real training-dataset generation range) before being handed to
         the surrogates, via ``_soft_clamp`` rather than a hard ``torch.clamp``.
-        ``design_norm`` comes from a reparameterized Gaussian sample
-        (``_reparameterized_samples``), which has unbounded support -- early
-        in training especially, a sample can land far outside every design
-        field's physical range, querying the frozen surrogates on inputs
-        wildly outside what they were ever trained on. Their output there is
-        meaningless (not "wrong physics", just extrapolation noise), which
-        otherwise pollutes the consistency-loss gradient with signal that has
-        nothing to do with the actual posterior quality.
+        Early in training especially, the predicted design can land far
+        outside a field's physical range, querying the frozen surrogates on
+        inputs wildly outside what they were ever trained on. Their output
+        there is meaningless (not "wrong physics", just extrapolation
+        noise), which otherwise pollutes the consistency-loss gradient with
+        signal that has nothing to do with the actual prediction quality.
 
         A hard ``torch.clamp`` would fix the input range but at the cost of
-        an exactly-zero gradient outside the bounds -- once a sample is
-        clamped, the surrogate-consistency term gives the posterior no
-        signal at all to pull it back, throwing away exactly the information
-        ("how far out of range, and in which direction") that would help it
+        an exactly-zero gradient outside the bounds -- once a prediction is
+        clamped, the surrogate-consistency term gives the network no signal
+        at all to pull it back, throwing away exactly the information ("how
+        far out of range, and in which direction") that would help it
         recover fastest. ``_soft_clamp`` uses a tanh squash instead: it's
-        identity (slope exactly 1) at the range's center, so in-range values
-        pass through essentially unchanged, and it saturates smoothly toward
-        the bounds for outliers. See ``_soft_clamp``'s own docstring for the
-        gradient-shape tradeoff versus a hard ``torch.clamp``.
+        identity (slope exactly ``sharpness``) at the range's center, so
+        in-range values pass through essentially unchanged, and it
+        saturates smoothly toward the bounds for outliers. See
+        ``_soft_clamp``'s own docstring for the gradient-shape tradeoff
+        versus a hard ``torch.clamp``.
         """
         batch = design_norm.shape[0]
         configuration_own = design_norm.view(batch, self.num_res, 5)
@@ -383,7 +309,7 @@ class SurrogateInverse(nn.Module):
         return torch.stack(predictions, dim=0)  # (S, B, n_freq)
 
     # ---------------------------------------------------------
-    # Training / sampling
+    # Training / prediction
     # ---------------------------------------------------------
 
     def training_loss(
@@ -396,13 +322,11 @@ class SurrogateInverse(nn.Module):
         peak_weight: float = 0.05,
     ) -> torch.Tensor:
         flat_design = flatten_configuration(design)
-        logits, mu, std = self._params(spectrum)
+        predicted_design = self._predict_design(spectrum)  # (B, D)
 
-        design_nll = -_mixture_log_prob(flat_design, logits, mu, std).mean()
+        design_loss = F.mse_loss(predicted_design, flat_design)
 
-        design_sample = self._reparameterized_sample(logits, mu, std)  # (B, D)
-        predicted = self._surrogate_predicted_erp(design_sample, own_norm_params)  # (S, B, n_freq)
-
+        predicted = self._surrogate_predicted_erp(predicted_design, own_norm_params)  # (S, B, n_freq)
         target = spectrum[..., None]  # (B, n_freq, 1) -- erp_spectrum_loss expects a trailing dim
         surrogate_losses = [
             erp_spectrum_loss(predicted[s][..., None], target, slope_weight=slope_weight, peak_weight=peak_weight)
@@ -410,25 +334,21 @@ class SurrogateInverse(nn.Module):
         ]
         surrogate_loss = torch.stack(surrogate_losses).mean()
 
-        return design_nll + float(surrogate_weight) * surrogate_loss
+        return design_loss + float(surrogate_weight) * surrogate_loss
 
     @torch.no_grad()
-    def sample(self, spectrum: torch.Tensor, num_samples: int = 1):
-        """Returns ``(flat_designs, log_prob)``, both ``(B, num_samples, ...)``,
-        matching MDN/cVAE/Flow's convention -- the posterior here is a
-        mixture of Gaussians (same family as MDN), so its exact mixture
-        log-density is cheap and reported for every returned sample, not
-        just the sampled component's.
+    def sample(self, spectrum: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+        """Returns ``(B, num_samples, design_dim)`` -- a PLAIN tensor, not a
+        ``(samples, log_prob)`` tuple (same "no tractable density"
+        convention as ``ConditionalDiffusion``/``PadINN``'s ``sample()``).
+
+        This model is deterministic: there is no posterior to draw from, so
+        every one of the ``num_samples`` rows is the identical point
+        estimate, simply repeated for interface compatibility with the
+        other inverse models' ``sample(spectrum, num_samples)`` signature.
         """
-        logits, mu, std = self._params(spectrum)
-        b, k, d = mu.shape
-        weights = torch.softmax(logits, dim=-1)
-        component = torch.multinomial(weights, num_samples, replacement=True)  # (B, S)
-        mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
-        std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
-        flat = mu_s + std_s * torch.randn_like(std_s)  # (B, S, D)
-        log_prob = _mixture_log_prob(flat, logits, mu, std)  # (B, S)
-        return flat, log_prob
+        predicted = self._predict_design(spectrum)  # (B, D)
+        return predicted[:, None, :].expand(-1, num_samples, -1)
 
 
 def _load_frequency_grid():

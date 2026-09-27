@@ -51,19 +51,16 @@ def main(
     dataset_file: str = "datasets/dataset_erp_ft.pth",
     seed: int = 727,
     surrogate_checkpoints=DEFAULT_SURROGATE_CHECKPOINTS,
-    num_components: int = 4,
 ):
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
     )
     norm_params = dataset.norm_params
 
-    model = SurrogateInverse(
-        design_dim=DESIGN_DIM, surrogate_checkpoints=surrogate_checkpoints, num_components=num_components
-    )
+    model = SurrogateInverse(design_dim=DESIGN_DIM, surrogate_checkpoints=surrogate_checkpoints)
     print(f"SurrogateInverse params (excl. frozen surrogate ensemble): "
           f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,} "
-          f"({model.num_surrogates} surrogate(s), {num_components} mixture components)")
+          f"({model.num_surrogates} surrogate(s), deterministic point estimate)")
 
     def loss_fn(model, spectrum, design, epoch):
         return model.training_loss(
@@ -81,7 +78,7 @@ def main(
     ax.plot(history["train"], label="train", lw=2)
     ax.plot(history["val"], label="val", lw=2)
     ax.set_xlabel("Epoch")
-    ax.set_ylabel("mixture design_NLL + surrogate_weight * surrogate_MSE")
+    ax.set_ylabel("design_MSE + surrogate_weight * surrogate_MSE")
     ax.set_title("SurrogateInverse training curves (frozen surrogate ensemble-in-the-loop)")
     ax.legend()
     ax.grid(alpha=0.3)
@@ -94,11 +91,13 @@ def main(
     return model, history, dataset
 
 
-def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5, num_samples: int = 6):
-    """Solver-validated sample check -- same convention as every other
-    inverse model's own validation figure (real coupled-plate solver, not
-    a neural forward surrogate, scores the FINAL comparison even though
-    training itself used one).
+def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
+    """Solver-validated point-estimate check -- same convention as every
+    other inverse model's own validation figure (real coupled-plate
+    solver, not a neural forward surrogate, scores the FINAL comparison
+    even though training itself used one). Deterministic model, so there
+    is exactly one prediction per target -- no "best of N samples" to pick
+    from anymore.
     """
     model.eval()
     test_spectrum, test_design = [], []
@@ -112,24 +111,19 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5, num_s
     true_erp = denormalize_erp_array(test_spectrum, norm_params)
 
     with torch.no_grad():
-        samples, _log_prob = model.sample(test_spectrum, num_samples=num_samples)
-    physical = denormalize_design(samples.numpy(), NUM_RES, norm_params)
+        predicted = model.sample(test_spectrum, num_samples=1)[:, 0, :]  # (num_examples, D)
+    physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)
 
     solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
     fig, axes = plt.subplots(1, num_examples, figsize=(4.8 * num_examples, 4.2))
     for row in range(num_examples):
-        predicted_erp = solve_configs(solver_pool, physical[row], freq_hz)
-        recon_mse = ((predicted_erp - true_erp[row][None, :]) ** 2).mean(axis=1)
-        best_idx = int(recon_mse.argmin())
+        predicted_erp = solve_configs(solver_pool, physical[row : row + 1], freq_hz)[0]
+        recon_mse = ((predicted_erp - true_erp[row]) ** 2).mean()
 
         ax = axes[row] if num_examples > 1 else axes
-        for i in range(num_samples):
-            if i == best_idx:
-                continue
-            ax.plot(freq_hz, predicted_erp[i], color="#4C72B0", alpha=0.3, lw=1.1)
-        ax.plot(freq_hz, predicted_erp[best_idx], color="#C44E52", lw=2.0, label="Best sample")
+        ax.plot(freq_hz, predicted_erp, color="#C44E52", lw=2.0, label="Prediction")
         ax.plot(freq_hz, true_erp[row], color="black", lw=2, label="Target")
-        ax.set_title(f"Example {row + 1} (best MSE={recon_mse[best_idx]:.3f})", fontsize=10)
+        ax.set_title(f"Example {row + 1} (MSE={recon_mse:.3f})", fontsize=10)
         ax.set_xlabel("Frequency (Hz)")
         if row == 0:
             ax.set_ylabel("ERP (dB)")
@@ -138,8 +132,7 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5, num_s
     solver_pool.shutdown()
 
     fig.suptitle(
-        f"SurrogateInverse validation: {num_samples} posterior samples/target, "
-        "best-scoring (vs. actual solver) highlighted red",
+        "SurrogateInverse validation: deterministic point estimate vs. actual solver",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
