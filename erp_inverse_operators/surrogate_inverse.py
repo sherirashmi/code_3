@@ -132,6 +132,30 @@ DEFAULT_SURROGATE_CHECKPOINTS = (
 )
 
 
+def _soft_clamp(x: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor) -> torch.Tensor:
+    """Smooth alternative to ``torch.clamp`` with a much wider live-gradient region.
+
+    ``mid + half_range * tanh((x - mid) / half_range)`` maps all of R into
+    the open interval ``(lo, hi)``. At ``x = mid`` this is exactly the
+    identity with slope 1 (``tanh`` is linear near 0), so values already
+    well inside the range pass through essentially unchanged; moving away
+    from ``mid`` it saturates smoothly toward ``lo``/``hi`` instead of
+    hard-clipping. Unlike ``torch.clamp``, whose gradient is exactly 0 the
+    instant ``x`` leaves ``[lo, hi]``, this one's gradient only shrinks --
+    an input several half-ranges past the boundary (empirically, up to
+    ~8x) still gets a real, if smaller, corrective push back toward the
+    trusted region. In float32, ``tanh`` itself saturates to exactly 1.0
+    for large enough arguments, so truly extreme outliers (~10x+ the
+    half-range out) do round to a zero gradient too -- the same standard
+    precision limit any bounded squashing function hits, not a flaw
+    specific to this use -- but that dead zone sits many multiples of the
+    range's width farther out than a hard clamp's immediate one.
+    """
+    mid = (lo + hi) / 2
+    half_range = (hi - lo) / 2
+    return mid + half_range * torch.tanh((x - mid) / half_range)
+
+
 def _mixture_log_prob(flat: torch.Tensor, logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
     """Same convention/formula as mdn.py's ``MDN._mixture_log_prob``.
 
@@ -295,20 +319,28 @@ class SurrogateInverse(nn.Module):
         surrogate's own normalization -> its forward pass -> physical dB ->
         this model's own ERP normalization.
 
-        The physical configuration is clamped to ``_DESIGN_PHYSICAL_BOUNDS``
+        The physical configuration is soft-bounded to ``_DESIGN_PHYSICAL_BOUNDS``
         (the real training-dataset generation range) before being handed to
-        the surrogates. ``design_norm`` comes from a reparameterized Gaussian
-        sample (``_reparameterized_samples``), which has unbounded support --
-        early in training especially, a sample can land far outside every
-        design field's physical range, querying the frozen surrogates on
-        inputs wildly outside what they were ever trained on. Their output
-        there is meaningless (not "wrong physics", just extrapolation noise),
-        which otherwise pollutes the consistency-loss gradient with signal
-        that has nothing to do with the actual posterior quality. Clamping
-        keeps every surrogate query inside its trusted input distribution;
-        ``torch.clamp`` is differentiable (gradient 1 inside the bounds, 0
-        outside), so this doesn't block training -- it just stops rewarding
-        the posterior for wandering into physically impossible territory.
+        the surrogates, via ``_soft_clamp`` rather than a hard ``torch.clamp``.
+        ``design_norm`` comes from a reparameterized Gaussian sample
+        (``_reparameterized_samples``), which has unbounded support -- early
+        in training especially, a sample can land far outside every design
+        field's physical range, querying the frozen surrogates on inputs
+        wildly outside what they were ever trained on. Their output there is
+        meaningless (not "wrong physics", just extrapolation noise), which
+        otherwise pollutes the consistency-loss gradient with signal that has
+        nothing to do with the actual posterior quality.
+
+        A hard ``torch.clamp`` would fix the input range but at the cost of
+        an exactly-zero gradient outside the bounds -- once a sample is
+        clamped, the surrogate-consistency term gives the posterior no
+        signal at all to pull it back, throwing away exactly the information
+        ("how far out of range, and in which direction") that would help it
+        recover fastest. ``_soft_clamp`` uses a tanh squash instead: it's
+        identity (slope exactly 1) at the range's center, so in-range values
+        pass through essentially unchanged, and it saturates smoothly toward
+        the bounds for outliers. See ``_soft_clamp``'s own docstring for the
+        gradient-shape tradeoff versus a hard ``torch.clamp``.
         """
         batch = design_norm.shape[0]
         configuration_own = design_norm.view(batch, self.num_res, 5)
@@ -320,7 +352,7 @@ class SurrogateInverse(nn.Module):
             [float(own_norm_params[f"{f}_std"]) for f in _CONFIG_FIELDS], device=design_norm.device
         ).view(1, 1, 5)
         configuration_physical = configuration_own * own_std + own_mean
-        configuration_physical = torch.clamp(
+        configuration_physical = _soft_clamp(
             configuration_physical, self.design_physical_min, self.design_physical_max
         )
 
