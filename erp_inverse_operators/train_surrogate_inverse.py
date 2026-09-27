@@ -52,7 +52,6 @@ def main(
     seed: int = 727,
     surrogate_checkpoints=DEFAULT_SURROGATE_CHECKPOINTS,
     num_components: int = 4,
-    num_surrogate_samples: int = 4,
 ):
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
@@ -72,7 +71,6 @@ def main(
             design,
             own_norm_params=norm_params,
             surrogate_weight=surrogate_weight,
-            num_surrogate_samples=num_surrogate_samples,
         )
 
     history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name="SurrogateInverse")

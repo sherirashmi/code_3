@@ -16,7 +16,7 @@ based inference," except here it is itself differentiable, so gradients
 flow through it into the posterior network without needing a score-function
 estimator).
 
-Three design points, each fixing a real limitation found by inspection this
+Two design points, each fixing a real limitation found by inspection this
 session:
 
 1. **Mixture-of-Gaussians posterior, not a single Gaussian.** A single
@@ -30,22 +30,19 @@ session:
    multinomial + gather sampling) keeps everything else about this model
    unchanged while removing that structural ceiling.
 
-2. **Multiple reparameterized samples per training step for the surrogate
-   consistency term, not one.** The original version drew exactly one
-   design sample per training example to check against the surrogate --
-   a single noisy draw standing in for "how good is the whole posterior,"
-   which is a high-variance gradient estimate. Averaging the surrogate
-   loss over ``num_surrogate_samples`` draws (batched, not looped) gives a
-   materially less noisy training signal for negligible extra cost (the
-   surrogate forward pass is frozen and cheap).
-
-3. **An ensemble of surrogates, not one.** Trusting a single forward
+2. **An ensemble of surrogates, not one.** Trusting a single forward
    operator's predicted spectrum as if it were ground truth silently
    teaches this model to satisfy THAT operator's own idiosyncrasies (e.g.
    any near-degenerate-peak blind spots) rather than the real physics.
    Averaging the consistency loss across multiple, architecturally
    different frozen forward operators (DCO + GNO by default) makes the
    training signal robust to any one architecture's particular quirks.
+
+   (A third design point, drawing several reparameterized samples per
+   training step to reduce the surrogate-consistency term's gradient
+   variance, was tried and then removed -- back to exactly one
+   reparameterized sample per example per step, same as the original
+   version.)
 
 Design:
   1. Encode the target spectrum (shared ``SpectrumEncoder``, same tool every
@@ -59,19 +56,18 @@ Design:
        - design_nll: the TRUE design's exact mixture log-density under
          q(.|spectrum) -- direct ground-truth supervision, analogous to
          MDN's own NLL, giving gradient to logits/mu/std alike.
-       - surrogate_spectrum_loss: reparameterize-sample ``num_surrogate_
-         samples`` designs from q(.|spectrum) (each from an independently
-         drawn mixture component), run each through EVERY frozen surrogate
-         in the ensemble, and score the resulting predicted ERP spectra
-         against the TRUE target spectrum using the SAME
-         ``erp_spectrum_loss`` every forward operator in this repo trains
-         against (MSE + a first-difference/slope penalty + a multi-peak
-         value penalty summed over every one of the true spectrum's
-         resonance peaks, not plain MSE) -- an ERP-space consistency
-         signal ground-truth design MSE alone can't give (two different
-         designs producing the same spectrum are equally right under this
-         term, unlike raw design MSE). Averaged over both the sample draws
-         and the surrogate ensemble.
+       - surrogate_spectrum_loss: reparameterize-sample one design from
+         q(.|spectrum) (from a randomly drawn mixture component), run it
+         through EVERY frozen surrogate in the ensemble, and score the
+         resulting predicted ERP spectra against the TRUE target spectrum
+         using the SAME ``erp_spectrum_loss`` every forward operator in this
+         repo trains against (MSE + a first-difference/slope penalty + a
+         multi-peak value penalty summed over every one of the true
+         spectrum's resonance peaks, not plain MSE) -- an ERP-space
+         consistency signal ground-truth design MSE alone can't give (two
+         different designs producing the same spectrum are equally right
+         under this term, unlike raw design MSE). Averaged over the
+         surrogate ensemble.
   4. Both terms cross between this model's own normalization and EACH
      surrogate's own (each may be fit from a different dataset
      subset/size -- see ``prepare_inverse_data``'s 10k default vs. the
@@ -300,24 +296,24 @@ class SurrogateInverse(nn.Module):
         return logits, mu, std
 
     @staticmethod
-    def _reparameterized_samples(
-        logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor, num_draws: int
+    def _reparameterized_sample(
+        logits: torch.Tensor, mu: torch.Tensor, std: torch.Tensor
     ) -> torch.Tensor:
-        """Draw ``num_draws`` reparameterized, mixture-weighted samples per
-        batch element. Which COMPONENT is used per draw is a non-differentiable
-        categorical choice (same as MDN's own ``sample()``) -- the mixture
-        weights still get gradient through ``design_nll``'s exact log-density,
-        not through this sampling path; only mu/std of the chosen component
-        need to be (and are) differentiable here, via the reparameterization
-        trick. Returns flat ``(B*num_draws, design_dim)``.
+        """Draw one reparameterized, mixture-weighted sample per batch element.
+        Which COMPONENT is used is a non-differentiable categorical choice
+        (same as MDN's own ``sample()``) -- the mixture weights still get
+        gradient through ``design_nll``'s exact log-density, not through this
+        sampling path; only mu/std of the chosen component need to be (and
+        are) differentiable here, via the reparameterization trick. Returns
+        ``(B, design_dim)``.
         """
         b, k, d = mu.shape
         weights = torch.softmax(logits, dim=-1)
-        component = torch.multinomial(weights, num_draws, replacement=True)  # (B, num_draws)
+        component = torch.multinomial(weights, 1, replacement=True)  # (B, 1)
         mu_s = torch.gather(mu, 1, component[:, :, None].expand(-1, -1, d))
         std_s = torch.gather(std, 1, component[:, :, None].expand(-1, -1, d))
-        samples = mu_s + std_s * torch.randn_like(std_s)  # (B, num_draws, D)
-        return samples.reshape(b * num_draws, d)
+        sample = mu_s + std_s * torch.randn_like(std_s)  # (B, 1, D)
+        return sample.reshape(b, d)
 
     # ---------------------------------------------------------
     # Frozen-surrogate-ensemble forward pass, with the physical-units bridge
@@ -398,21 +394,16 @@ class SurrogateInverse(nn.Module):
         surrogate_weight: float = 1.0,
         slope_weight: float = 0.5,
         peak_weight: float = 0.05,
-        num_surrogate_samples: int = 4,
     ) -> torch.Tensor:
         flat_design = flatten_configuration(design)
         logits, mu, std = self._params(spectrum)
 
         design_nll = -_mixture_log_prob(flat_design, logits, mu, std).mean()
 
-        b = spectrum.shape[0]
-        design_samples = self._reparameterized_samples(logits, mu, std, num_surrogate_samples)  # (B*M, D)
-        predicted = self._surrogate_predicted_erp(design_samples, own_norm_params)  # (S, B*M, n_freq)
+        design_sample = self._reparameterized_sample(logits, mu, std)  # (B, D)
+        predicted = self._surrogate_predicted_erp(design_sample, own_norm_params)  # (S, B, n_freq)
 
-        spectrum_expanded = (
-            spectrum[:, None, :].expand(-1, num_surrogate_samples, -1).reshape(b * num_surrogate_samples, -1)
-        )
-        target = spectrum_expanded[..., None]  # (B*M, n_freq, 1) -- erp_spectrum_loss expects a trailing dim
+        target = spectrum[..., None]  # (B, n_freq, 1) -- erp_spectrum_loss expects a trailing dim
         surrogate_losses = [
             erp_spectrum_loss(predicted[s][..., None], target, slope_weight=slope_weight, peak_weight=peak_weight)
             for s in range(self.num_surrogates)
