@@ -6,19 +6,20 @@ attention, sinusoidal representation, ...). This file is the "does any of
 that sophistication even matter" baseline: a bog-standard stack of
 Linear -> ReLU -> Dropout layers, no residual connections, no FiLM
 conditioning, no branch/trunk split, no spectral or wavelet transform, no
-attention, no message passing.
+attention, no message passing -- and, unlike this project's other shared-
+tooling convention, NO physics-aware feature encoders either: no
+``ResonatorSetEncoder`` (permutation-invariant resonator-set pooling), no
+``ResonanceQueryEncoder`` (per-query detuning features), no
+``FrequencyRefinement1d`` (cross-frequency conv mixing). Every one of those
+is itself a piece of architectural sophistication (set-pooling, attention-
+like query interaction, local convolution) -- keeping them would make this
+"baseline" secretly not a plain MLP at all.
 
-It is still given exactly the same *information* every other architecture
-in this project was equalized to have (see the fairness pass):
-
-- physics-aware resonator harmonics via the shared ``ResonatorSetEncoder``
-- explicit per-query detuning features via the shared ``ResonanceQueryEncoder``
-- the shared local ``FrequencyRefinement1d`` cross-frequency mixing stage
-
-so any accuracy gap between NN and DON/DNO/DCO/FNO/WNO/GNO/STO/SIREN
-reflects architecture, not access to different inputs. Its capacity is
-matched to the same ~110K-parameter budget the other 8 operators were
-tuned to for the same reason.
+Input is the RAW ``[m,k,f_t,x,y]`` configuration (already normalized
+upstream, just flattened across resonators) concatenated with the RAW
+query frequency, fed straight into an ordinary MLP applied independently
+at each frequency point (the same weights are reused across every query
+frequency -- there's no cross-frequency interaction anywhere in this model).
 """
 
 from __future__ import annotations
@@ -26,25 +27,22 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from erp_forward_operators.neural_operator_utils import (
-    FrequencyRefinement1d,
-    ResonanceQueryEncoder,
-    ResonatorSetEncoder,
-    resolve_activation,
-    run_operator_experiment,
-)
+from erp_forward_operators.neural_operator_utils import resolve_activation, run_operator_experiment
 
 
 class NN(nn.Module):
-    """Plain feedforward MLP: Linear -> ReLU -> Dropout, stacked ``depth`` times."""
+    """Plain feedforward MLP: Linear -> ReLU -> Dropout, stacked ``depth`` times.
+
+    Takes the flattened raw configuration (``num_res*5`` values) and the raw
+    query frequency (1 value) as input -- no learned feature encoders of any
+    kind upstream of the MLP itself.
+    """
 
     def __init__(
         self,
         num_res: int,
-        hidden_dim: int = 191,
+        hidden_dim: int = 128,
         depth: int = 6,
-        context_dim: int = 128,
-        query_dim: int = 64,
         dropout: float = 0.0,
         activation: str | type[nn.Module] = "relu",
     ) -> None:
@@ -53,40 +51,24 @@ class NN(nn.Module):
             raise ValueError("depth must be positive.")
         self.num_res = int(num_res)
         activation_cls = resolve_activation(activation)
-        self.configuration_encoder = ResonatorSetEncoder(
-            hidden_dim=context_dim,
-            element_dim=context_dim,
-            output_dim=context_dim,
-        )
-        self.resonance_query = ResonanceQueryEncoder(
-            hidden_dim=query_dim,
-            element_dim=query_dim,
-            output_dim=query_dim,
-        )
 
         layers: list[nn.Module] = []
-        in_dim = context_dim + query_dim + 1
+        in_dim = self.num_res * 5 + 1  # flattened [m,k,f_t,x,y]*num_res + query frequency
         for _ in range(depth):
             layers.append(nn.Linear(in_dim, hidden_dim))
             layers.append(activation_cls())
             layers.append(nn.Dropout(dropout))
             in_dim = hidden_dim
         self.mlp = nn.Sequential(*layers)
-
-        # Every other operator in this project mixes neighboring frequency
-        # samples somewhere; this baseline gets the same shared block so it
-        # isn't handicapped relative to the rest by a missing tool.
-        self.frequency_refinement = FrequencyRefinement1d(hidden_dim)
         self.output = nn.Linear(hidden_dim, 1)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        context = self.configuration_encoder(configuration)[:, None, :]
-        context = context.expand(-1, frequency.shape[1], -1)
-        query = self.resonance_query(configuration, frequency)
+        """``configuration``: ``(batch, num_res, 5)``. ``frequency``: ``(batch, n_freq, 1)``."""
+        batch, n_freq = frequency.shape[0], frequency.shape[1]
+        flat_configuration = configuration.reshape(batch, 1, self.num_res * 5).expand(-1, n_freq, -1)
 
-        h = torch.cat((context, query, frequency), dim=-1)
+        h = torch.cat((flat_configuration, frequency), dim=-1)
         h = self.mlp(h)
-        h = self.frequency_refinement(h.transpose(1, 2)).transpose(1, 2)
         return self.output(h)
 
 
@@ -94,13 +76,9 @@ def build_model(num_res: int, **kwargs) -> NN:
     return NN(num_res=num_res, **kwargs)
 
 
-# All size dimensions scaled down proportionally from the ~550K-matched
-# config to the project's new ~110K budget (was hidden_dim=191 -> ~549K).
 DEFAULT_MODEL_CONFIG = {
-    "hidden_dim": 85,
+    "hidden_dim": 148,
     "depth": 6,
-    "context_dim": 57,
-    "query_dim": 28,
     "dropout": 0.1,
     "activation": "relu",
 }
