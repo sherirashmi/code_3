@@ -6,8 +6,13 @@ from ``main()``:
 
 - **ERP** (resonator configuration <-> ERP spectrum, a scalar function of
   frequency): forward and inverse sub-workflows.
-    - **Forward** (configuration -> ERP spectrum): any single operator from
-      ``erp_forward_operators.operator_registry.OPERATORS``, or all at once.
+    - **Forward** (configuration -> ERP spectrum): choose a method first --
+      (1) general training/evaluate/predict on any single operator from
+      ``erp_forward_operators.operator_registry.OPERATORS`` (or all at
+      once), or (2) the frequency-holdout generalization experiment
+      (``erp_forward_operators.frequency_holdout``), which masks a
+      contiguous band of frequencies out of training entirely and scores
+      seen vs. unseen frequencies at test time.
     - **Inverse** (ERP spectrum -> resonator configuration): any single model
       from ``erp_inverse_operators.registry.INVERSE_MODELS``, or all at once
       (which also offers the solver-scored aggregate evaluations built in
@@ -37,6 +42,7 @@ import torch
 
 from utils.erp_dataset import DEFAULT_DATASET_FILE
 from erp_forward_operators.operator_registry import OPERATORS
+from erp_forward_operators.frequency_holdout import OUT_DIR as FREQ_HOLDOUT_PLOTS_DIR, run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     save_all_model_comparison_plots,
@@ -615,8 +621,21 @@ def main_all_models():
 # ==================================================
 
 
+def _print_forward_method_menu() -> None:
+    print("\nWhich method?")
+    print("1. General training  (train/evaluate/predict on the full frequency range)")
+    print("2. Frequency-holdout generalization experiment  (mask a contiguous band of "
+          "frequencies out of training entirely, then score seen vs. unseen frequencies "
+          "to test whether the operator actually interpolates or just memorizes)")
+
+
 def main_forward():
     """Interactive entry point for the forward (configuration -> ERP) workflow."""
+    _print_forward_method_menu()
+    method = _prompt_choice("Select method: ", {"1": None, "2": None})
+    if method == "2":
+        return main_frequency_holdout()
+
     _print_operator_menu()
     all_models_key = str(len(OPERATORS) + 1)
     operator_choices = {**OPERATORS, all_models_key: None}
@@ -754,6 +773,70 @@ def main_forward():
     )
     print(f"Saved {spec['short']} prediction plot to: {saved_plot_dir.resolve()}")
     return result
+
+
+# ==================================================
+# Forward: frequency-holdout generalization experiment
+# ==================================================
+
+
+def main_frequency_holdout():
+    """Interactive entry point for the frequency-holdout experiment.
+
+    Unlike the general-training workflow, this always trains from scratch
+    (masking is baked into the training loaders themselves) and has no
+    separate evaluate/predict step -- seen-vs-unseen scoring happens
+    automatically at the end of each operator's run, see
+    ``erp_forward_operators.frequency_holdout.run_frequency_holdout``.
+    """
+    operator_specs = _prompt_operator_selection(
+        "Which operators to run the frequency-holdout experiment on (e.g. 2,4,5)"
+    )
+    dataset_file = _prompt_dataset_file()
+    is_sharded = isinstance(dataset_file, list)
+    num_configurations = _prompt_int(
+        "Number of configurations to use",
+        default=100000 if is_sharded else 10000,
+        minimum=3,
+    )
+    batch_size = _prompt_int(
+        "Batch size (complete ERP spectra per batch)", default=16, minimum=1
+    )
+    epochs = _prompt_int(
+        "Number of epochs (applied to every selected operator)", default=200, minimum=1
+    )
+    print(
+        "\nThe held-out band is a contiguous slice of the frequency axis, given as "
+        "fractions of the full range (default: the middle 20%, i.e. 0.40-0.60)."
+    )
+    holdout_start_frac = _prompt_float("Holdout band start fraction", default=0.40, minimum=0.0)
+    while True:
+        holdout_end_frac = _prompt_float("Holdout band end fraction", default=0.60, minimum=holdout_start_frac)
+        if holdout_end_frac <= 1.0:
+            break
+        print("End fraction must be <= 1.0.")
+    num_plot = _prompt_int(
+        "Example test spectra to plot per operator", default=5, minimum=1
+    )
+
+    print("\n" + "=" * 68)
+    print(f"Operators : {', '.join(spec['short'] for spec in operator_specs)}")
+    print(f"Dataset   : {dataset_file}")
+    print(f"Holdout   : [{holdout_start_frac:.2f}, {holdout_end_frac:.2f}) of the frequency range")
+    print(f"Plots     : {FREQ_HOLDOUT_PLOTS_DIR}")
+    print("=" * 68)
+
+    return run_frequency_holdout(
+        operator_specs=operator_specs,
+        num_configurations=num_configurations,
+        epochs=epochs,
+        batch_size=batch_size,
+        dataset_file=dataset_file,
+        holdout_start_frac=holdout_start_frac,
+        holdout_end_frac=holdout_end_frac,
+        num_plot=num_plot,
+        seed=SEED,
+    )
 
 
 # ==================================================
