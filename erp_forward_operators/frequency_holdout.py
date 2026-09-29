@@ -15,6 +15,17 @@ Generalized from the original one-off ``others/frequency_holdout_experiment.py``
 parameterized the same way this project's other CLI-driven workflows are,
 so it can run against any operator subset and any dataset (including the
 current 100k-configuration, [m,k,f_t,x,y]-schema one).
+
+Results are kept in the same places and the same visual style ``main.py``'s
+general training branch already uses (``utils.plotting``'s shared plot
+helpers, checkpoints in ``erp_forward_operators/models/``), rather than a
+one-off ad-hoc layout: per-operator loss-curve/spectrum plots live in a
+``freq_holdout`` subfolder of that operator's own plot directory (the same
+``erp_forward_operators/plots/<short>/`` folder the general branch fills),
+and the cross-operator seen-vs-unseen summary lives in
+``erp_forward_operators/plots/FREQ_HOLDOUT`` -- the same top-level,
+aggregate-folder pattern ``ALL_MODELS`` uses for the "train every operator"
+workflow.
 """
 
 from __future__ import annotations
@@ -45,8 +56,10 @@ from utils.erp_dataset import (
     normalize_erp_array,
     normalize_frequency_array,
 )
+from utils.plotting import plot_erp_comparison, plot_loss_curves
 
-OUT_DIR = Path("erp_forward_operators/plots/FREQ_HOLDOUT")
+PLOTS_DIR = Path("erp_forward_operators/plots")
+OUT_DIR = PLOTS_DIR / "FREQ_HOLDOUT"
 
 
 class _MaskedFrequencyDataset(Dataset):
@@ -194,24 +207,26 @@ def run_frequency_holdout(
             history_val=[float(v) for v in history["val"]],
         )
 
-        plot_dir = OUT_DIR / short
+        # Same per-operator plot folder the general branch fills
+        # (erp_forward_operators/plots/<short>/), nested under a
+        # "freq_holdout" subfolder so this run never overwrites that
+        # operator's general-training plots.
+        plot_dir = PLOTS_DIR / short / "freq_holdout"
         plot_dir.mkdir(parents=True, exist_ok=True)
+
+        plot_loss_curves(
+            history["train"], history["val"],
+            title=f"{short} frequency-holdout training loss",
+            ylabel="Normalized loss", log_y=True,
+            save_path=plot_dir / "loss_curve.png", show=False,
+        )
         for i in range(min(num_plot, pred.shape[0])):
-            fig, ax = plt.subplots(figsize=(9, 5))
-            ax.plot(freq_hz, true[i], lw=2.5, label="Ground truth")
-            ax.plot(freq_hz, pred[i], "--", lw=2, label="Prediction")
-            ax.axvspan(
-                freq_hz[start], freq_hz[end - 1], color="orange", alpha=0.15,
-                label="Held-out band (never trained on)",
+            plot_erp_comparison(
+                freq_hz, true[i], pred[i],
+                title=f"{short} - test config {i + 1:02d} - frequency-holdout generalization",
+                highlight_band=(freq_hz[start], freq_hz[end - 1]),
+                save_path=plot_dir / f"erp_comparison_config_{i + 1:02d}.png", show=False,
             )
-            ax.set_xlabel("Frequency (Hz)")
-            ax.set_ylabel("ERP (dB)")
-            ax.set_title(f"{short} - test config {i + 1:02d} - frequency-holdout generalization")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            fig.tight_layout()
-            fig.savefig(plot_dir / f"holdout_spectrum_config_{i + 1:02d}.png", dpi=140)
-            plt.close(fig)
 
         torch.save(model.state_dict(), f"erp_forward_operators/models/{short.lower()}_freq_holdout.pth")
         print(f"Saved checkpoint + plots for {short}")

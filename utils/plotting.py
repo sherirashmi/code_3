@@ -181,6 +181,8 @@ def plot_erp_comparison(
     *,
     title: str | None = None,
     configuration: np.ndarray | None = None,
+    highlight_band: tuple[float, float] | None = None,
+    highlight_label: str = "Held-out band (never trained on)",
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> None:
@@ -196,6 +198,8 @@ def plot_erp_comparison(
     else:
         fig, ax = plt.subplots(figsize=(10, 6))
 
+    if highlight_band is not None:
+        ax.axvspan(highlight_band[0], highlight_band[1], color="orange", alpha=0.15, label=highlight_label)
     ax.plot(freq_values, true_curve, lw=3, label="Ground Truth")
     ax.plot(freq_values, pred_curve, "--", lw=2, label="Prediction")
     ax.set_xlabel("Frequency (Hz)")

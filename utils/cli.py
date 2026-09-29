@@ -42,7 +42,7 @@ import torch
 
 from utils.erp_dataset import DEFAULT_DATASET_FILE
 from erp_forward_operators.operator_registry import OPERATORS
-from erp_forward_operators.frequency_holdout import OUT_DIR as FREQ_HOLDOUT_PLOTS_DIR, run_frequency_holdout
+from erp_forward_operators.frequency_holdout import OUT_DIR as FREQ_HOLDOUT_SUMMARY_DIR, run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     save_all_model_comparison_plots,
@@ -823,7 +823,9 @@ def main_frequency_holdout():
     print(f"Operators : {', '.join(spec['short'] for spec in operator_specs)}")
     print(f"Dataset   : {dataset_file}")
     print(f"Holdout   : [{holdout_start_frac:.2f}, {holdout_end_frac:.2f}) of the frequency range")
-    print(f"Plots     : {FREQ_HOLDOUT_PLOTS_DIR}")
+    print(f"Plots     : {PLOTS_DIR}/<operator>/freq_holdout/ (per-operator loss curve + spectra, "
+          f"same folder the general branch fills), {FREQ_HOLDOUT_SUMMARY_DIR}/ (seen-vs-unseen summary)")
+    print(f"Models    : erp_forward_operators/models/<operator>_freq_holdout.pth")
     print("=" * 68)
 
     return run_frequency_holdout(
