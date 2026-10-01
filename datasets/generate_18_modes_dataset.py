@@ -1,6 +1,6 @@
-"""Generate a 1,000,000-configuration ERP dataset at reduced (6x3=18) modal
+"""Generate a 200,000-configuration ERP dataset at reduced (6x3=18) modal
 resolution, sharded the same way the original 100k dataset is (50,000
-configurations per shard -- here, 20 shards instead of 2).
+configurations per shard -- here, 4 shards instead of 2).
 
 Requires ``utils.physics.Nx/Ny`` to already be set to 6/3 on disk before this
 script is launched (each worker process imports ``utils.physics`` fresh, so
@@ -22,10 +22,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-NUM_SHARDS = 20
+NUM_SHARDS = 4
 CONFIGS_PER_SHARD = 50_000
 BASE_SEED = 727
-OUT_PATTERN = "datasets/dataset_erp_ft_100k_18_modes_part{index}.pth"
+OUT_PATTERN = "datasets/dataset_erp_ft_200k_18_modes_part{index}.pth"
 
 SPAWN_CONTEXT = get_context("spawn")
 
