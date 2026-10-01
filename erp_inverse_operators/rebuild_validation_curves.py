@@ -24,7 +24,7 @@ from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import denormalize_erp_array
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 NUM_EXAMPLES = 3
 NUM_SAMPLES = 6
 

@@ -255,7 +255,7 @@ def main(
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
     test_spectrum = test_spectrum.to(device)
 
-    out_dir = Path("erp_inverse_operators/plots")
+    out_dir = Path("erp_inverse_operators/plots/ALL_MODELS")
     out_dir.mkdir(parents=True, exist_ok=True)
     report_lines = []
 

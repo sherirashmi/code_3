@@ -29,7 +29,7 @@ from erp_inverse_operators.registry import NUM_RES
 from erp_inverse_operators.surrogate_inverse import _CONFIG_FIELDS, _DESIGN_PHYSICAL_BOUNDS
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 NUM_TEST_EXAMPLES = 3000
 NUM_BINS = 8
 

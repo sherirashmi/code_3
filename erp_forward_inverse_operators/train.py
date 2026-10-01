@@ -252,7 +252,8 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
     print(f"[{tag} forward] R^2        : {r2:.4f}")
     print("=" * 68)
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    model_out_dir = OUT_DIR / tag
+    model_out_dir.mkdir(parents=True, exist_ok=True)
     freq_hz = np.asarray(dataset.frequency_values)
     physical_configs = denormalize_configuration_array(configs_used[:num_plot], norm)
     for i in range(min(num_plot, true.shape[0])):
@@ -260,13 +261,13 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
             freq_hz, true[i], pred[i],
             title=f"{tag} (forward) - test configuration {i + 1}",
             configuration=physical_configs[i],
-            save_path=OUT_DIR / f"{tag.lower()}_forward_erp_test_config_{i + 1:02d}.png",
+            save_path=model_out_dir / f"{tag.lower()}_forward_erp_test_config_{i + 1:02d}.png",
             show=False,
         )
     plot_prediction_scatter(
         true, pred, xlabel="Ground Truth ERP (dB)", ylabel=f"Predicted ERP (dB, {tag} forward)",
         title=f"{tag} - predicted vs. ground truth ERP",
-        save_path=OUT_DIR / f"{tag.lower()}_forward_prediction_vs_ground_truth.png",
+        save_path=model_out_dir / f"{tag.lower()}_forward_prediction_vs_ground_truth.png",
         show=False,
     )
     return {"rmse": rmse, "mae": mae, "pearson": pearson, "r2": r2}
@@ -316,8 +317,9 @@ def evaluate_inverse(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUT_DIR / f"{tag.lower()}_inverse_validation_reconstructions.png"
+    model_out_dir = OUT_DIR / tag
+    model_out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = model_out_dir / f"{tag.lower()}_inverse_validation_reconstructions.png"
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     print(f"Saved {out_path}")
@@ -367,7 +369,7 @@ def train_one(
     plot_stage_losses(
         tag,
         {"stage1 (invertible blocks)": history1, "stage2 (beta-VAE)": history2, "stage3 (joint fine-tune)": history3},
-        OUT_DIR / f"{tag.lower()}_training_curves.png",
+        OUT_DIR / tag / f"{tag.lower()}_training_curves.png",
     )
 
     forward_metrics = evaluate_forward(model, tag, dataset, loaders, norm)

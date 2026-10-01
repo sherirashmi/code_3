@@ -73,7 +73,7 @@ from utils.erp_dataset import configuration_to_resonators, denormalize_configura
 from utils.solver import compute_erp_spectrum
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 F_T_IDX = [i * 5 + 2 for i in range(NUM_RES)]  # flat-design index of each resonator's f_t
 MASS_IDX = [i * 5 + 0 for i in range(NUM_RES)]  # flat-design index of each resonator's mass
 

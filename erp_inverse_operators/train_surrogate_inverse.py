@@ -44,7 +44,7 @@ from erp_inverse_operators.train_all import train_one
 from utils.erp_dataset import denormalize_erp_array
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/Surrogate")
 CHECKPOINT_PATH = "erp_inverse_operators/models/inverse_surrogate.pth"
 
 

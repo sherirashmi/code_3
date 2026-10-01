@@ -119,7 +119,8 @@ def predict_one(
         score_label = "spectrum-consistency (-MSE, NOT a probability)"
         scores = -recon_mse
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    model_out_dir = OUT_DIR / key_short
+    model_out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
     for i in range(num_samples):
         if i == best_idx:
@@ -133,7 +134,7 @@ def predict_one(
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    out_path = OUT_DIR / f"predict_{key_short.lower()}.png"
+    out_path = model_out_dir / f"predict_{key_short.lower()}.png"
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 

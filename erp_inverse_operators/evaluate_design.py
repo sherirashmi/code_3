@@ -44,7 +44,7 @@ from utils.support import device
 from concurrent.futures import ProcessPoolExecutor
 
 NUM_RES = 3
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 PARAMS = [
     ("m", 0, "Mass (kg)"),
     ("k", 1, "Spring constant (N/m)"),

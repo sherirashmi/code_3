@@ -76,7 +76,7 @@ from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots")
+OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 
 # Keyed by short name ("MDN", "cVAE", ...) rather than the registry's "1".."4"
 # keys, matching this module's own reporting convention; built from the same
