@@ -405,15 +405,28 @@ def evaluate_inverse(
 # ==================================================
 
 
-def _load_checkpoint(key: str, dataset_tag: str):
+def variant(key: str, use_sorted_branch: bool = False) -> tuple[str, dict]:
+    """(model name, model_config) for a registry entry and encoder variant.
+
+    The f_t-sorted resonator branch (DCO_sorted design) exists for iFNO and
+    iDCO; such models are saved/plotted as ``<MODEL>_sorted``.
+    """
     spec = INVERTIBLE_OPERATORS[key]
-    path = invertible_model_path(spec["short"], dataset_tag)
+    if use_sorted_branch and spec.get("supports_sorted_branch"):
+        return f"{spec['short']}_sorted", {**dict(spec["model_config"]), "use_sorted_branch": True}
+    return spec["short"], dict(spec["model_config"])
+
+
+def _load_checkpoint(key: str, dataset_tag: str, use_sorted_branch: bool = False):
+    spec = INVERTIBLE_OPERATORS[key]
+    name, _config = variant(key, use_sorted_branch)
+    path = invertible_model_path(name, dataset_tag)
     if not path.exists():
-        raise FileNotFoundError(f"{path} not found -- train {spec['short']} on dataset '{dataset_tag}' first.")
+        raise FileNotFoundError(f"{path} not found -- train {name} on dataset '{dataset_tag}' first.")
     checkpoint = torch.load(path, map_location=device, weights_only=False)
     if dataset_tag in DATASETS:
         # Solver checks of this model use the Nx x Ny it was trained with.
-        apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=spec["short"])
+        apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=name)
     model = spec["build"](design_dim=DESIGN_DIM, **checkpoint.get("model_config", spec["model_config"]))
     model.load_state_dict(checkpoint["model_state_dict"])
     return model.to(device), checkpoint
@@ -431,11 +444,12 @@ def train_one(
     stage3_inverse_weight: float = STAGE3_INVERSE_WEIGHT,
     num_inverse_examples: int = 100,
     num_inverse_samples: int = 8,
+    use_sorted_branch: bool = False,
     _data=None,
 ):
     """Train + evaluate exactly one registry entry (e.g. key="2" for iDCO)."""
     spec = INVERTIBLE_OPERATORS[key]
-    tag = spec["short"]
+    tag, model_config = variant(key, use_sorted_branch)
     dataset_tag = dataset_tag_for(dataset_file)
 
     seed_everything(seed)
@@ -447,7 +461,7 @@ def train_one(
     norm = dataset.norm_params
     out_dir = invertible_plot_dir(dataset_tag, tag)
 
-    model: InvertibleOperatorBase = spec["build"](design_dim=DESIGN_DIM, **spec["model_config"]).to(device)
+    model: InvertibleOperatorBase = spec["build"](design_dim=DESIGN_DIM, **model_config).to(device)
     print(f"{tag} params: {sum(p.numel() for p in model.parameters()):,} | dataset '{dataset_tag}'")
 
     print("\n" + "#" * 70 + f"\n{tag} Stage 1: invertible coupling blocks + P/Q/P'/Q'\n" + "#" * 70)
@@ -474,7 +488,7 @@ def train_one(
     torch.save(
         {
             "model_state_dict": model.state_dict(), "norm_params": dict(norm),
-            "model_config": dict(spec["model_config"]), "training_config": training_config,
+            "model_config": model_config, "training_config": training_config,
             "history": {"stage1": history1, "stage2": history2, "stage3": history3},
             "dataset_file": list(dataset_file) if isinstance(dataset_file, (list, tuple)) else dataset_file,
             "num_configurations": int(num_configurations),
@@ -503,11 +517,12 @@ def evaluate_one(
     seed: int = SEED,
     num_inverse_examples: int = 100,
     num_inverse_samples: int = 8,
+    use_sorted_branch: bool = False,
 ):
     """Re-evaluate an existing checkpoint (no training)."""
     dataset_tag = dataset_tag_for(dataset_file)
-    model, checkpoint = _load_checkpoint(key, dataset_tag)
-    tag = INVERTIBLE_OPERATORS[key]["short"]
+    model, checkpoint = _load_checkpoint(key, dataset_tag, use_sorted_branch)
+    tag, _config = variant(key, use_sorted_branch)
     num_configurations = int(num_configurations or checkpoint.get("num_configurations")
                              or DATASETS.get(dataset_tag, {}).get("num_configurations", NUM_CONFIGURATIONS))
     dataset, loaders = prepare_inverse_data(
@@ -515,7 +530,7 @@ def evaluate_one(
     )
     norm = dataset.norm_params
     from erp_inverse_operators.evaluate import _check_norm
-    _check_norm(INVERTIBLE_OPERATORS[key]["short"], checkpoint["norm_params"], norm)
+    _check_norm(tag, checkpoint["norm_params"], norm)
     out_dir = invertible_plot_dir(dataset_tag, tag)
     if "history" in checkpoint:
         histories = dict(zip(("Stage 1 (invertible blocks)", "Stage 2 ($\\beta$-VAE)", "Stage 3 (joint)"),
@@ -580,7 +595,8 @@ def main(keys: tuple[str, ...] = ("1", "2", "3"), evaluate_only: bool = False, *
     for key in keys:
         if evaluate_only:
             eval_kwargs = {k: v for k, v in kwargs.items()
-                           if k in ("dataset_file", "num_configurations", "seed", "num_inverse_examples", "num_inverse_samples")}
+                           if k in ("dataset_file", "num_configurations", "seed", "num_inverse_examples",
+                                    "num_inverse_samples", "use_sorted_branch")}
             _model, history, fwd, inv = evaluate_one(key, **eval_kwargs)
         else:
             if shared is None:
@@ -590,7 +606,7 @@ def main(keys: tuple[str, ...] = ("1", "2", "3"), evaluate_only: bool = False, *
                     dataset_file=dataset_file, seed=kwargs.get("seed", SEED),
                 )
             _model, history, fwd, inv = train_one(key, _data=shared, **kwargs)
-        results[key] = (INVERTIBLE_OPERATORS[key]["short"], history, fwd, inv)
+        results[key] = (variant(key, kwargs.get("use_sorted_branch", False))[0], history, fwd, inv)
     if len(results) > 1:
         _save_comparison(results, dataset_tag)
     return results

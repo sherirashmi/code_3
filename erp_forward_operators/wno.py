@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from erp_forward_operators.neural_operator_utils import (
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     resolve_activation,
     run_operator_experiment,
 )
@@ -105,11 +106,17 @@ class WNO(nn.Module):
         query_dim: int = 48,
         dropout: float = 0.1,
         activation: str | type[nn.Module] = "gelu",
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         activation_cls = resolve_activation(activation)
-        self.configuration_encoder = ResonatorSetEncoder(
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the
+        # pooled set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.configuration_encoder = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch,
+            num_res=self.num_res,
             hidden_dim=config_hidden,
             element_dim=config_hidden,
             output_dim=width,

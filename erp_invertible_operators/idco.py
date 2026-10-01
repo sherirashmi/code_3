@@ -41,6 +41,7 @@ from erp_forward_operators.neural_operator_utils import (
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     resolve_activation,
 )
 from erp_invertible_operators.common import DesignVAE, InvertibleOperatorBase
@@ -94,6 +95,7 @@ class IDCO(InvertibleOperatorBase):
         vae_hidden: int = 64,
         tau: float = 1.0,
         activation: str | type[nn.Module] = "silu",
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         if design_dim % 5 != 0:
@@ -107,7 +109,13 @@ class IDCO(InvertibleOperatorBase):
         activation_cls = resolve_activation(activation)
 
         # ---- Forward-direction lift (P): DCO's own branch/trunk/query ----
-        self.branch = ResonatorSetEncoder(hidden_dim=branch_dim, element_dim=branch_dim, output_dim=branch_dim)
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the pooled
+        # set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.branch = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch, num_res=self.num_res,
+            hidden_dim=branch_dim, element_dim=branch_dim, output_dim=branch_dim
+        )
         self.trunk = MLP([1, trunk_dim, trunk_dim], activation=activation_cls)
         self.resonance_query = ResonanceQueryEncoder(hidden_dim=query_dim, element_dim=query_dim, output_dim=query_dim)
         self.lift_p = nn.Linear(branch_dim + trunk_dim + query_dim, 2 * self.width)

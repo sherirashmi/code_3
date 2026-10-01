@@ -73,6 +73,25 @@ mathtext is used (same look, no TeX needed). Force with `THESIS_USETEX=1/0`.
 Matplotlib's LaTeX mode needs `type1cm.sty` (Ubuntu/Debian:
 `texlive-latex-extra`, plus `dvipng` and `cm-super`).
 
+## Resonator encoder: set vs. set + f_t-sorted branch
+
+Training (and evaluate/predict) in `main.py` asks which resonator encoder to use:
+
+1. **Set encoder** (standard): shared per-resonator MLP + mean/max pooling --
+   permutation invariant and smooth, but lossy (different resonator sets
+   can pool to the same vector).
+2. **Set encoder + f_t-sorted branch** (the DCO_sorted design): additionally
+   sorts the resonators by ascending f_t and concatenates their features
+   (lossless; order fixed by f_t, so still permutation invariant). Both
+   branch outputs are concatenated; for DON, DNO, FNO, SIREN, WNO, LNO, iFNO
+   and iDCO they are linearly fused back to the original encoder width
+   (`SetAndSortedResonatorEncoder`), DCO keeps its own concat-into-lift
+   implementation. Saved and plotted as `<MODEL>_sorted` (e.g. `DNO_sorted`),
+   so it never overwrites the standard model. Adds roughly 28-45 % parameters.
+
+GNO, STO, NN and iGNO do not use the set encoder and always train in their
+standard form. `ResonanceQueryEncoder` is unchanged in both variants.
+
 ## Training details
 
 ### Forward operators (`erp_forward_operators/neural_operator_utils.py`)

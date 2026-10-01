@@ -57,7 +57,7 @@ from utils.paths import (
     inverse_model_path,
     inverse_plot_dir,
 )
-from erp_forward_operators.operator_registry import OPERATORS
+from erp_forward_operators.operator_registry import OPERATORS, SORTED_SUFFIX
 from erp_forward_operators.frequency_holdout import run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
@@ -287,6 +287,30 @@ def _prompt_configuration(num_res: int) -> np.ndarray:
     return configuration
 
 
+def _variant(spec, use_sorted_branch: bool) -> tuple[str, dict[str, object]]:
+    """(model name, model_config overrides) for the chosen encoder variant.
+
+    With the sorted branch the model is saved/plotted as ``<SHORT>_sorted``
+    (e.g. ``DCO_sorted``), so it never overwrites the set-encoder model.
+    Architectures without a set encoder (GNO, STO, NN) always use their
+    standard encoder.
+    """
+    if use_sorted_branch and spec.get("supports_sorted_branch"):
+        return f"{spec['short']}{SORTED_SUFFIX}", {"use_sorted_branch": True}
+    return spec["short"], {}
+
+
+def _prompt_encoder_variant(names_supported: list[str]) -> bool:
+    """Ask for the resonator-encoder variant; False = set encoder only."""
+    if not names_supported:
+        return False
+    print("\nResonator encoder")
+    print("1. Set encoder (mean + max pooling)  [standard]")
+    print("2. Set encoder + f_t-sorted branch   (DCO_sorted design; saved as <MODEL>_sorted)")
+    print(f"   (available for: {', '.join(names_supported)})")
+    return _prompt_choice("Select encoder: ", {"1": None, "2": None}) == "2"
+
+
 def _release_memory() -> None:
     gc.collect()
     if torch.cuda.is_available():
@@ -374,10 +398,10 @@ def _print_comparison_table(rows: list[dict[str, object]]) -> str:
 # ==================================================
 
 
-def _comparison_entry(spec, history, metrics, frequency_values):
+def _comparison_entry(name, history, metrics, frequency_values):
     """Summary row + compact per-spectrum arrays for the ALL_MODELS plots."""
     row = {
-        "model": spec["short"],
+        "model": name,
         "final_train_loss": history["train"][-1],
         "final_val_loss": history["val"][-1],
         "best_val_loss": min(history["val"]),
@@ -416,14 +440,14 @@ def _comparison_entry(spec, history, metrics, frequency_values):
     return row, data
 
 
-def _require_checkpoint(spec, tag: str) -> Path | None:
-    path = forward_model_path(spec["short"], tag)
+def _require_checkpoint(name: str, tag: str) -> Path | None:
+    path = forward_model_path(name, tag)
     if path.exists():
         return path
     general_dir = path.parent.parent
     available = sorted(p.parent.name for p in general_dir.glob(f"*/{path.name}"))
-    print(f"\nNo {spec['short']} checkpoint for dataset '{tag}' ({path}).")
-    print(f"Datasets {spec['short']} has been trained on: {', '.join(available) or 'none'} -- train it first.")
+    print(f"\nNo {name} checkpoint for dataset '{tag}' ({path}).")
+    print(f"Datasets {name} has been trained on: {', '.join(available) or 'none'} -- train it first.")
     return None
 
 
@@ -442,8 +466,12 @@ def train_all_models(
     seed: int = SEED,
     lbfgs_epochs: int = 0,
     epochs_override: int | None = None,
+    use_sorted_branch: bool = False,
 ) -> dict[str, object]:
     """Train and evaluate the given operators sequentially (default: all).
+
+    ``use_sorted_branch=True`` trains the set-encoder architectures with the
+    extra f_t-sorted resonator branch, saved as ``<MODEL>_sorted``.
 
     For every operator, saves into ``plots/GENERAL/<dataset>/<MODEL>/`` its
     loss curve, 5 test-spectrum comparisons and the predicted-vs-true parity
@@ -465,7 +493,7 @@ def train_all_models(
 
     print("\n" + "=" * 76)
     print("TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
-    print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
+    print(f"Operators      : {', '.join(_variant(spec, use_sorted_branch)[0] for spec in specs)}")
     print(f"Dataset        : {tag} ({dataset_file})")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
@@ -483,9 +511,10 @@ def train_all_models(
         epochs = int(epochs_override) if epochs_override is not None else int(spec["epochs"])
         learning_rate = float(spec["lr"])
         regenerate_this_model = bool(regenerate_dataset and model_index == 0)
+        name, overrides = _variant(spec, use_sorted_branch)
 
         print("\n" + "#" * 76)
-        print(f"[{model_index + 1}/{len(specs)}] Training {spec['name']} ({spec['short']})")
+        print(f"[{model_index + 1}/{len(specs)}] Training {spec['name']} ({name})")
         print(f"epochs={epochs} | lr={learning_rate:g}")
         print("#" * 76)
 
@@ -504,25 +533,26 @@ def train_all_models(
                 save_plots=False,           # saved explicitly below
                 num_evaluation_plots=5,
                 evaluate_after_training=True,
-                checkpoint_file=forward_model_path(spec["short"], tag),
+                checkpoint_file=forward_model_path(name, tag),
+                model_config_overrides=overrides,
             )
             history, metrics = result["history"], result["metrics"]
             save_operator_experiment_plots(
-                spec["short"],
+                name,
                 history=history,
                 metrics=metrics,
                 frequency_values=result["dataset"].frequency_values,
-                plot_dir=forward_plot_dir(spec["short"], tag),
+                plot_dir=forward_plot_dir(name, tag),
                 num_configurations=5,
                 show=False,
             )
-            row, data = _comparison_entry(spec, history, metrics, result["dataset"].frequency_values)
+            row, data = _comparison_entry(name, history, metrics, result["dataset"].frequency_values)
             comparison_rows.append(row)
-            all_model_plot_data[spec["short"]] = data
+            all_model_plot_data[name] = data
             del history, metrics, result
         except Exception as exc:  # keep going with the other operators
-            failures[spec["short"]] = f"{type(exc).__name__}: {exc}"
-            print(f"\n!!! {spec['short']} FAILED -- continuing with the remaining operators.")
+            failures[name] = f"{type(exc).__name__}: {exc}"
+            print(f"\n!!! {name} FAILED -- continuing with the remaining operators.")
             traceback.print_exc()
         _release_memory()
 
@@ -560,6 +590,9 @@ def main_all_models():
         print(f"  {spec['short']:>5s}: epochs={int(spec['epochs'])}, lr={float(spec['lr']):g}")
 
     operator_specs = _prompt_operator_selection("Which operators to train (e.g. 2,4,5)")
+    use_sorted_branch = _prompt_encoder_variant(
+        [s["short"] for s in operator_specs if s.get("supports_sorted_branch")]
+    )
     tag, dataset_file = _prompt_dataset()
     num_configurations = _prompt_num_configurations(tag, "Number of configurations to use for every model")
     batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=64, minimum=1)
@@ -583,6 +616,7 @@ def main_all_models():
         seed=SEED,
         lbfgs_epochs=lbfgs_epochs,
         epochs_override=epochs_override,
+        use_sorted_branch=use_sorted_branch,
     )
 
 
@@ -615,12 +649,14 @@ def main_forward():
     _print_action_menu()
     action = ACTIONS[_prompt_choice("Select operation: ", ACTIONS)]
     runner = spec["runner"]
+    use_sorted_branch = _prompt_encoder_variant([spec["short"]] if spec.get("supports_sorted_branch") else [])
+    name, overrides = _variant(spec, use_sorted_branch)
     tag, dataset_file = _prompt_dataset("100k" if action != "train" else DEFAULT_DATASET_TAG)
-    plot_dir = forward_plot_root(tag, GENERAL) / spec["short"]  # created when plots are saved
-    checkpoint = forward_model_path(spec["short"], tag)
+    plot_dir = forward_plot_root(tag, GENERAL) / name  # created when plots are saved
+    checkpoint = forward_model_path(name, tag)
 
     print("\n" + "=" * 68)
-    print(f"Operator   : {spec['name']} ({spec['short']})")
+    print(f"Operator   : {spec['name']} ({name})")
     print(f"Action     : {action}")
     print(f"Dataset    : {tag}")
     print(f"Checkpoint : {checkpoint}")
@@ -654,9 +690,10 @@ def main_forward():
             num_evaluation_plots=5,
             evaluate_after_training=True,
             checkpoint_file=checkpoint,
+            model_config_overrides=overrides,
         )
         save_operator_experiment_plots(
-            spec["short"],
+            name,
             history=result["history"],
             metrics=result["metrics"],
             frequency_values=result["dataset"].frequency_values,
@@ -666,7 +703,7 @@ def main_forward():
         )
         return result
 
-    if _require_checkpoint(spec, tag) is None:
+    if _require_checkpoint(name, tag) is None:
         return None
 
     if action == "evaluate":
@@ -684,7 +721,7 @@ def main_forward():
         )
         history = result.get("history")
         save_operator_experiment_plots(
-            spec["short"],
+            name,
             history=history if history and history.get("train") else None,
             metrics=result["metrics"],
             frequency_values=result["frequency_values"],
@@ -714,7 +751,7 @@ def main_forward():
         checkpoint_file=checkpoint,
     )
     save_operator_experiment_plots(
-        spec["short"],
+        name,
         prediction=result["prediction"],
         plot_dir=plot_dir,
         show=show_plot,
@@ -731,6 +768,9 @@ def main_frequency_holdout():
     """Interactive entry point for the frequency-holdout experiment."""
     operator_specs = _prompt_operator_selection(
         "Which operators to run the frequency-holdout experiment on (e.g. 2,4,5)"
+    )
+    use_sorted_branch = _prompt_encoder_variant(
+        [s["short"] for s in operator_specs if s.get("supports_sorted_branch")]
     )
     tag, dataset_file = _prompt_dataset()
     num_configurations = _prompt_num_configurations(tag)
@@ -767,6 +807,7 @@ def main_frequency_holdout():
         holdout_end_frac=holdout_end_frac,
         num_plot=num_plot,
         seed=SEED,
+        use_sorted_branch=use_sorted_branch,
     )
 
 
@@ -1000,6 +1041,9 @@ def main_invertible_operators():
     print("1. Train (3-stage schedule) + forward/inverse evaluation")
     print("2. Evaluate saved checkpoint(s)")
     evaluate_only = _prompt_choice("Select operation: ", {"1": None, "2": None}) == "2"
+    use_sorted_branch = _prompt_encoder_variant(
+        [INVERTIBLE_OPERATORS[k]["short"] for k in keys if INVERTIBLE_OPERATORS[k].get("supports_sorted_branch")]
+    )
     tag, dataset_file = _prompt_dataset("100k")
     num_inverse_examples = _prompt_int("Held-out targets for the solver-scored inverse evaluation", default=100, minimum=1)
     num_inverse_samples = _prompt_int("Posterior samples per target", default=8, minimum=1)
@@ -1007,6 +1051,7 @@ def main_invertible_operators():
     if evaluate_only:
         return invertible.main(
             keys=tuple(keys), evaluate_only=True, dataset_file=dataset_file, seed=SEED,
+            use_sorted_branch=use_sorted_branch,
             num_inverse_examples=num_inverse_examples, num_inverse_samples=num_inverse_samples,
         )
 
@@ -1031,6 +1076,7 @@ def main_invertible_operators():
         stage2_epochs=stage2,
         stage3_epochs=stage3,
         stage3_inverse_weight=inverse_weight,
+        use_sorted_branch=use_sorted_branch,
         num_inverse_examples=num_inverse_examples,
         num_inverse_samples=num_inverse_samples,
     )

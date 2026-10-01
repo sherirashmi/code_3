@@ -130,6 +130,7 @@ def run_frequency_holdout(
     holdout_end_frac: float = 0.60,
     num_plot: int = 5,
     seed: int = 727,
+    use_sorted_branch: bool = False,
 ) -> dict[str, dict[str, object]]:
     """Run the frequency-holdout experiment for the given operators (default: all).
 
@@ -178,12 +179,18 @@ def run_frequency_holdout(
     norm = dataset.norm_params
     results: dict[str, dict[str, object]] = {}
 
+    names = []
     for spec in specs:
-        short = spec["short"]
+        # Optional f_t-sorted resonator branch (set-encoder architectures
+        # only), saved/plotted as <MODEL>_sorted.
+        sorted_variant = bool(use_sorted_branch and spec.get("supports_sorted_branch"))
+        short = f"{spec['short']}_sorted" if sorted_variant else spec["short"]
+        model_config = {**dict(spec["model_config"]), **({"use_sorted_branch": True} if sorted_variant else {})}
+        names.append(short)
         print("\n" + "#" * 76)
         print(f"Frequency-holdout training: {short}")
         print("#" * 76)
-        model = spec["build_model"](num_res=dataset.num_res, **spec["model_config"]).to(device)
+        model = spec["build_model"](num_res=dataset.num_res, **model_config).to(device)
         print(f"{short} trainable parameters: {parameter_count(model):,}")
 
         model, history = train_operator(
@@ -253,7 +260,7 @@ def run_frequency_holdout(
         torch.save(
             {
                 "operator_name": short,
-                "model_config": dict(spec["model_config"]),
+                "model_config": model_config,
                 "model_state_dict": model.state_dict(),
                 "preprocessing_state": dataset.preprocessing_state(),
                 "modal_resolution": list(dataset.modal_resolution),
@@ -280,7 +287,7 @@ def run_frequency_holdout(
             f, indent=2,
         )
 
-    models_order = [spec["short"] for spec in specs]
+    models_order = names
     rmse_seen_vals = [results[m]["rmse_seen"] for m in models_order]
     rmse_unseen_vals = [results[m]["rmse_unseen"] for m in models_order]
     x = np.arange(len(models_order))

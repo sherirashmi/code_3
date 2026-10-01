@@ -11,6 +11,7 @@ from erp_forward_operators.neural_operator_utils import (
     ResidualMLPBlock,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     resolve_activation,
     run_operator_experiment,
 )
@@ -59,11 +60,17 @@ class DNO(nn.Module):
         depth: int = 4,
         dropout: float = 0.0,
         activation: str | type[nn.Module] = "silu",
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
         activation_cls = resolve_activation(activation)
-        self.configuration_encoder = ResonatorSetEncoder(
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the
+        # pooled set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.configuration_encoder = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch,
+            num_res=self.num_res,
             hidden_dim=hidden_dim,
             element_dim=hidden_dim,
             output_dim=context_dim,

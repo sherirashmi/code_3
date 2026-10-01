@@ -11,6 +11,7 @@ from erp_forward_operators.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     resolve_activation,
     run_operator_experiment,
 )
@@ -69,6 +70,7 @@ class DON(nn.Module):
         num_terms: int = 4,
         refine_width: int = 64,
         activation: str | type[nn.Module] = "tanh",
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         self.num_res = int(num_res)
@@ -77,7 +79,12 @@ class DON(nn.Module):
         stacked_dim = self.num_terms * self.basis_dim
         activation_cls = resolve_activation(activation)
 
-        self.configuration_encoder = ResonatorSetEncoder(
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the
+        # pooled set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.configuration_encoder = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch,
+            num_res=self.num_res,
             hidden_dim=hidden_dim,
             element_dim=hidden_dim,
             output_dim=context_dim,

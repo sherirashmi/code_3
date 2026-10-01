@@ -297,6 +297,87 @@ class SortedResonatorEncoder(nn.Module):
         return self.net(flat)
 
 
+class SetAndSortedResonatorEncoder(nn.Module):
+    """Pooled set branch + f_t-sorted branch, the DCO_sorted design as a
+    reusable block (see ``SortedResonatorEncoder``'s docstring).
+
+    Both branches see the same normalised ``[m, k, f_t, x, y]`` resonators:
+
+    * ``set_encoder``: :class:`ResonatorSetEncoder`, shared per-resonator
+      MLP + mean/max pooling -- permutation invariant and smooth, but lossy.
+    * ``sorted_encoder``: :class:`SortedResonatorEncoder`, resonators sorted
+      by ascending ``f_t`` and concatenated -- permutation invariant through
+      the canonical order, lossless, but discontinuous where two ``f_t``
+      cross.
+
+    Their outputs are concatenated and linearly fused back to ``output_dim``,
+    so this is a drop-in replacement for ``ResonatorSetEncoder`` with the
+    same input/output shapes, ``(B, num_res, 5) -> (B, output_dim)``.
+    """
+
+    def __init__(
+        self,
+        num_res: int,
+        feature_dim: int = 5,
+        hidden_dim: int = 128,
+        element_dim: int = 128,
+        output_dim: int = 128,
+        modal_harmonics: int = 10,
+    ) -> None:
+        super().__init__()
+        self.set_encoder = ResonatorSetEncoder(
+            feature_dim=feature_dim,
+            hidden_dim=hidden_dim,
+            element_dim=element_dim,
+            output_dim=output_dim,
+            modal_harmonics=modal_harmonics,
+        )
+        self.sorted_encoder = SortedResonatorEncoder(
+            num_res=num_res,
+            feature_dim=feature_dim,
+            hidden_dim=hidden_dim,
+            output_dim=output_dim,
+            modal_harmonics=modal_harmonics,
+        )
+        self.fusion = nn.Linear(2 * output_dim, output_dim)
+
+    def forward(self, configuration: torch.Tensor) -> torch.Tensor:
+        pooled = self.set_encoder(configuration)
+        ordered = self.sorted_encoder(configuration)
+        return self.fusion(torch.cat((pooled, ordered), dim=-1))
+
+
+def build_resonator_encoder(
+    *,
+    use_sorted_branch: bool,
+    num_res: int,
+    hidden_dim: int = 128,
+    element_dim: int = 128,
+    output_dim: int = 128,
+    modal_harmonics: int = 10,
+) -> nn.Module:
+    """Configuration encoder used by the set-encoder architectures.
+
+    ``use_sorted_branch=False`` returns a plain :class:`ResonatorSetEncoder`
+    (identical parameters/state-dict keys as before, so existing checkpoints
+    load unchanged); ``True`` returns :class:`SetAndSortedResonatorEncoder`.
+    """
+    if use_sorted_branch:
+        return SetAndSortedResonatorEncoder(
+            num_res=num_res,
+            hidden_dim=hidden_dim,
+            element_dim=element_dim,
+            output_dim=output_dim,
+            modal_harmonics=modal_harmonics,
+        )
+    return ResonatorSetEncoder(
+        hidden_dim=hidden_dim,
+        element_dim=element_dim,
+        output_dim=output_dim,
+        modal_harmonics=modal_harmonics,
+    )
+
+
 class ResonanceQueryEncoder(nn.Module):
     """Permutation-invariant resonator/query interaction encoder.
 
@@ -1425,11 +1506,15 @@ def make_operator_runner(
         num_evaluation_plots: int = 5,
         evaluate_after_training: bool = False,
         checkpoint_file: str | None = None,
+        model_config_overrides: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
+        # e.g. {"use_sorted_branch": True}; saved in the checkpoint's
+        # model_config, so evaluate/predict rebuild the same variant.
+        config = {**dict(model_config), **dict(model_config_overrides or {})}
         return run_operator_experiment(
             operator_name=operator_name,
             build_model=build_model,
-            model_config=model_config,
+            model_config=config,
             action=action,
             num_configurations=num_configurations,
             batch_size=batch_size,
@@ -1461,6 +1546,9 @@ __all__ = [
     "FrequencyRefinement1d",
     "physics_aware_resonator_features",
     "ResonatorSetEncoder",
+    "SortedResonatorEncoder",
+    "SetAndSortedResonatorEncoder",
+    "build_resonator_encoder",
     "ResonanceQueryEncoder",
     "ERPSpectrumDataset",
     "build_spectrum_loaders",

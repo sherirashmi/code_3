@@ -69,6 +69,7 @@ from erp_forward_operators.neural_operator_utils import (
     MLP,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     resolve_activation,
 )
 from erp_invertible_operators.common import DesignVAE, InvertibleOperatorBase
@@ -143,6 +144,7 @@ class IFNO(InvertibleOperatorBase):
         vae_hidden: int = 64,
         tau: float = 1.0,
         activation: str | type[nn.Module] = "gelu",
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         if design_dim % 5 != 0:
@@ -155,7 +157,11 @@ class IFNO(InvertibleOperatorBase):
         self._register_frequency_grid(torch.from_numpy(_frequency_grid_hz.astype("float32")))
 
         # ---- Forward-direction lift (P) ----
-        self.configuration_encoder = ResonatorSetEncoder(
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the pooled
+        # set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.configuration_encoder = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch, num_res=self.num_res,
             hidden_dim=config_hidden, element_dim=config_hidden, output_dim=2 * self.width
         )
         self.resonance_query = ResonanceQueryEncoder(hidden_dim=query_dim, element_dim=query_dim, output_dim=query_dim)

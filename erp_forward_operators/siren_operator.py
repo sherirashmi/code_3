@@ -11,6 +11,7 @@ from erp_forward_operators.neural_operator_utils import (
     FrequencyRefinement1d,
     ResonanceQueryEncoder,
     ResonatorSetEncoder,
+    build_resonator_encoder,
     run_operator_experiment,
 )
 
@@ -66,6 +67,7 @@ class SIRENOperator(nn.Module):
         omega_0: float = 20.0,
         config_hidden: int = 128,
         query_hidden: int = 64,
+        use_sorted_branch: bool = False,
     ) -> None:
         super().__init__()
         if depth <= 0:
@@ -79,7 +81,12 @@ class SIRENOperator(nn.Module):
         # in this project (whose ResonatorSetEncoder/ResonanceQueryEncoder
         # calls already tie their internal width to a scalable parameter).
         # Exposing them keeps SIREN consistent with the rest.
-        self.configuration_encoder = ResonatorSetEncoder(
+        # use_sorted_branch adds the f_t-sorted resonator branch next to the
+        # pooled set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
+        self.use_sorted_branch = bool(use_sorted_branch)
+        self.configuration_encoder = build_resonator_encoder(
+            use_sorted_branch=self.use_sorted_branch,
+            num_res=self.num_res,
             hidden_dim=config_hidden,
             element_dim=config_hidden,
             output_dim=context_dim,

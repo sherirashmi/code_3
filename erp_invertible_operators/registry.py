@@ -15,6 +15,7 @@ INVERTIBLE_OPERATORS = {
     "1": {
         "name": "Invertible Fourier Neural Operator",
         "short": "iFNO",
+        "supports_sorted_branch": True,
         "build": build_ifno,
         "model_config": IFNO_CONFIG,
         "model_cls": IFNO,
@@ -22,6 +23,7 @@ INVERTIBLE_OPERATORS = {
     "2": {
         "name": "Invertible Deep Cat Operator",
         "short": "iDCO",
+        "supports_sorted_branch": True,
         "build": build_idco,
         "model_config": IDCO_CONFIG,
         "model_cls": IDCO,
@@ -29,6 +31,7 @@ INVERTIBLE_OPERATORS = {
     "3": {
         "name": "Invertible Graph Neural Operator",
         "short": "iGNO",
+        "supports_sorted_branch": False,
         "build": build_igno,
         "model_config": IGNO_CONFIG,
         "model_cls": IGNO,

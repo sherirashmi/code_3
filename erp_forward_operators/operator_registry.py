@@ -29,6 +29,12 @@ from erp_forward_operators.nn import build_model as build_nn, DEFAULT_MODEL_CONF
 from erp_forward_operators.lno import build_model as build_lno, DEFAULT_MODEL_CONFIG as LNO_MODEL_CONFIG
 
 
+# Architectures whose configuration encoder is ResonatorSetEncoder; GNO, STO
+# and NN encode resonators differently and have no sorted-branch variant.
+SORTED_BRANCH_OPERATORS = ("DON", "DNO", "FNO", "DCO", "SIREN", "WNO", "LNO")
+SORTED_SUFFIX = "_sorted"
+
+
 def _make_spec(
     *,
     name: str,
@@ -55,6 +61,9 @@ def _make_spec(
         "model_config": model_config,
         "epochs": int(epochs),
         "lr": float(lr),
+        # Accepts use_sorted_branch=True (pooled set encoder + f_t-sorted
+        # resonator branch, the DCO_sorted design)?
+        "supports_sorted_branch": short in SORTED_BRANCH_OPERATORS,
     }
 
 
@@ -158,4 +167,4 @@ OPERATORS = {
 }
 
 
-__all__ = ["OPERATORS"]
+__all__ = ["OPERATORS", "SORTED_BRANCH_OPERATORS", "SORTED_SUFFIX"]
