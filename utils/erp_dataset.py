@@ -177,6 +177,58 @@ def apply_dataset_modal_resolution(
     return nx, ny
 
 
+def select_dataset_modal_resolution(tag: str) -> tuple[int, int]:
+    """Set the solver's (Nx, Ny) for a registry dataset at the moment it is
+    chosen (15 x 10 for the 150-mode datasets, 6 x 3 for the 18-mode one), so
+    every later calculation in the session uses that basis."""
+    nx, ny = (int(v) for v in DATASETS[tag]["modal_resolution"])
+    _physics.set_modal_resolution(nx, ny, verbose=False)
+    print(f"Modal resolution for dataset '{tag}': Nx = {nx}, Ny = {ny} ({nx * ny} plate modes)")
+    return nx, ny
+
+
+def recorded_modal_resolution(checkpoint: Mapping[str, object]) -> tuple[int, int] | None:
+    """(Nx, Ny) a trained model's checkpoint was trained with, or None for
+    checkpoints saved before this was recorded."""
+    value = checkpoint.get("modal_resolution")
+    if value is None and isinstance(checkpoint.get("preprocessing_state"), Mapping):
+        value = checkpoint["preprocessing_state"].get("modal_resolution")
+    if value is None:
+        return None
+    nx, ny = value
+    return int(nx), int(ny)
+
+
+def apply_model_modal_resolution(
+    checkpoint: Mapping[str, object],
+    dataset_file: str | Path | Sequence[str],
+    *,
+    model_name: str = "model",
+) -> tuple[int, int]:
+    """Use the (Nx, Ny) a trained model was trained with for every following
+    solver calculation made with it.
+
+    The model's own recorded resolution wins; older checkpoints without one
+    fall back to their dataset's resolution. A model whose recorded
+    resolution differs from the selected dataset's is rejected -- comparing
+    it against solver spectra from a different modal basis is meaningless.
+    """
+    dataset_resolution = modal_resolution_for(dataset_file)
+    resolution = recorded_modal_resolution(checkpoint)
+    if resolution is None:
+        resolution = dataset_resolution
+    elif resolution != dataset_resolution:
+        raise ValueError(
+            f"{model_name} was trained with Nx x Ny = {resolution[0]} x {resolution[1]} plate modes, but the "
+            f"selected dataset ({dataset_tag_for(dataset_file)}) uses {dataset_resolution[0]} x "
+            f"{dataset_resolution[1]}. Select the dataset the model was trained on."
+        )
+    _physics.set_modal_resolution(*resolution, verbose=False)
+    print(f"{model_name}: using its training modal resolution Nx = {resolution[0]}, Ny = {resolution[1]} "
+          f"({resolution[0] * resolution[1]} plate modes)")
+    return resolution
+
+
 # ==================================================
 # Validation helpers
 # ==================================================
@@ -1120,6 +1172,9 @@ __all__ = [
     "dataset_tag_for",
     "modal_resolution_for",
     "apply_dataset_modal_resolution",
+    "select_dataset_modal_resolution",
+    "recorded_modal_resolution",
+    "apply_model_modal_resolution",
 ]
 
 

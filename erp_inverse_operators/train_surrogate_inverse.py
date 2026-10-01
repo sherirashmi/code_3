@@ -92,7 +92,8 @@ def main(
     history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name="SurrogateInverse")
     save_checkpoint(
         model, norm_params, inverse_model_path("Surrogate", tag),
-        extra={"history": history, "dataset_tag": tag, "num_configurations": int(num_configurations)},
+        extra={"history": history, "dataset_tag": tag, "num_configurations": int(num_configurations),
+               "modal_resolution": list(dataset.modal_resolution)},
     )
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(history["train"], label="train", lw=2)

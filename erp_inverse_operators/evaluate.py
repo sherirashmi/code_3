@@ -71,7 +71,13 @@ import torch
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
-from utils.erp_dataset import configuration_to_resonators, dataset_tag_for, denormalize_erp_array
+from utils.erp_dataset import (
+    DATASETS,
+    apply_model_modal_resolution,
+    configuration_to_resonators,
+    dataset_tag_for,
+    denormalize_erp_array,
+)
 from utils.paths import ALL_MODELS, inverse_model_path, inverse_plot_dir
 from utils.plotting import ERP_LABEL, save_figure
 from utils.solver import compute_erp_spectrum
@@ -101,6 +107,9 @@ def load_inverse_model(name: str, dataset_tag: str = "100k"):
             f"{path} not found -- train {name} on dataset '{dataset_tag}' first (ERP -> Inverse -> Train)."
         )
     checkpoint = torch.load(path, map_location=device, weights_only=False)
+    if dataset_tag in DATASETS:
+        # Solver checks of this model's designs use its training Nx x Ny.
+        apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=name)
     model = MODEL_BUILDERS[name]()
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)

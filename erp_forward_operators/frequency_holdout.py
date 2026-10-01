@@ -256,6 +256,7 @@ def run_frequency_holdout(
                 "model_config": dict(spec["model_config"]),
                 "model_state_dict": model.state_dict(),
                 "preprocessing_state": dataset.preprocessing_state(),
+                "modal_resolution": list(dataset.modal_resolution),
                 "holdout_band_indices": [int(start), int(end)],
                 "training_config": {"epochs": int(epochs), "batch_size": int(batch_size),
                                     "learning_rate": float(spec["lr"]), "optimizer": "AdamW", "dataset_tag": dataset_tag},

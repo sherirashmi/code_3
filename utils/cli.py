@@ -38,7 +38,13 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from utils.erp_dataset import DATASETS, DEFAULT_DATASET_TAG, dataset_files, dataset_tag_for
+from utils.erp_dataset import (
+    DATASETS,
+    DEFAULT_DATASET_TAG,
+    dataset_files,
+    dataset_tag_for,
+    select_dataset_modal_resolution,
+)
 from utils.paths import (
     ALL_MODELS,
     FREQ_HOLDOUT,
@@ -171,8 +177,10 @@ def _prompt_dataset(default_tag: str = DEFAULT_DATASET_TAG) -> tuple[str, str | 
         index = _prompt_int("Select dataset", default=default_index, minimum=1, maximum=len(tags))
         tag = tags[index - 1]
         if _dataset_available(tag) or tag == "10k":  # the 10k file can be (re)generated
-            nx, ny = DATASETS[tag]["modal_resolution"]
-            print(f"Using dataset '{tag}' -> solver plate modes {nx} x {ny} = {nx * ny}")
+            # Fix Nx/Ny now (15 x 10 for 150 modes, 6 x 3 for 18 modes) so every
+            # calculation in this run -- training, solver references, and any
+            # model trained on this dataset -- uses the dataset's modal basis.
+            select_dataset_modal_resolution(tag)
             return tag, dataset_files(tag)
         print(f"Dataset '{tag}' is missing files: {DATASETS[tag]['files']}")
 

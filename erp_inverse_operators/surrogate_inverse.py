@@ -70,6 +70,8 @@ import torch.nn.functional as F
 from erp_forward_operators.dco import build_model as _build_dco
 from erp_forward_operators.gno import build_model as _build_gno
 from erp_forward_operators.neural_operator_utils import MLP, erp_spectrum_loss
+import utils.physics as _physics
+from utils.erp_dataset import recorded_modal_resolution
 from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
 
 from .common import SpectrumEncoder, flatten_configuration
@@ -200,6 +202,13 @@ class SurrogateInverse(nn.Module):
                     f"supported: {sorted(_SURROGATE_BUILDERS)}."
                 )
             surrogate_norm = checkpoint["preprocessing_state"]["norm_params"]
+            surrogate_modes = recorded_modal_resolution(checkpoint)
+            if surrogate_modes is not None and surrogate_modes != _physics.get_modal_resolution():
+                print(
+                    f"WARNING: frozen surrogate {checkpoint_path} was trained with Nx x Ny = "
+                    f"{surrogate_modes[0]} x {surrogate_modes[1]} plate modes, but the current dataset uses "
+                    f"{_physics.Nx} x {_physics.Ny}; its spectra follow different physics."
+                )
             if int(surrogate_norm["num_res"]) != self.num_res:
                 raise ValueError(
                     f"Surrogate checkpoint {checkpoint_path} was trained with num_res="

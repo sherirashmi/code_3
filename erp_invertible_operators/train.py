@@ -57,6 +57,7 @@ from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from utils.erp_dataset import (
     DATASETS,
+    apply_model_modal_resolution,
     dataset_tag_for,
     denormalize_configuration_array,
     denormalize_erp_array,
@@ -410,6 +411,9 @@ def _load_checkpoint(key: str, dataset_tag: str):
     if not path.exists():
         raise FileNotFoundError(f"{path} not found -- train {spec['short']} on dataset '{dataset_tag}' first.")
     checkpoint = torch.load(path, map_location=device, weights_only=False)
+    if dataset_tag in DATASETS:
+        # Solver checks of this model use the Nx x Ny it was trained with.
+        apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=spec["short"])
     model = spec["build"](design_dim=DESIGN_DIM, **checkpoint.get("model_config", spec["model_config"]))
     model.load_state_dict(checkpoint["model_state_dict"])
     return model.to(device), checkpoint

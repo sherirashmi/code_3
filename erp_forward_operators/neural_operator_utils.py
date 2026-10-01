@@ -29,8 +29,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
+import utils.physics as _physics
 from utils.erp_dataset import (
     DEFAULT_DATASET_FILE,
+    apply_model_modal_resolution,
     configuration_to_resonators,
     dataset_tag_for,
     denormalize_configuration_array,
@@ -1161,6 +1163,11 @@ def save_operator_checkpoint(
             "model_config": dict(model_config),
             "model_state_dict": model.state_dict(),
             "preprocessing_state": preprocessing_state,
+            # Plate-mode basis (Nx, Ny) of the training data; every later
+            # solver calculation made with this model re-applies it.
+            "modal_resolution": list(
+                preprocessing_state.get("modal_resolution") or _physics.get_modal_resolution()
+            ),
             # Hyperparameters + loss history, so every checkpoint documents
             # exactly how it was trained (epochs, lr, loss weights, ...).
             "training_config": dict(training_config or {}),
@@ -1341,6 +1348,8 @@ def run_operator_experiment(
             f"Details: {type(exc).__name__}: {str(exc)[:200]}"
         ) from exc
     model.eval()
+    # Solver references for this model use the Nx x Ny it was trained with.
+    apply_model_modal_resolution(checkpoint, effective_dataset_file, model_name=operator_name)
 
     if action == "evaluate":
         metrics = evaluate_operator(

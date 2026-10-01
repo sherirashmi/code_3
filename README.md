@@ -23,6 +23,15 @@ Every ERP workflow first asks **which dataset** to use. That choice sets
 | `100k`         | `datasets/dataset_erp_ft_100k_part{1,2}.pth`  | 100 000        | 15 × 10 = 150      |
 | `200k_18modes` | `datasets/dataset_erp_ft_200k_18_modes_part{1..4}.pth` | 200 000 | 6 × 3 = 18   |
 
+Choosing the dataset immediately sets the solver's `Nx`/`Ny` (15/10 for the
+150-mode datasets, 6/3 for the 18-mode one). Every trained model records the
+`Nx`/`Ny` it was trained with in its checkpoint (`modal_resolution`), and
+whenever a model is loaded again (evaluate, predict, inverse sampling,
+invertible evaluation) that recorded basis is re-applied for all solver
+calculations made with it. A model whose basis differs from the selected
+dataset is rejected with an error. Checkpoints saved before this field
+existed fall back to their dataset's basis.
+
 (The 18-mode dataset differs from a 150-mode solve of the same configuration
 by up to ~25 dB, so mixing bases silently corrupts any solver comparison.)
 
