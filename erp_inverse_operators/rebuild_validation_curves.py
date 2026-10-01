@@ -22,6 +22,7 @@ from erp_inverse_operators.common import denormalize_design, prepare_inverse_dat
 from erp_inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_inverse_model, solve_configs
 from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import denormalize_erp_array
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 NUM_EXAMPLES = 3
@@ -48,6 +49,7 @@ def main():
             break
     test_spectrum = torch.cat(test_spectrum, dim=0)[:NUM_EXAMPLES]
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
+    test_spectrum = test_spectrum.to(device)
 
     names = list(MODEL_BUILDERS)
     models = {}
@@ -66,8 +68,8 @@ def main():
             with torch.no_grad():
                 result = model.sample(test_spectrum[row : row + 1], num_samples=NUM_SAMPLES)
             has_log_prob = isinstance(result, tuple)
-            flat_samples = result[0][0] if has_log_prob else result[0]
-            log_probs = result[1][0] if has_log_prob else None
+            flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
+            log_probs = (result[1][0].cpu() if has_log_prob else None)
 
             physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
             predicted_erp = solve_configs(solver_pool, physical, freq_hz)

@@ -71,6 +71,7 @@ from erp_inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_i
 from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_configuration_array, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 F_T_IDX = [i * 5 + 2 for i in range(NUM_RES)]  # flat-design index of each resonator's f_t
@@ -105,12 +106,12 @@ def _best_of_n_physical(model_name, test_spectrum, norm, freq_hz, num_samples, p
     n = test_spectrum.shape[0]
     model, _ = load_inverse_model(model_name)
     with torch.no_grad():
-        result = model.sample(test_spectrum, num_samples=num_samples)
+        result = model.sample(test_spectrum.to(device), num_samples=num_samples)
     has_log_prob = isinstance(result, tuple)
-    flat_samples = result[0] if has_log_prob else result
+    flat_samples = (result[0] if has_log_prob else result).cpu()
 
     if has_log_prob:
-        best_idx = result[1].numpy().argmax(axis=-1)
+        best_idx = result[1].cpu().numpy().argmax(axis=-1)
     else:
         physical_all = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
         flat_physical = physical_all.reshape(n * num_samples, NUM_RES, 5)
@@ -226,8 +227,8 @@ def calibration_curve(
         print(f"Calibration: sampling {name} ...")
         model, _ = load_inverse_model(name)
         with torch.no_grad():
-            result = model.sample(test_spectrum, num_samples=num_samples)
-        flat_samples = (result[0] if isinstance(result, tuple) else result).numpy()  # (n, S, 15)
+            result = model.sample(test_spectrum.to(device), num_samples=num_samples)
+        flat_samples = (result[0] if isinstance(result, tuple) else result).cpu().numpy()  # (n, S, 15)
 
         empirical = []
         for p in coverage_levels:
@@ -307,8 +308,8 @@ def single_example_posterior(
         print(f"Single-example posterior: sampling {name} ...")
         model, _ = load_inverse_model(name)
         with torch.no_grad():
-            result = model.sample(test_spectrum, num_samples=num_samples)
-        flat_samples = (result[0] if isinstance(result, tuple) else result)[0].numpy()  # (S, 15)
+            result = model.sample(test_spectrum.to(device), num_samples=num_samples)
+        flat_samples = (result[0] if isinstance(result, tuple) else result)[0].cpu().numpy()  # (S, 15)
         physical = denormalize_design(flat_samples, NUM_RES, norm)  # (S, num_res, 5)
         samples_2d = np.stack([physical[:, 0, 2], physical[:, 1, 2]], axis=1)
 
@@ -382,10 +383,10 @@ def noise_robustness_check(
         print(f"Noise robustness: sampling {name} ...")
         model, _ = load_inverse_model(name)
         with torch.no_grad():
-            clean_result = model.sample(clean_norm_spectrum, num_samples=num_samples)
-            noisy_result = model.sample(noisy_norm_spectrum, num_samples=num_samples)
-        clean_flat = (clean_result[0] if isinstance(clean_result, tuple) else clean_result)[0].numpy()
-        noisy_flat = (noisy_result[0] if isinstance(noisy_result, tuple) else noisy_result)[0].numpy()
+            clean_result = model.sample(clean_norm_spectrum.to(device), num_samples=num_samples)
+            noisy_result = model.sample(noisy_norm_spectrum.to(device), num_samples=num_samples)
+        clean_flat = (clean_result[0] if isinstance(clean_result, tuple) else clean_result)[0].cpu().numpy()
+        noisy_flat = (noisy_result[0] if isinstance(noisy_result, tuple) else noisy_result)[0].cpu().numpy()
         clean_physical = denormalize_design(clean_flat, NUM_RES, norm)
         noisy_physical = denormalize_design(noisy_flat, NUM_RES, norm)
         clean_2d = np.stack([clean_physical[:, 0, 2], clean_physical[:, 1, 2]], axis=1)

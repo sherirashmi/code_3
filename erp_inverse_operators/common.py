@@ -48,6 +48,7 @@ from erp_forward_operators.neural_operator_utils import (
     _split_ids,
     prepare_operator_data,
 )
+from utils.support import device
 
 
 def canonicalize_by_ft(configuration: np.ndarray) -> np.ndarray:
@@ -134,11 +135,13 @@ def prepare_inverse_data(
         seed=seed,
     )
     splits = _split_ids(dataset)
+    pin_memory = device.type == "cuda"
     loaders = {
         name: DataLoader(
             InverseDesignDataset(dataset, ids),
             batch_size=batch_size,
             shuffle=(name == "train"),
+            pin_memory=pin_memory,
         )
         for name, ids in splits.items()
     }

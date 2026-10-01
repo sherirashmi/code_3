@@ -74,6 +74,7 @@ from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
 from erp_inverse_operators.surrogate_inverse import SurrogateInverse
 from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 
@@ -96,10 +97,11 @@ MODEL_BUILDERS["Surrogate"] = lambda: SurrogateInverse(design_dim=DESIGN_DIM)
 
 def load_inverse_model(name: str):
     checkpoint = torch.load(
-        f"erp_inverse_operators/models/inverse_{name.lower()}.pth", map_location="cpu", weights_only=False
+        f"erp_inverse_operators/models/inverse_{name.lower()}.pth", map_location=device, weights_only=False
     )
     model = MODEL_BUILDERS[name]()
     model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device)
     model.eval()
     if isinstance(model, PadINN) and "padinn_temperature" in checkpoint:
         # Rebind this instance's sample() default to the temperature
@@ -173,6 +175,7 @@ def main(
     test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
     n = test_spectrum.shape[0]
     true_erp_db = denormalize_erp_array(test_spectrum.numpy(), norm)  # (n, n_freq)
+    test_spectrum = test_spectrum.to(device)
 
     stats = {}
     predictions_db = {}
@@ -187,8 +190,8 @@ def main(
             with torch.no_grad():
                 result = model.sample(test_spectrum, num_samples=num_samples)
             has_log_prob = isinstance(result, tuple)
-            flat_samples = result[0] if has_log_prob else result  # (n, num_samples, design_dim)
-            log_probs = result[1].numpy() if has_log_prob else None
+            flat_samples = (result[0] if has_log_prob else result).cpu()  # (n, num_samples, design_dim)
+            log_probs = result[1].cpu().numpy() if has_log_prob else None
 
             physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (n, num_samples, num_res, 5)
             flat_physical = physical.reshape(n * num_samples, NUM_RES, 5)

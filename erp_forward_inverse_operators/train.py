@@ -44,7 +44,7 @@ from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_array
 from utils.plotting import plot_erp_comparison, plot_prediction_scatter
-from utils.support import seed_everything
+from utils.support import device, seed_everything
 
 OUT_DIR = Path("erp_forward_inverse_operators/plots")
 MODEL_DIR = Path("erp_forward_inverse_operators/models")
@@ -73,6 +73,8 @@ def train_stage1(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         model.train()
         total, n = 0.0, 0
         for spectrum, design in loaders["train"]:
+            spectrum = spectrum.to(device, non_blocking=True)
+            design = design.to(device, non_blocking=True)
             flat_design = design.reshape(design.shape[0], -1)
             optimizer.zero_grad(set_to_none=True)
             loss = model.stage1_loss(spectrum, flat_design)["total"]
@@ -88,6 +90,8 @@ def train_stage1(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         with torch.no_grad():
             total, n = 0.0, 0
             for spectrum, design in loaders["val"]:
+                spectrum = spectrum.to(device, non_blocking=True)
+                design = design.to(device, non_blocking=True)
                 flat_design = design.reshape(design.shape[0], -1)
                 loss = model.stage1_loss(spectrum, flat_design)["total"]
                 total += loss.item() * spectrum.shape[0]
@@ -117,6 +121,7 @@ def train_stage2(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         model.train()
         total, n = 0.0, 0
         for _spectrum, design in loaders["train"]:
+            design = design.to(device, non_blocking=True)
             flat_design = design.reshape(design.shape[0], -1)
             optimizer.zero_grad(set_to_none=True)
             loss = model.stage2_loss(flat_design, beta=beta)["total"]
@@ -132,6 +137,7 @@ def train_stage2(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         with torch.no_grad():
             total, n = 0.0, 0
             for _spectrum, design in loaders["val"]:
+                design = design.to(device, non_blocking=True)
                 flat_design = design.reshape(design.shape[0], -1)
                 loss = model.stage2_loss(flat_design, beta=beta)["total"]
                 total += loss.item() * flat_design.shape[0]
@@ -160,6 +166,8 @@ def train_stage3(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         model.train()
         total, n = 0.0, 0
         for spectrum, design in loaders["train"]:
+            spectrum = spectrum.to(device, non_blocking=True)
+            design = design.to(device, non_blocking=True)
             flat_design = design.reshape(design.shape[0], -1)
             optimizer.zero_grad(set_to_none=True)
             loss = model.stage3_loss(spectrum, flat_design, beta=KL_TARGET_BETA)["total"]
@@ -175,6 +183,8 @@ def train_stage3(model: InvertibleOperatorBase, loaders, epochs: int, tag: str, 
         with torch.no_grad():
             total, n = 0.0, 0
             for spectrum, design in loaders["val"]:
+                spectrum = spectrum.to(device, non_blocking=True)
+                design = design.to(device, non_blocking=True)
                 flat_design = design.reshape(design.shape[0], -1)
                 loss = model.stage3_loss(spectrum, flat_design, beta=KL_TARGET_BETA)["total"]
                 total += loss.item() * spectrum.shape[0]
@@ -217,8 +227,8 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
     true_curves, pred_curves, configs_used = [], [], []
     with torch.no_grad():
         for spectrum, design in loaders["test"]:
-            configuration = design
-            pred = model.predict_spectrum(configuration).squeeze(-1)  # (B, F) normalized
+            configuration = design.to(device, non_blocking=True)
+            pred = model.predict_spectrum(configuration).squeeze(-1).cpu()  # (B, F) normalized
             true_curves.append(denormalize_erp_array(spectrum, norm))
             pred_curves.append(denormalize_erp_array(pred, norm))
             configs_used.append(design.numpy())
@@ -275,7 +285,7 @@ def evaluate_inverse(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
     true_erp = denormalize_erp_array(test_spectrum, norm)
 
     with torch.no_grad():
-        samples = model.sample(test_spectrum, num_samples=num_samples)  # (num_examples, num_samples, design_dim)
+        samples = model.sample(test_spectrum.to(device), num_samples=num_samples).cpu()  # (num_examples, num_samples, design_dim)
     physical = denormalize_design(samples.numpy(), NUM_RES, norm)  # (num_examples, num_samples, num_res, 5)
 
     solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
@@ -334,6 +344,7 @@ def train_one(
     norm = dataset.norm_params
 
     model: InvertibleOperatorBase = spec["build"](design_dim=DESIGN_DIM, **spec["model_config"])
+    model = model.to(device)
     print(f"{tag} params: {sum(p.numel() for p in model.parameters()):,}")
 
     print("\n" + "#" * 70 + f"\n{tag} Stage 1: invertible coupling blocks + P/Q/P'/Q'\n" + "#" * 70)

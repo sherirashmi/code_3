@@ -42,6 +42,7 @@ from erp_inverse_operators.surrogate_inverse import (
 )
 from erp_inverse_operators.train_all import train_one
 from utils.erp_dataset import denormalize_erp_array
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 CHECKPOINT_PATH = "erp_inverse_operators/models/inverse_surrogate.pth"
@@ -126,7 +127,7 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
     true_erp = denormalize_erp_array(test_spectrum, norm_params)
 
     with torch.no_grad():
-        predicted = model.sample(test_spectrum, num_samples=1)[:, 0, :]  # (num_examples, D)
+        predicted = model.sample(test_spectrum.to(device), num_samples=1)[:, 0, :].cpu()  # (num_examples, D)
     physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)
 
     solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
@@ -184,7 +185,7 @@ def _plot_parameter_recovery(model, loaders, norm_params, num_bins: int = 8, max
     n = test_spectrum.shape[0]
 
     with torch.no_grad():
-        predicted = model.sample(test_spectrum, num_samples=1)[:, 0, :]  # (n, D)
+        predicted = model.sample(test_spectrum.to(device), num_samples=1)[:, 0, :].cpu()  # (n, D)
     predicted_physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)  # (n, num_res, 5)
     true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm_params)
 

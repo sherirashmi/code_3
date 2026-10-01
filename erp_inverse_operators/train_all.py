@@ -56,6 +56,7 @@ from erp_inverse_operators.mdn import MDN
 from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM
 from erp_inverse_operators.surrogate_inverse import SurrogateInverse
+from utils.support import device
 
 
 def _warm_start_if_mdn(model, loaders) -> None:
@@ -100,8 +101,8 @@ def _padinn_checkpoint_extra(model, loaders, max_calibration_examples: int = 500
         collected += spectrum.shape[0]
         if collected >= max_calibration_examples:
             break
-    val_spectrum = torch.cat(val_spectrum, dim=0)[:max_calibration_examples]
-    val_design = torch.cat(val_design, dim=0)[:max_calibration_examples]
+    val_spectrum = torch.cat(val_spectrum, dim=0)[:max_calibration_examples].to(device)
+    val_design = torch.cat(val_design, dim=0)[:max_calibration_examples].to(device)
     model.eval()
     temperature = model.calibrate_temperature(val_spectrum, val_design)
     print(f"[PadINN] calibrated sample() temperature = {temperature} (validation coverage check, "
@@ -110,6 +111,7 @@ def _padinn_checkpoint_extra(model, loaders, max_calibration_examples: int = 500
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
@@ -119,6 +121,8 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
         model.train()
         total, n = 0.0, 0
         for spectrum, design in loaders["train"]:
+            spectrum = spectrum.to(device, non_blocking=True)
+            design = design.to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
             loss = loss_fn(model, spectrum, design, epoch)
             loss.backward()
@@ -133,6 +137,8 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
         with torch.no_grad():
             total, n = 0.0, 0
             for spectrum, design in loaders["val"]:
+                spectrum = spectrum.to(device, non_blocking=True)
+                design = design.to(device, non_blocking=True)
                 loss = loss_fn(model, spectrum, design, epoch)
                 total += loss.item() * spectrum.shape[0]
                 n += spectrum.shape[0]
@@ -247,6 +253,7 @@ def main(
 
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
+    test_spectrum = test_spectrum.to(device)
 
     out_dir = Path("erp_inverse_operators/plots")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -261,8 +268,9 @@ def main(
             with torch.no_grad():
                 result = model.sample(test_spectrum[row : row + 1], num_samples=num_samples)
             has_log_prob = isinstance(result, tuple)
-            flat_samples = result[0][0] if has_log_prob else result[0]
-            log_probs = result[1][0] if has_log_prob else None
+            flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
+            log_probs = (result[1][0] if has_log_prob else None)
+            log_probs = log_probs.cpu() if log_probs is not None else None
 
             physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (num_samples, num_res, 5)
             predicted_erp = solve_configs(solver_pool, physical, freq_hz)  # (num_samples, n_freq), real dB

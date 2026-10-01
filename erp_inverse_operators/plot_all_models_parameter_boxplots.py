@@ -27,6 +27,7 @@ from erp_inverse_operators.common import denormalize_design, prepare_inverse_dat
 from erp_inverse_operators.evaluate import MODEL_BUILDERS, load_inverse_model
 from erp_inverse_operators.registry import NUM_RES
 from erp_inverse_operators.surrogate_inverse import _CONFIG_FIELDS, _DESIGN_PHYSICAL_BOUNDS
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 NUM_TEST_EXAMPLES = 3000
@@ -61,9 +62,9 @@ for name in names:
     model, _ = load_inverse_model(name)
     model.eval()
     with torch.no_grad():
-        result = model.sample(test_spectrum, num_samples=1)
+        result = model.sample(test_spectrum.to(device), num_samples=1)
     flat = result[0] if isinstance(result, tuple) else result
-    flat = flat[:, 0, :]  # (n, D) -- single sample per target
+    flat = flat[:, 0, :].cpu()  # (n, D) -- single sample per target
     predictions[name] = denormalize_design(flat.numpy(), NUM_RES, norm)  # (n, num_res, 5)
 
 fig, axes = plt.subplots(

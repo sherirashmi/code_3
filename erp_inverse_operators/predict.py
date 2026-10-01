@@ -38,6 +38,7 @@ from utils.erp_dataset import (
     denormalize_erp_array,
 )
 from utils.solver import compute_erp_spectrum
+from utils.support import device
 
 OUT_DIR = Path("erp_inverse_operators/plots")
 
@@ -86,15 +87,15 @@ def predict_one(
             break
 
     target_norm = (target_erp_db - norm["erp_mean"]) / norm["erp_std"]
-    target_spectrum = torch.from_numpy(target_norm.astype(np.float32))[None, :]
+    target_spectrum = torch.from_numpy(target_norm.astype(np.float32))[None, :].to(device)
 
     model, _ = load_inverse_model(key_short)
     model.eval()
     with torch.no_grad():
         result = model.sample(target_spectrum, num_samples=num_samples)
     has_log_prob = isinstance(result, tuple)
-    flat_samples = result[0][0] if has_log_prob else result[0]
-    log_probs = result[1][0] if has_log_prob else None
+    flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
+    log_probs = (result[1][0].cpu() if has_log_prob else None)
 
     physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (num_samples, num_res, 5)
 

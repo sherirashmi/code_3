@@ -40,6 +40,7 @@ from erp_inverse_operators.evaluate import (
     solve_configs,
 )
 from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_array
+from utils.support import device
 from concurrent.futures import ProcessPoolExecutor
 
 NUM_RES = 3
@@ -84,6 +85,7 @@ def main(
     test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
     test_design = torch.cat(test_design, dim=0)[:num_test_examples]
     n = test_spectrum.shape[0]
+    test_spectrum_device = test_spectrum.to(device)
 
     # True design in physical units -- already canonicalized (sorted by
     # ascending f_t) by InverseDesignDataset, matching the order every model
@@ -100,12 +102,12 @@ def main(
             print(f"Evaluating {name} design-parameter recovery ...")
             model, _ = load_inverse_model(name)
             with torch.no_grad():
-                result = model.sample(test_spectrum, num_samples=num_samples)
+                result = model.sample(test_spectrum_device, num_samples=num_samples)
             has_log_prob = isinstance(result, tuple)
-            flat_samples = result[0] if has_log_prob else result  # (n, num_samples, design_dim)
+            flat_samples = (result[0] if has_log_prob else result).cpu()  # (n, num_samples, design_dim)
 
             if has_log_prob:
-                log_probs = result[1].numpy()
+                log_probs = result[1].cpu().numpy()
                 best_idx = log_probs.argmax(axis=-1)
             else:
                 # Diffusion: no tractable density, so its own target-blind
