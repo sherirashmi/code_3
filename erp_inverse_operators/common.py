@@ -50,6 +50,14 @@ from erp_forward_operators.neural_operator_utils import (
 )
 from utils.support import device
 
+from erp_inverse_operators.design_space import (
+    BOUNDED12,
+    FULL15,
+    decode_bounded,
+    encode_bounded,
+    fit_bounded_stats,
+)
+
 
 def canonicalize_by_ft(configuration: np.ndarray) -> np.ndarray:
     """Sort resonators within each configuration by ascending raw f_t (index 2).
@@ -74,39 +82,84 @@ def unflatten_configuration(flat: torch.Tensor, num_res: int) -> torch.Tensor:
     return flat.reshape(*flat.shape[:-1], num_res, 5)
 
 
+POOLED = "pooled"
+POSITIONAL = "positional"
+SPECTRUM_ENCODERS = (POOLED, POSITIONAL)
+
+
 class SpectrumEncoder(nn.Module):
     """Encodes a full normalized ERP spectrum into a fixed-size embedding.
 
-    Every inverse model conditions on this same embedding -- a small Conv1d
-    stack over the frequency axis (local peak/notch shape) followed by
-    mean+max pooling (global summary), matching the "shared tools, same
-    information" convention the forward operators already use.
+    Every inverse model conditions on this same embedding.
+
+    ``mode="pooled"`` (default, what all existing checkpoints use): a small
+    Conv1d stack over frequency followed by global mean+max pooling. The
+    receptive field is only ~13 bins (~6 Hz) and the global pooling keeps
+    HOW STRONG each feature is but not WHERE along the frequency axis it
+    occurred -- yet peak/notch locations are exactly what identify the
+    resonators' f_t.
+
+    ``mode="positional"``: keeps frequency position. The normalised
+    frequency coordinate is fed as a second input channel (an explicit
+    positional encoding), the conv features are average-pooled into
+    ``num_bins`` ordered frequency bins and FLATTENED (bin order retained),
+    and concatenated with the global mean/max summary before the head.
     """
 
-    def __init__(self, width: int = 48, depth: int = 3, embed_dim: int = 96) -> None:
+    def __init__(
+        self,
+        width: int = 48,
+        depth: int = 3,
+        embed_dim: int = 96,
+        mode: str = POOLED,
+        num_bins: int = 16,
+    ) -> None:
         super().__init__()
-        layers: list[nn.Module] = [nn.Conv1d(1, width, kernel_size=5, padding=2), nn.SiLU()]
+        if mode not in SPECTRUM_ENCODERS:
+            raise ValueError(f"mode must be one of {SPECTRUM_ENCODERS}, got {mode!r}.")
+        self.mode = mode
+        in_channels = 2 if mode == POSITIONAL else 1
+        layers: list[nn.Module] = [nn.Conv1d(in_channels, width, kernel_size=5, padding=2), nn.SiLU()]
         for _ in range(depth - 1):
             layers += [nn.Conv1d(width, width, kernel_size=5, padding=2), nn.SiLU()]
         self.conv = nn.Sequential(*layers)
-        self.head = MLP([2 * width, embed_dim, embed_dim], activation=nn.SiLU)
+        head_in = 2 * width
+        if mode == POSITIONAL:
+            self.num_bins = int(num_bins)
+            self.bin_pool = nn.AdaptiveAvgPool1d(self.num_bins)
+            # Small per-bin projection keeps the flattened vector compact.
+            self.bin_proj = nn.Conv1d(width, 8, kernel_size=1)
+            head_in += 8 * self.num_bins
+        self.head = MLP([head_in, embed_dim, embed_dim], activation=nn.SiLU)
         self.embed_dim = embed_dim
 
     def forward(self, spectrum: torch.Tensor) -> torch.Tensor:
         # spectrum: (B, n_freq) normalized ERP values.
-        x = self.conv(spectrum[:, None, :])  # (B, width, n_freq)
+        x = spectrum[:, None, :]
+        if self.mode == POSITIONAL:
+            position = torch.linspace(-1.0, 1.0, spectrum.shape[-1], device=spectrum.device, dtype=spectrum.dtype)
+            x = torch.cat((x, position[None, None, :].expand(spectrum.shape[0], 1, -1)), dim=1)
+        x = self.conv(x)  # (B, width, n_freq)
         pooled = torch.cat((x.mean(dim=-1), x.amax(dim=-1)), dim=-1)
+        if self.mode == POSITIONAL:
+            binned = self.bin_proj(self.bin_pool(x)).flatten(1)  # (B, 8*num_bins), ordered by frequency
+            pooled = torch.cat((pooled, binned), dim=-1)
         return self.head(pooled)
 
 
 class InverseDesignDataset(Dataset):
-    """One item = (normalized ERP spectrum, normalized canonical design vector)."""
+    """One item = (normalized ERP spectrum, normalized canonical design).
 
-    def __init__(self, dataset, configuration_ids: np.ndarray) -> None:
+    The design is ``(num_res, 5)`` z-scored [m,k,f_t,x,y] for ``full15`` or
+    ``(num_res, 4)`` bounded-logit [m,f_t,x,y] for ``bounded12`` (see
+    design_space.py); both sorted by ascending f_t.
+    """
+
+    def __init__(self, dataset, configuration_ids: np.ndarray, design_param: str = FULL15) -> None:
         ids = np.asarray(configuration_ids, dtype=np.int64)
         norm = dataset.norm_params
         raw = canonicalize_by_ft(_configuration_features(dataset)[ids])
-        configuration = normalize_configuration_array(raw, norm)
+        configuration = normalize_design_physical(raw, norm, design_param)
         response = normalize_erp_array(
             np.asarray(dataset.responses, dtype=np.float32)[ids, :, 0], norm
         )
@@ -125,8 +178,14 @@ def prepare_inverse_data(
     batch_size: int = 32,
     dataset_file: str | list[str] | tuple[str, ...] = "datasets/dataset_erp_ft.pth",
     seed: int = 727,
+    design_param: str = FULL15,
 ):
-    """Build spectrum->design train/val/test loaders sharing the forward split."""
+    """Build spectrum->design train/val/test loaders sharing the forward split.
+
+    ``design_param`` selects the design representation (design_space.py).
+    The bounded-logit statistics are always fitted on the training split and
+    stored in ``dataset.norm_params`` (so every checkpoint carries them).
+    """
     dataset, _ = prepare_operator_data(
         num_configurations=num_configurations,
         batch_size=16,
@@ -135,10 +194,13 @@ def prepare_inverse_data(
         seed=seed,
     )
     splits = _split_ids(dataset)
+    train_raw = canonicalize_by_ft(_configuration_features(dataset)[splits["train"]])
+    dataset.norm_params.update(fit_bounded_stats(train_raw))
+    dataset.design_param = design_param
     pin_memory = device.type == "cuda"
     loaders = {
         name: DataLoader(
-            InverseDesignDataset(dataset, ids),
+            InverseDesignDataset(dataset, ids, design_param),
             batch_size=batch_size,
             shuffle=(name == "train"),
             pin_memory=pin_memory,
@@ -174,6 +236,11 @@ def enforce_physical_consistency(configuration: np.ndarray) -> np.ndarray:
     return out.astype(np.float32)
 
 
+def design_param_of(flat_design: np.ndarray | torch.Tensor, num_res: int) -> str:
+    """Representation of FLAT design vector(s): 12 numbers -> bounded12, else full15."""
+    return BOUNDED12 if int(flat_design.shape[-1]) == 4 * num_res else FULL15
+
+
 def denormalize_design(
     flat_design: np.ndarray,
     num_res: int,
@@ -181,14 +248,35 @@ def denormalize_design(
     *,
     consistent: bool = True,
 ) -> np.ndarray:
-    """Normalized flat design vector(s) -> physical ``(..., num_res, 5)`` [m,k,f_t,x,y].
+    """Normalized FLAT design(s) ``(..., D)`` -> physical ``(..., num_res, 5)`` [m,k,f_t,x,y].
 
-    ``consistent=True`` (default) applies :func:`enforce_physical_consistency`
-    so every returned design is one the solver can evaluate meaningfully.
+    ``full15`` (D = 15): z-score inverse; ``consistent=True`` (default) then
+    applies :func:`enforce_physical_consistency` (k re-derived, bounds
+    clipped) so the solver can evaluate it. ``bounded12`` (D = 12): exact
+    sigmoid decode -- always in bounds with k derived, nothing to project.
     """
+    flat_design = np.asarray(flat_design)
+    if design_param_of(flat_design, num_res) == BOUNDED12:
+        return decode_bounded(flat_design, num_res, norm_params)
     configuration = flat_design.reshape(*flat_design.shape[:-1], num_res, 5)
     physical = denormalize_configuration_array(configuration, norm_params)
     return enforce_physical_consistency(physical) if consistent else physical
+
+
+def normalize_design_physical(
+    physical: np.ndarray, norm_params: Mapping[str, object], design_param: str = FULL15
+) -> np.ndarray:
+    """Physical ``(..., num_res, 5)`` -> normalized design ``(..., num_res, 5|4)``."""
+    if design_param == BOUNDED12:
+        return encode_bounded(physical, norm_params)
+    return normalize_configuration_array(physical, norm_params)
+
+
+def sort_resonators_by_ft(physical: np.ndarray) -> np.ndarray:
+    """Physical ``(..., num_res, 5)`` designs with resonators in ascending f_t
+    order -- needed before comparing individual resonator parameters (the
+    spectrum, and so the solver score, does not depend on the order)."""
+    return canonicalize_by_ft(physical)
 
 
 def save_checkpoint(

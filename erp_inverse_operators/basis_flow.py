@@ -73,10 +73,11 @@ class SpectrumBasisAutoencoder(nn.Module):
     the fixed standard-Gaussian prior a typical conditional flow uses).
     """
 
-    def __init__(self, coeff_dim: int, n_freq: int, embed_dim: int = 96, hidden: int = 128) -> None:
+    def __init__(self, coeff_dim: int, n_freq: int, embed_dim: int = 96, hidden: int = 128,
+                 spectrum_encoder: str = "pooled") -> None:
         super().__init__()
         self.coeff_dim = int(coeff_dim)
-        self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim)
+        self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim, mode=spectrum_encoder)
         self.coeff_head = MLP([embed_dim, hidden, 2 * coeff_dim], activation=nn.SiLU)
         self.decoder = MLP([coeff_dim, hidden, hidden, n_freq], activation=nn.SiLU)
 
@@ -184,10 +185,13 @@ class BasisFlow(nn.Module):
         ae_hidden: int = 128,
         num_layers: int = 8,
         flow_hidden: int = 96,
+        spectrum_encoder: str = "pooled",
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
-        self.basis = SpectrumBasisAutoencoder(design_dim, n_freq, embed_dim=embed_dim, hidden=ae_hidden)
+        self.basis = SpectrumBasisAutoencoder(
+            design_dim, n_freq, embed_dim=embed_dim, hidden=ae_hidden, spectrum_encoder=spectrum_encoder
+        )
         self.flow = CouplingFlow(design_dim, num_layers=num_layers, hidden=flow_hidden)
 
     def predict_spectrum(self, design: torch.Tensor) -> torch.Tensor:
@@ -227,6 +231,22 @@ class BasisFlow(nn.Module):
         forward_loss = nn.functional.mse_loss(predicted_spectrum, spectrum)
 
         return inverse_nll + ae_weight * ae_loss + forward_weight * forward_loss
+
+    @torch.no_grad()
+    def log_prob(self, spectrum: torch.Tensor, flat: torch.Tensor) -> torch.Tensor:
+        """Exact ``log p(design | spectrum)`` for given flat designs ``(B, D)``
+        or ``(B, S, D)`` -- the same forward-direction density ``training_loss``
+        maximises: ``log q(flow(x) | spectrum) + log|det d flow / dx|``."""
+        squeeze = flat.dim() == 2
+        if squeeze:
+            flat = flat[:, None, :]
+        b, s, d = flat.shape
+        mu, log_var = self.basis.encode(spectrum)
+        mu_e = mu[:, None, :].expand(-1, s, -1).reshape(b * s, -1)
+        log_var_e = log_var[:, None, :].expand(-1, s, -1).reshape(b * s, -1)
+        coefficients, log_det_fwd = self.flow(flat.reshape(b * s, d))
+        log_p = (_gaussian_log_prob(coefficients, mu_e, log_var_e) + log_det_fwd).view(b, s)
+        return log_p[:, 0] if squeeze else log_p
 
     @torch.no_grad()
     def sample(self, spectrum: torch.Tensor, num_samples: int = 1):

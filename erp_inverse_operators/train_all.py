@@ -55,10 +55,10 @@ from utils.paths import inverse_model_path, inverse_plot_dir
 from utils.plotting import FREQ_LABEL, ERP_LABEL, model_colors, plot_loss_curves, save_figure
 
 from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
-from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
+from erp_inverse_operators.evaluate import SPAWN_CONTEXT, score_samples, solve_configs
 from erp_inverse_operators.mdn import MDN
 from erp_inverse_operators.padding_inn import PadINN
-from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM
+from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM, variant_name
 from utils.support import device, seed_everything
 
 
@@ -113,6 +113,37 @@ def _padinn_checkpoint_extra(model, loaders, max_calibration_examples: int = 500
     return {"padinn_temperature": temperature}
 
 
+VALIDATION_SEED = 20251001
+# Validation is scored at the END of every annealing schedule (e.g. the
+# cVAE's final KL weight), so the val loss means the same thing every epoch.
+_VALIDATION_EPOCH = 10**6
+
+
+@torch.no_grad()
+def validation_loss(model, loader, loss_fn) -> float:
+    """Mean validation loss with FIXED randomness.
+
+    cVAE / Diffusion / PadINN losses draw random latents, timesteps or noise;
+    with fresh draws every epoch the "best epoch" partly reflects Monte-Carlo
+    luck. Re-seeding the RNG identically for every validation pass (inside a
+    forked RNG state, so training randomness is untouched) makes epochs
+    directly comparable.
+    """
+    model.eval()
+    devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+    total, n = 0.0, 0
+    with torch.random.fork_rng(devices=devices):
+        torch.manual_seed(VALIDATION_SEED)
+        for spectrum, design in loader:
+            spectrum = spectrum.to(device, non_blocking=True)
+            design = design.to(device, non_blocking=True)
+            loss = loss_fn(model, spectrum, design, _VALIDATION_EPOCH)
+            if torch.isfinite(loss):
+                total += loss.item() * spectrum.shape[0]
+                n += spectrum.shape[0]
+    return total / n if n else float("nan")
+
+
 def train_one(model, loaders, loss_fn, epochs, lr, name):
     """Adam + cosine LR schedule, grad-clip 5, best-validation checkpointing.
 
@@ -151,17 +182,7 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
             print(f"[{name}] epoch {epoch + 1}: skipped {skipped} non-finite batch(es).")
         train_loss = total / n
 
-        model.eval()
-        with torch.no_grad():
-            total, n = 0.0, 0
-            for spectrum, design in loaders["val"]:
-                spectrum = spectrum.to(device, non_blocking=True)
-                design = design.to(device, non_blocking=True)
-                loss = loss_fn(model, spectrum, design, epoch)
-                if torch.isfinite(loss):
-                    total += loss.item() * spectrum.shape[0]
-                    n += spectrum.shape[0]
-            val_loss = total / n if n else float("nan")
+        val_loss = validation_loss(model, loaders["val"], loss_fn)
 
         history["train"].append(train_loss)
         history["val"].append(val_loss)
@@ -190,21 +211,31 @@ def _bound_loss_fn(spec, norm_params):
     return spec["loss_fn"]
 
 
-def _build(spec, dataset_tag):
-    return spec["build"](dataset_tag) if spec.get("needs_norm_params") else spec["build"]()
+def resolve_variant(key: str, spectrum_encoder: str = "pooled", design_param: str = "full15") -> tuple[str, str, str]:
+    """(model name, effective spectrum encoder, design_param) for a registry
+    entry -- PadINN has no spectrum encoder, so it never gets the _pos suffix."""
+    spec = INVERSE_MODELS[key]
+    if not getattr(spec["build"], "uses_spectrum_encoder", True):
+        spectrum_encoder = "pooled"
+    return variant_name(spec["short"], spectrum_encoder, design_param), spectrum_encoder, design_param
 
 
-def _train_and_save(key, dataset, loaders, *, epochs, batch_size, dataset_file, num_configurations, seed):
+def _train_and_save(
+    key, dataset, loaders, *, epochs, batch_size, dataset_file, num_configurations, seed,
+    spectrum_encoder="pooled", design_param="full15",
+):
     """Train one registry model on already-prepared loaders, then save its
     checkpoint (``models/<dataset>/inverse_<model>.pth``) and loss curve
-    (``plots/<dataset>/<MODEL>/loss_curve.png``)."""
+    (``plots/<dataset>/<MODEL>/loss_curve.png``). ``<model>`` carries the
+    variant suffix (``_pos`` positional spectrum encoder, ``_b12`` bounded
+    12-D design space)."""
     spec = INVERSE_MODELS[key]
-    short = spec["short"]
+    short, spectrum_encoder, design_param = resolve_variant(key, spectrum_encoder, design_param)
     tag = dataset_tag_for(dataset_file)
     norm = dataset.norm_params
 
     print("\n" + "#" * 70 + f"\nTraining {spec['name']} ({short}) on dataset '{tag}'\n" + "#" * 70)
-    model = _build(spec, tag)
+    model = spec["build"](design_param=design_param, spectrum_encoder=spectrum_encoder, dataset_tag=tag)
     _warm_start_if_mdn(model, loaders)
     history = train_one(model, loaders, _bound_loss_fn(spec, norm), epochs=epochs, lr=spec["lr"], name=short)
 
@@ -212,6 +243,7 @@ def _train_and_save(key, dataset, loaders, *, epochs, batch_size, dataset_file, 
     extra.update(
         {
             "model_short": short,
+            "variant": {"spectrum_encoder": spectrum_encoder, "design_param": design_param},
             "history": history,
             "dataset_file": list(dataset_file) if isinstance(dataset_file, (list, tuple)) else dataset_file,
             "dataset_tag": tag,
@@ -241,6 +273,8 @@ def train_one_inverse_model(
     batch_size: int = 64,
     dataset_file="datasets/dataset_erp_ft.pth",
     seed: int = 727,
+    spectrum_encoder: str = "pooled",
+    design_param: str = "full15",
 ):
     """Train and checkpoint exactly one inverse model (``INVERSE_MODELS`` key).
 
@@ -251,11 +285,12 @@ def train_one_inverse_model(
     seed_everything(seed)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
-        dataset_file=dataset_file, seed=seed,
+        dataset_file=dataset_file, seed=seed, design_param=design_param,
     )
     model, history = _train_and_save(
         key, dataset, loaders, epochs=epochs, batch_size=batch_size,
         dataset_file=dataset_file, num_configurations=num_configurations, seed=seed,
+        spectrum_encoder=spectrum_encoder, design_param=design_param,
     )
     return model, history, dataset
 
@@ -267,6 +302,8 @@ def main(
     dataset_file="datasets/dataset_erp_ft.pth",
     keys: list[str] | None = None,
     seed: int = 727,
+    spectrum_encoder: str = "pooled",
+    design_param: str = "full15",
 ):
     """Train every (or the selected) inverse model on ONE shared dataset/split,
     save each one's checkpoint + loss curve, the all-models loss figure and
@@ -274,7 +311,7 @@ def main(
     seed_everything(seed)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
-        dataset_file=dataset_file, seed=seed,
+        dataset_file=dataset_file, seed=seed, design_param=design_param,
     )
     norm = dataset.norm_params
     tag = dataset_tag_for(dataset_file)
@@ -287,9 +324,11 @@ def main(
         model, history = _train_and_save(
             key, dataset, loaders, epochs=model_epochs, batch_size=batch_size,
             dataset_file=dataset_file, num_configurations=num_configurations, seed=seed,
+            spectrum_encoder=spectrum_encoder, design_param=design_param,
         )
-        models[spec["short"]] = (model,)
-        histories[spec["short"]] = history
+        name = resolve_variant(key, spectrum_encoder, design_param)[0]
+        models[name] = (model,)
+        histories[name] = history
 
     out_dir = inverse_plot_dir(tag)  # plots/<dataset>/ALL_MODELS
     _plot_all_histories(histories, out_dir / "all_models_loss.png", tag)
@@ -324,12 +363,13 @@ def main(
             model.eval()
             with torch.no_grad():
                 result = model.sample(test_spectrum[row : row + 1], num_samples=num_samples)
-            has_log_prob = isinstance(result, tuple)
-            flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
-            log_probs = (result[1][0] if has_log_prob else None)
-            log_probs = log_probs.cpu() if log_probs is not None else None
-
-            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (num_samples, num_res, 5)
+            flat_samples = (result[0] if isinstance(result, tuple) else result)
+            # Physically consistent designs + the density of EXACTLY those
+            # designs (re-scored after projection; see evaluate.score_samples).
+            physical_all, log_p_all = score_samples(model, test_spectrum[row : row + 1], flat_samples, norm)
+            physical = physical_all[0]  # (num_samples, num_res, 5)
+            has_log_prob = log_p_all is not None
+            log_probs = torch.from_numpy(log_p_all[0]) if has_log_prob else None
             predicted_erp = solve_configs(solver_pool, physical, freq_hz)  # (num_samples, n_freq), real dB
             recon_mse = ((predicted_erp - true_erp[row][None, :]) ** 2).mean(axis=1)
 
@@ -338,7 +378,7 @@ def main(
                 confidence = np.exp(log_probs_np - log_probs_np.max())
                 confidence = confidence / confidence.sum()
                 best_idx = int(log_probs_np.argmax())
-                score_label = "log p(design|spectrum)"
+                score_label = "log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)"
                 scores = log_probs_np
             else:
                 # Diffusion has no tractable density; use spectrum-consistency
@@ -346,14 +386,14 @@ def main(
                 # labeled confidence proxy instead.
                 confidence = np.exp(-recon_mse) / np.exp(-recon_mse).sum()
                 best_idx = int(recon_mse.argmin())
-                score_label = "spectrum-consistency (-MSE, NOT a probability)"
+                score_label = "solver spectrum-consistency (-MSE, uses the TARGET -- oracle; NOT a probability)"
                 scores = -recon_mse
 
             report_lines.append(f"\n--- {name} ({score_label}) ---")
             for i in range(num_samples):
                 marker = " <-- best" if i == best_idx else ""
                 report_lines.append(
-                    f"sample {i + 1}: score={scores[i]:+.4f}  relative_confidence={confidence[i] * 100:5.1f}%"
+                    f"sample {i + 1}: score={scores[i]:+.4f}  relative_rank_share={confidence[i] * 100:5.1f}%"
                     f"  recon_MSE={recon_mse[i]:.4f}{marker}"
                 )
                 report_lines.append(format_configuration(physical[i]))
@@ -368,7 +408,7 @@ def main(
             best_conf = confidence[best_idx] * 100
             ax.text(
                 0.02, 0.98,
-                f"best: {best_conf:.0f}% rel.\nconfidence",
+                f"selected: {best_conf:.0f}% of\nsoftmax (ranking)",
                 transform=ax.transAxes, va="top", ha="left", fontsize=8,
                 bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="gray"),
             )

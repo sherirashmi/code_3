@@ -20,15 +20,14 @@ neural net), so solver calls are parallelized across all CPU cores and the
 number of test examples/samples is kept modest to finish in a reasonable
 time.
 
-Design selection per target (matches erp_inverse_operators/train_all.py):
-  - MDN / cVAE / Flow have a tractable log p(design | spectrum); the
-    reported prediction is the sample with the highest log-probability
-    under the model itself (does not look at the ground truth spectrum).
-  - Diffusion has no tractable density; its reported prediction is the
-    sample with the lowest solver-simulated reconstruction error against
-    the target (this one *does* use the target for selection, since it is
-    the only score available -- flagged here as it was in train_all.py, not
-    swept under the rug).
+Design selection per target -- reported under THREE rules so models are
+compared on equal terms (see ``selection_indices``):
+  - random: the first i.i.d. sample (no selection at all);
+  - own: the model's own target-blind rule (highest log p for the density
+    models, re-scored at the physically consistent design; the point
+    estimate for Surrogate; n/a for Diffusion/PadINN);
+  - oracle: best of N by solver error against the target -- the same rule
+    for every model, an upper bound that uses the target.
 """
 
 from __future__ import annotations
@@ -70,7 +69,15 @@ import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.padding_inn import PadINN
-from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
+from erp_inverse_operators.common import (
+    BOUNDED12,
+    FULL15,
+    design_param_of,
+    normalize_design_physical,
+    sort_resonators_by_ft,
+)
+from erp_inverse_operators.design_space import bounded_log_abs_det
+from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES, parse_variant
 from utils.erp_dataset import (
     DATASETS,
     apply_model_modal_resolution,
@@ -110,7 +117,12 @@ def load_inverse_model(name: str, dataset_tag: str = "100k"):
     if dataset_tag in DATASETS:
         # Solver checks of this model's designs use its training Nx x Ny.
         apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=name)
-    model = MODEL_BUILDERS[name]()
+    base, spectrum_encoder, design_param = parse_variant(name)
+    variant = checkpoint.get("variant", {})
+    model = MODEL_BUILDERS[base](
+        design_param=variant.get("design_param", design_param),
+        spectrum_encoder=variant.get("spectrum_encoder", spectrum_encoder),
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
@@ -171,6 +183,95 @@ def solve_configs(pool: ProcessPoolExecutor, configs_physical: np.ndarray, frequ
     return np.stack(results, axis=0)
 
 
+# --------------------------------------------------------------------------
+# Scoring + the three selection rules
+# --------------------------------------------------------------------------
+
+POINT_ESTIMATE_MODELS = ("Surrogate",)
+
+
+@torch.no_grad()
+def density_log_prob(model, spectrum: torch.Tensor, flat: torch.Tensor) -> torch.Tensor | None:
+    """``log p(design | spectrum)`` of given flat designs ``(B, S, D)`` for the
+    models with a (tractable or importance-sampled) density; None otherwise
+    (Diffusion, PadINN, Surrogate)."""
+    from erp_inverse_operators.basis_flow import BasisFlow
+    from erp_inverse_operators.cvae import ConditionalVAE
+    from erp_inverse_operators.flow import ConditionalFlow
+    from erp_inverse_operators.mdn import MDN
+
+    b, s_, d = flat.shape
+    if isinstance(model, MDN):
+        return model._mixture_log_prob(flat, *model._params(spectrum))
+    if isinstance(model, ConditionalFlow):
+        cond = model.encoder(spectrum)[:, None, :].expand(-1, s_, -1).reshape(b * s_, -1)
+        return model._log_prob_flat(flat.reshape(b * s_, d), cond).view(b, s_)
+    if isinstance(model, (BasisFlow, ConditionalVAE)):
+        return model.log_prob(spectrum, flat)
+    return None
+
+
+def score_samples(model, spectrum: torch.Tensor, flat_samples: torch.Tensor, norm) -> tuple[np.ndarray, np.ndarray | None]:
+    """Physical designs + the density of EXACTLY those designs.
+
+    full15: samples are projected to physically consistent designs (k
+    derived, bounds clipped), then re-normalised and RE-SCORED, so the
+    reported log p belongs to the design that is evaluated -- not to the raw
+    pre-projection sample. bounded12: no projection exists; the density is
+    converted to the physical (m, f_t, x, y) space with the transform's
+    log-Jacobian.
+    """
+    n, s_, d = flat_samples.shape
+    flat_np = flat_samples.detach().cpu().numpy()
+    physical = denormalize_design(flat_np, NUM_RES, norm)  # (n, S, R, 5), consistent
+    if design_param_of(flat_np, NUM_RES) == BOUNDED12:
+        log_p = density_log_prob(model, spectrum, flat_samples)
+        if log_p is not None:
+            log_p = log_p + bounded_log_abs_det(flat_samples.double(), NUM_RES, norm).to(log_p.dtype)
+    else:
+        projected = normalize_design_physical(physical, norm, FULL15).reshape(n, s_, -1)
+        log_p = density_log_prob(model, spectrum, torch.from_numpy(projected).to(spectrum.device))
+    return physical, (log_p.detach().cpu().numpy() if log_p is not None else None)
+
+
+def selection_indices(name: str, log_p: np.ndarray | None, solver_mse: np.ndarray) -> dict[str, np.ndarray | None]:
+    """Per-target sample index under each rule.
+
+    - ``random``: the first draw (samples are i.i.d.) -- no selection at all.
+    - ``oracle``: lowest SOLVER error against the target, the same rule for
+      every model; uses the target spectrum, so it is an upper bound.
+    - ``own``: the model's own target-blind rule -- highest log p for density
+      models, the point estimate for Surrogate, None for Diffusion/PadINN.
+    """
+    n = solver_mse.shape[0]
+    own = None
+    if parse_variant(name)[0] in POINT_ESTIMATE_MODELS:
+        own = np.zeros(n, dtype=int)
+    elif log_p is not None:
+        own = log_p.argmax(axis=-1)
+    return {"random": np.zeros(n, dtype=int), "oracle": solver_mse.argmin(axis=-1), "own": own}
+
+
+def spectrum_metrics(pred: np.ndarray, true: np.ndarray) -> dict[str, float]:
+    error = pred - true
+    per_r = [np.corrcoef(pred[i], true[i])[0, 1] for i in range(pred.shape[0])]
+    ss_tot = ((true - true.mean()) ** 2).sum()
+    return {
+        "mae_db": float(np.abs(error).mean()),
+        "rmse_db": float(np.sqrt((error**2).mean())),
+        "pearson_r": float(np.corrcoef(pred.ravel(), true.ravel())[0, 1]),
+        "mean_spectrum_r": float(np.nanmean(per_r)),
+        "r2": float(1.0 - (error**2).sum() / ss_tot),
+    }
+
+
+RULE_LABELS = {
+    "random": "random sample",
+    "oracle": "best-of-N by solver (oracle)",
+    "own": "own target-blind rule",
+}
+
+
 def main(
     num_test_examples: int = 150,
     num_samples: int = 8,
@@ -181,147 +282,120 @@ def main(
     ),
     model_names: list[str] | None = None,
 ):
-    """Evaluate the given inverse models (default: all of ``MODEL_BUILDERS``)
-    against ``num_test_examples`` held-out targets, solver-scored.
-
-    ``model_names`` lets a caller (e.g. the CLI's single-model workflow)
-    restrict this to just one model instead of the full cross-model
-    comparison every plot/table here was originally built for -- MAE/RMSE/
-    Pearson r/R^2 are still meaningful for one model alone, only the
-    relative-ranking framing loses its "compared to what" when there's
-    nothing else in the run.
-    """
-    active_models = {name: MODEL_BUILDERS[name] for name in (model_names or MODEL_BUILDERS)}
+    """Solver-scored evaluation of the given inverse models (names may carry
+    variant suffixes, e.g. ``Flow_pos_b12``) on ``num_test_examples``
+    held-out targets, reported under THREE selection rules so models are
+    compared on equal terms (see :func:`selection_indices`)."""
+    names = list(model_names or MODEL_BUILDERS)
     dataset_tag = dataset_tag_for(dataset_file)
-    # Only models that have actually been trained on this dataset.
-    missing = [n for n in active_models if not inverse_model_path(n, dataset_tag).exists()]
+    missing = [n for n in names if not inverse_model_path(n, dataset_tag).exists()]
     for n in missing:
         print(f"Skipping {n}: no checkpoint at {inverse_model_path(n, dataset_tag)}")
-        active_models.pop(n)
-    if not active_models:
+    names = [n for n in names if n not in missing]
+    if not names:
         raise FileNotFoundError(f"No trained inverse models found for dataset '{dataset_tag}'.")
-    out_dir = inverse_plot_dir(dataset_tag, next(iter(active_models)) if model_names and len(active_models) == 1 else ALL_MODELS)
+    out_dir = inverse_plot_dir(dataset_tag, names[0] if model_names and len(names) == 1 else ALL_MODELS)
 
-    dataset, loaders = prepare_inverse_data(
-        num_configurations=num_configurations, batch_size=64,
-        dataset_file=dataset_file, seed=727,
-    )
-    norm = dataset.norm_params
-    freq_hz = np.asarray(dataset.frequency_values)
-
-    test_spectrum = []
-    for spectrum, _design in loaders["test"]:
-        test_spectrum.append(spectrum)
-        if sum(s.shape[0] for s in test_spectrum) >= num_test_examples:
-            break
-    test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
-    n = test_spectrum.shape[0]
-    true_erp_db = denormalize_erp_array(test_spectrum.numpy(), norm)  # (n, n_freq)
-    test_spectrum = test_spectrum.to(device)
-
-    stats = {}
-    predictions_db = {}
+    stats: dict[str, dict] = {}
+    predictions_db: dict[str, np.ndarray] = {}
     num_workers = max(1, os.cpu_count() or 1)
     print(f"Using {num_workers} worker processes for the physics solver.")
+    data_cache: dict[str, tuple] = {}
 
     with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
-        for name in active_models:
+        for name in names:
+            design_param = parse_variant(name)[2]
+            if design_param not in data_cache:
+                dataset, loaders = prepare_inverse_data(
+                    num_configurations=num_configurations, batch_size=64,
+                    dataset_file=dataset_file, seed=727, design_param=design_param,
+                )
+                test_spectrum = []
+                for spectrum, _design in loaders["test"]:
+                    test_spectrum.append(spectrum)
+                    if sum(t.shape[0] for t in test_spectrum) >= num_test_examples:
+                        break
+                test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
+                data_cache[design_param] = (dataset, test_spectrum)
+            dataset, test_spectrum = data_cache[design_param]
+            norm = dataset.norm_params
+            freq_hz = np.asarray(dataset.frequency_values)
+            n = test_spectrum.shape[0]
+            true_erp_db = denormalize_erp_array(test_spectrum.numpy(), norm)
+
             print(f"Evaluating {name} ({n} targets x {num_samples} samples, actual solver) ...")
             model, model_norm = load_inverse_model(name, dataset_tag)
             _check_norm(name, model_norm, norm)
-
+            spectrum_dev = test_spectrum.to(device)
             with torch.no_grad():
-                result = model.sample(test_spectrum, num_samples=num_samples)
-            has_log_prob = isinstance(result, tuple)
-            flat_samples = (result[0] if has_log_prob else result).cpu()  # (n, num_samples, design_dim)
-            log_probs = result[1].cpu().numpy() if has_log_prob else None
+                result = model.sample(spectrum_dev, num_samples=num_samples)
+            flat_samples = (result[0] if isinstance(result, tuple) else result).to(device)
+            physical, log_p = score_samples(model, spectrum_dev, flat_samples, norm)
 
-            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (n, num_samples, num_res, 5)
-            flat_physical = physical.reshape(n * num_samples, NUM_RES, 5)
-            solved = solve_configs(pool, flat_physical, freq_hz)  # (n*num_samples, n_freq)
-            solved = solved.reshape(n, num_samples, -1)
+            solved = solve_configs(pool, physical.reshape(n * num_samples, NUM_RES, 5), freq_hz).reshape(n, num_samples, -1)
+            solver_mse = ((solved - true_erp_db[:, None, :]) ** 2).mean(axis=-1)
+            picks = selection_indices(name, log_p, solver_mse)
 
-            target = true_erp_db[:, None, :]
-            recon_mse = ((solved - target) ** 2).mean(axis=-1)  # (n, num_samples), real dB^2
-
-            best_idx = pick_best_indices(has_log_prob, log_probs, recon_mse)  # (n,)
-            best_pred = solved[np.arange(n), best_idx]  # (n, n_freq)
-            predictions_db[name] = best_pred
-
-            error = best_pred - true_erp_db
-            mae = np.abs(error).mean()
-            rmse = np.sqrt((error ** 2).mean())
-            r_global = np.corrcoef(best_pred.ravel(), true_erp_db.ravel())[0, 1]
-            per_example_r = np.array([
-                np.corrcoef(best_pred[i], true_erp_db[i])[0, 1] for i in range(n)
-            ])
-            ss_res = (error ** 2).sum()
-            ss_tot = ((true_erp_db - true_erp_db.mean()) ** 2).sum()
-            r2 = 1.0 - ss_res / ss_tot
-
-            stats[name] = {
-                "mae_db": float(mae),
-                "rmse_db": float(rmse),
-                "pearson_r": float(r_global),
-                "mean_spectrum_r": float(np.nanmean(per_example_r)),
-                "r2": float(r2),
-            }
-            print(f"  {name}: MAE={mae:.3f} dB  RMSE={rmse:.3f} dB  Pearson r={r_global:.4f}  R^2={r2:.4f}")
+            stats[name] = {"point_estimate": parse_variant(name)[0] in POINT_ESTIMATE_MODELS}
+            for rule, idx in picks.items():
+                stats[name][rule] = None if idx is None else spectrum_metrics(solved[np.arange(n), idx], true_erp_db)
+            shown = "own" if picks["own"] is not None else "random"
+            stats[name]["scatter_rule"] = shown
+            predictions_db[name] = solved[np.arange(n), picks[shown]]
+            msg = "  ".join(
+                f"{rule}: RMSE={stats[name][rule]['rmse_db']:.2f} dB" if stats[name][rule] else f"{rule}: n/a"
+                for rule in ("random", "own", "oracle")
+            )
+            print(f"  {name}: {msg}")
 
     # ---- summary table ----
     lines = [
-        f"Inverse-design prediction quality ({n} held-out target spectra, "
-        f"best of {num_samples} samples per target, scored with the actual "
-        f"coupled plate-resonator solver -- not a neural forward surrogate)",
-        "=" * 100,
-        f"{'Model':<10} {'MAE (dB)':>10} {'RMSE (dB)':>10} {'Pearson r':>10} {'Mean spec. r':>13} {'R^2':>8}",
-        "-" * 100,
+        f"Inverse-design prediction quality ({n} held-out target spectra, {num_samples} samples per target, "
+        "every design scored with the actual coupled plate-resonator solver)",
+        "Selection rules: random = first i.i.d. sample (no selection); own = the model's own target-blind rule",
+        "(highest log p for MDN/cVAE/Flow/BasisFlow -- cVAE via importance-sampled marginal; point estimate for",
+        "Surrogate; n/a for Diffusion/PadINN); oracle = best of N by solver error against the TARGET (upper bound).",
+        "=" * 110,
+        f"{'Model':<18} {'Rule':<8} {'MAE (dB)':>10} {'RMSE (dB)':>10} {'Pearson r':>10} {'Mean spec. r':>13} {'R^2':>8}",
+        "-" * 110,
     ]
-    for name, s in stats.items():
-        lines.append(
-            f"{name:<10} {s['mae_db']:>10.3f} {s['rmse_db']:>10.3f} {s['pearson_r']:>10.4f} "
-            f"{s['mean_spectrum_r']:>13.4f} {s['r2']:>8.4f}"
-        )
+    for name, st in stats.items():
+        for rule in ("random", "own", "oracle"):
+            m = st[rule]
+            if m is None:
+                lines.append(f"{name:<18} {rule:<8} {'n/a':>10}")
+                continue
+            lines.append(
+                f"{name:<18} {rule:<8} {m['mae_db']:>10.3f} {m['rmse_db']:>10.3f} {m['pearson_r']:>10.4f} "
+                f"{m['mean_spectrum_r']:>13.4f} {m['r2']:>8.4f}"
+            )
+        if st["point_estimate"]:
+            lines.append(f"{'':<18} (point estimator: all samples identical, so all rules coincide)")
     table_text = "\n".join(lines)
     (out_dir / "prediction_stats.txt").write_text(table_text + "\n")
     print("\n" + table_text)
 
-    # ---- bar charts: MAE, Pearson r, R^2 per method ----
-    names = list(stats.keys())
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    # tab10 scales to any number of models automatically -- this literal
-    # list has needed a manual bump every time a model was added (4 -> 5 -> 6).
-    colors = [plt.get_cmap("tab10")(i) for i in range(len(names))]
-
-    axes[0].bar(names, [stats[m]["mae_db"] for m in names], color=colors)
-    axes[0].set_ylabel("MAE (dB)")
-    axes[0].set_title("Prediction MAE (lower better)")
-    axes[0].grid(axis="y", alpha=0.3)
-
-    axes[1].bar(names, [stats[m]["pearson_r"] for m in names], color=colors)
-    axes[1].set_ylabel(r"Pearson $r$")
-    axes[1].set_title("Global Pearson correlation (higher better)")
-    axes[1].set_ylim(0, 1)
-    axes[1].grid(axis="y", alpha=0.3)
-
-    axes[2].bar(names, [stats[m]["r2"] for m in names], color=colors)
-    axes[2].set_ylabel(r"$R^2$")
-    axes[2].set_title("Coefficient of determination (higher better)")
-    axes[2].grid(axis="y", alpha=0.3)
-
-    fig.suptitle(
-        f"Inverse-design methods: solver-scored prediction quality on {n} held-out spectra",
-        fontsize=12,
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    # ---- grouped bars: RMSE and R^2 under each rule ----
+    names = list(stats)
+    x = np.arange(len(names))
+    width = 0.27
+    fig, axes = plt.subplots(1, 2, figsize=(max(10, 1.9 * len(names) + 4), 4.6))
+    for ax, key, label in ((axes[0], "rmse_db", "RMSE (dB)"), (axes[1], "r2", r"$R^2$")):
+        for j, rule in enumerate(("random", "own", "oracle")):
+            vals = [stats[m][rule][key] if stats[m][rule] else np.nan for m in names]
+            ax.bar(x + (j - 1) * width, vals, width, label=RULE_LABELS[rule])
+        ax.set_xticks(x, names, rotation=20)
+        ax.set_ylabel(label)
+        ax.grid(axis="y", alpha=0.3)
+    axes[0].set_title("Solver RMSE (lower is better)")
+    axes[1].set_title(r"$R^2$ (higher is better)")
+    axes[1].legend(fontsize=8)
+    fig.suptitle(f"Inverse design: solver-scored quality on {n} held-out spectra, three selection rules")
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     save_figure(fig, out_dir / "prediction_stats_bars.png")
 
-    # ---- prediction vs ground truth scatter, one panel per method ----
-    # squeeze=False keeps axes a 2D array even when only 1 model is being
-    # evaluated (the CLI's single-model workflow) -- squeeze=True (the
-    # default) collapses a 1-row-1-col grid to a bare Axes, which isn't
-    # iterable, and a 1-row-N-col grid to a 1D array either way, so
-    # indexing this consistently needs the explicit False.
+    # ---- prediction vs ground truth, one panel per model (own rule, else random) ----
+    colors = [plt.get_cmap("tab10")(i % 10) for i in range(len(names))]
     fig, axes_grid = plt.subplots(1, len(names), figsize=(4.75 * len(names), 4.8), sharex=True, sharey=True, squeeze=False)
     axes = axes_grid[0]
     lo = min(true_erp_db.min(), *(predictions_db[m].min() for m in names))
@@ -333,14 +407,15 @@ def main(
         if true_flat.size > 6000:
             pick = rng.choice(true_flat.size, size=6000, replace=False)
             true_flat, pred_flat = true_flat[pick], pred_flat[pick]
-        ax.scatter(true_flat, pred_flat, s=4, alpha=0.25, color=color, edgecolors="none")
-        ax.plot([lo, hi], [lo, hi], "k--", lw=1.2, label="y = x")
-        ax.set_title(f"{name}\nMAE={stats[name]['mae_db']:.2f} dB, r={stats[name]['pearson_r']:.3f}")
+        ax.scatter(true_flat, pred_flat, s=4, alpha=0.25, color=color, edgecolors="none", rasterized=True)
+        ax.plot([lo, hi], [lo, hi], "k--", lw=1.2, label=r"$y = x$")
+        m = stats[name][stats[name]["scatter_rule"]]
+        ax.set_title(f"{name} ({stats[name]['scatter_rule']} rule)\nMAE $= {m['mae_db']:.2f}$ dB, $r = {m['pearson_r']:.3f}$")
         ax.set_xlabel(f"True {ERP_LABEL}")
         ax.grid(alpha=0.3)
     axes[0].set_ylabel(f"Predicted {ERP_LABEL}\n(solver-evaluated design)")
     axes[0].legend(fontsize=8, loc="upper left")
-    fig.suptitle("Inverse-design prediction vs. ground truth ERP (solver-scored)", fontsize=13)
+    fig.suptitle("Inverse-design prediction vs. ground truth ERP (solver-scored, target-blind selection)")
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     save_figure(fig, out_dir / "prediction_vs_ground_truth.png")
 

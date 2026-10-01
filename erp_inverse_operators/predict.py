@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, load_inverse_model, solve_configs
-from erp_inverse_operators.registry import NUM_RES
+from erp_inverse_operators.registry import NUM_RES, parse_variant
 from erp_inverse_operators.train_all import format_configuration
 from utils.erp_dataset import (
     configuration_to_resonators,
@@ -68,7 +68,7 @@ def predict_one(
     """
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=64,
-        dataset_file=dataset_file, seed=seed,
+        dataset_file=dataset_file, seed=seed, design_param=parse_variant(key_short)[2],
     )
     norm = dataset.norm_params
     freq_hz = np.asarray(dataset.frequency_values)
@@ -80,11 +80,10 @@ def predict_one(
     else:
         for spectrum, design in loaders["test"]:
             target_erp_db = denormalize_erp_array(spectrum[:1].numpy(), norm)[0]
-            # design is already (batch, num_res, 5), not flat -- unlike a
-            # model's sampled output, so this uses the array-shaped
-            # denormalizer directly instead of denormalize_design (which
-            # expects a flat (..., num_res*5) vector).
-            true_configuration = denormalize_configuration_array(design[:1].numpy(), norm)[0]
+            # Exact decode for either design parameterisation (full15/bounded12).
+            true_configuration = denormalize_design(
+                design[:1].reshape(1, -1).numpy(), NUM_RES, norm, consistent=False
+            )[0]
             break
 
     target_norm = (target_erp_db - norm["erp_mean"]) / norm["erp_std"]
@@ -97,11 +96,12 @@ def predict_one(
     model.eval()
     with torch.no_grad():
         result = model.sample(target_spectrum, num_samples=num_samples)
-    has_log_prob = isinstance(result, tuple)
-    flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
-    log_probs = (result[1][0].cpu() if has_log_prob else None)
-
-    physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (num_samples, num_res, 5)
+    flat_samples = result[0] if isinstance(result, tuple) else result
+    # Physically consistent designs + the density of exactly those designs.
+    from erp_inverse_operators.evaluate import score_samples
+    physical_all, log_p_all = score_samples(model, target_spectrum, flat_samples, norm)
+    physical = physical_all[0]  # (num_samples, num_res, 5)
+    has_log_prob = log_p_all is not None
 
     pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
     try:
@@ -111,16 +111,16 @@ def predict_one(
     recon_mse = ((predicted_erp - target_erp_db[None, :]) ** 2).mean(axis=1)
 
     if has_log_prob:
-        log_probs_np = log_probs.numpy()
+        log_probs_np = log_p_all[0]
         confidence = np.exp(log_probs_np - log_probs_np.max())
         confidence = confidence / confidence.sum()
         best_idx = int(log_probs_np.argmax())
-        score_label = "log p(design|spectrum)"
+        score_label = "log p(design|spectrum); % = softmax over these samples (relative ranking)"
         scores = log_probs_np
     else:
         confidence = np.exp(-recon_mse) / np.exp(-recon_mse).sum()
         best_idx = int(recon_mse.argmin())
-        score_label = "spectrum-consistency (-MSE, NOT a probability)"
+        score_label = "solver spectrum-consistency (-MSE, uses the target; NOT a probability)"
         scores = -recon_mse
 
     model_out_dir = inverse_plot_dir(dataset_tag, key_short)
@@ -165,7 +165,7 @@ def print_report(key_short: str, result: dict) -> None:
         marker = " <-- best" if i == result["best_idx"] else ""
         print(
             f"sample {i + 1}: score={result['scores'][i]:+.4f}  "
-            f"relative_confidence={result['confidence'][i] * 100:5.1f}%{marker}"
+            f"relative_rank_share={result['confidence'][i] * 100:5.1f}%{marker}"
         )
         print(format_configuration(result["physical_designs"][i]))
     print(f"Saved prediction plot to {result['plot_path']}")

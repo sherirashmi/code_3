@@ -55,10 +55,11 @@ class ConditionalFlow(nn.Module):
         num_layers: int = 8,
         hidden: int = 96,
         embed_dim: int = 96,
+        spectrum_encoder: str = "pooled",
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
-        self.encoder = SpectrumEncoder(embed_dim=embed_dim)
+        self.encoder = SpectrumEncoder(embed_dim=embed_dim, mode=spectrum_encoder)
 
         layers = []
         for i in range(num_layers):

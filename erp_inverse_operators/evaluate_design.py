@@ -14,10 +14,12 @@ position, which is far less degenerate, is recovered better than m/k), but
 the numbers should be read as "how close to the original recipe", not
 "how wrong the model is".
 
-Design selection per target matches evaluate.py: highest log p(design |
-spectrum) for MDN/cVAE/Flow (blind to the target, no solver needed at all);
-lowest solver-simulated reconstruction error for Diffusion (the only
-score it has).
+Design selection per target is TARGET-BLIND for every model: the model's
+own rule (highest log p, re-scored at the physically consistent design, for
+MDN/cVAE/Flow/BasisFlow; the point estimate for Surrogate), otherwise the
+first i.i.d. sample (Diffusion, PadINN). Predicted resonators are sorted by
+their predicted f_t before the slot-by-slot comparison with the (f_t-sorted)
+true design.
 """
 
 from __future__ import annotations
@@ -33,13 +35,15 @@ import numpy as np
 import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.common import sort_resonators_by_ft
 from erp_inverse_operators.evaluate import (
     MODEL_BUILDERS,
-    SPAWN_CONTEXT,
     _check_norm,
     load_inverse_model,
-    solve_configs,
+    score_samples,
+    selection_indices,
 )
+from erp_inverse_operators.registry import parse_variant
 from utils.erp_dataset import dataset_tag_for, denormalize_configuration_array, denormalize_erp_array
 from utils.paths import ALL_MODELS, inverse_model_path, inverse_plot_dir
 from utils.plotting import save_figure
@@ -78,61 +82,53 @@ def main(
         raise FileNotFoundError(f"No trained inverse models found for dataset '{dataset_tag}'.")
     out_dir = inverse_plot_dir(dataset_tag, active_models[0] if model_names and len(active_models) == 1 else ALL_MODELS)
 
-    dataset, loaders = prepare_inverse_data(
-        num_configurations=num_configurations, batch_size=64,
-        dataset_file=dataset_file, seed=727,
-    )
-    norm = dataset.norm_params
-    freq_hz = np.asarray(dataset.frequency_values)
+    # Target-blind selection only (no solver, no target): each model's own
+    # rule where it has one (highest log p -- re-scored at the physically
+    # consistent design -- or the Surrogate point estimate), otherwise the
+    # first i.i.d. sample. Using the solver here (as before, for Diffusion)
+    # would let some models pick with knowledge of the target and others not.
+    predictions, rules = {}, {}
+    data_cache: dict[str, tuple] = {}
+    true_physical = None
+    for name in active_models:
+        design_param = parse_variant(name)[2]
+        if design_param not in data_cache:
+            dataset, loaders = prepare_inverse_data(
+                num_configurations=num_configurations, batch_size=64,
+                dataset_file=dataset_file, seed=727, design_param=design_param,
+            )
+            test_spectrum, test_design = [], []
+            for spectrum, design in loaders["test"]:
+                test_spectrum.append(spectrum)
+                test_design.append(design)
+                if sum(t.shape[0] for t in test_spectrum) >= num_test_examples:
+                    break
+            test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
+            test_design = torch.cat(test_design, dim=0)[:num_test_examples]
+            data_cache[design_param] = (dataset, test_spectrum, test_design)
+        dataset, test_spectrum, test_design = data_cache[design_param]
+        norm = dataset.norm_params
+        n = test_spectrum.shape[0]
+        if true_physical is None:
+            # Canonical (ascending f_t) true designs, identical for every
+            # design parameterisation (same split, exact decode).
+            true_physical = denormalize_design(test_design.reshape(n, -1).numpy(), NUM_RES, norm, consistent=False)
 
-    test_spectrum, test_design = [], []
-    for spectrum, design in loaders["test"]:
-        test_spectrum.append(spectrum)
-        test_design.append(design)
-        if sum(s.shape[0] for s in test_spectrum) >= num_test_examples:
-            break
-    test_spectrum = torch.cat(test_spectrum, dim=0)[:num_test_examples]
-    test_design = torch.cat(test_design, dim=0)[:num_test_examples]
-    n = test_spectrum.shape[0]
-    test_spectrum_device = test_spectrum.to(device)
-
-    # True design in physical units -- already canonicalized (sorted by
-    # ascending f_t) by InverseDesignDataset, matching the order every model
-    # was trained to predict, so predicted[i, r] and true[i, r] refer to
-    # "the r-th resonator by ascending tuned frequency", not an arbitrary
-    # label -- no permutation ambiguity left to resolve here.
-    true_physical = denormalize_configuration_array(test_design.numpy(), norm)  # (n, num_res, 5)
-
-    predictions = {}
-    num_workers = max(1, os.cpu_count() or 1)
-
-    with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
-        for name in active_models:
-            print(f"Evaluating {name} design-parameter recovery ...")
-            model, model_norm = load_inverse_model(name, dataset_tag)
-            _check_norm(name, model_norm, norm)
-            with torch.no_grad():
-                result = model.sample(test_spectrum_device, num_samples=num_samples)
-            has_log_prob = isinstance(result, tuple)
-            flat_samples = (result[0] if has_log_prob else result).cpu()  # (n, num_samples, design_dim)
-
-            if has_log_prob:
-                log_probs = result[1].cpu().numpy()
-                best_idx = log_probs.argmax(axis=-1)
-            else:
-                # Diffusion: no tractable density, so its own target-blind
-                # selection doesn't exist -- fall back to the solver, same
-                # as evaluate.py.
-                physical_all = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
-                flat_physical = physical_all.reshape(n * num_samples, NUM_RES, 5)
-                solved = solve_configs(pool, flat_physical, freq_hz).reshape(n, num_samples, -1)
-                true_erp_db = denormalize_erp_array(test_spectrum.numpy(), norm)
-                recon_mse = ((solved - true_erp_db[:, None, :]) ** 2).mean(axis=-1)
-                best_idx = recon_mse.argmin(axis=-1)
-
-            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)  # (n, num_samples, num_res, 5)
-            best_physical = physical[np.arange(n), best_idx]  # (n, num_res, 5)
-            predictions[name] = best_physical
+        print(f"Evaluating {name} design-parameter recovery ...")
+        model, model_norm = load_inverse_model(name, dataset_tag)
+        _check_norm(name, model_norm, norm)
+        spectrum_dev = test_spectrum.to(device)
+        with torch.no_grad():
+            result = model.sample(spectrum_dev, num_samples=num_samples)
+        flat_samples = (result[0] if isinstance(result, tuple) else result).to(device)
+        physical, log_p = score_samples(model, spectrum_dev, flat_samples, norm)
+        own = selection_indices(name, log_p, np.zeros((n, num_samples)))["own"]
+        rules[name] = "own rule" if own is not None else "random sample"
+        idx = own if own is not None else np.zeros(n, dtype=int)
+        # Sort the PREDICTED resonators by their own predicted f_t before
+        # comparing slot-by-slot with the (f_t-sorted) truth -- the solver
+        # score is order-independent, parameter recovery is not.
+        predictions[name] = sort_resonators_by_ft(physical[np.arange(n), idx])
 
     names = active_models
     # tab10 scales to any number of models automatically -- this literal
@@ -168,7 +164,7 @@ def main(
             ax.scatter(true_vals, pred_vals, s=8, alpha=0.35, color=colors[col], edgecolors="none")
             span = [min(lo, pred_vals.min()), max(hi, pred_vals.max())]
             ax.plot(span, span, "k--", lw=1.1, label="y = x" if row == 0 and col == 0 else None)
-            ax.set_title(f"{name}\nMAE $= {mae:.3g}$, $r = {r:.3f}$", fontsize=10)
+            ax.set_title(f"{name} ({rules[name]})\nMAE $= {mae:.3g}$, $r = {r:.3f}$", fontsize=10)
             if row == len(PARAMS) - 1:
                 ax.set_xlabel(f"True {label}")
             if col == 0:

@@ -152,7 +152,11 @@ def _run_stage(
         train_loss = total / n
 
         model.eval()
-        with torch.no_grad():
+        # Fixed validation randomness (VAE reparameterisation draws in
+        # stages 2/3), so the best-epoch choice is not Monte-Carlo luck.
+        devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+        with torch.no_grad(), torch.random.fork_rng(devices=devices):
+            torch.manual_seed(20251001)
             total, n = 0.0, 0
             for spectrum, design in loaders["val"]:
                 spectrum = spectrum.to(device, non_blocking=True)
@@ -335,6 +339,7 @@ def evaluate_inverse(
     stats = {
         "num_targets": int(n),
         "num_samples": int(num_samples),
+        "random_sample": _metrics(solved[:, 0], true_erp),
         "selected_by_own_forward": _metrics(pred_selected, true_erp),
         "point_estimate": _metrics(solved_point, true_erp),
         "oracle_best_of_samples": _metrics(solved[rows, oracle], true_erp),
@@ -349,7 +354,8 @@ def evaluate_inverse(
     }
     print("=" * 68)
     print(f"[{tag} inverse] solver-scored, {n} targets x {num_samples} samples")
-    for key, label in (("selected_by_own_forward", "selected (own forward)"),
+    for key, label in (("random_sample", "random sample"),
+                       ("selected_by_own_forward", "selected (own forward)"),
                        ("point_estimate", "point estimate"),
                        ("oracle_best_of_samples", "oracle best-of-N")):
         m = stats[key]

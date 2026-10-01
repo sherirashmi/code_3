@@ -15,8 +15,11 @@ from erp_inverse_operators.flow import ConditionalFlow
 from erp_inverse_operators.mdn import MDN
 from erp_inverse_operators.padding_inn import PadINN
 
+from erp_inverse_operators.common import POOLED, POSITIONAL
+from erp_inverse_operators.design_space import BOUNDED12, FULL15, design_dim
+
 NUM_RES = 3
-DESIGN_DIM = NUM_RES * 5
+DESIGN_DIM = NUM_RES * 5  # legacy full15 design size
 
 # KL annealing schedule for the cVAE -- beta ramps from 0 to KL_TARGET_BETA
 # over the first KL_WARMUP_EPOCHS epochs instead of being fixed from step 1,
@@ -56,7 +59,7 @@ def _surrogate_loss(model, spectrum, design, epoch, *, norm_params):
     return model.training_loss(spectrum, design, own_norm_params=norm_params, surrogate_weight=1.0)
 
 
-def _build_surrogate(dataset_tag: str | None = None):
+def _build_surrogate(design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None):
     from erp_inverse_operators.surrogate_inverse import (
         DEFAULT_SURROGATE_CHECKPOINTS,
         SurrogateInverse,
@@ -64,14 +67,56 @@ def _build_surrogate(dataset_tag: str | None = None):
     )
 
     checkpoints = surrogate_checkpoints_for(dataset_tag) if dataset_tag else DEFAULT_SURROGATE_CHECKPOINTS
-    return SurrogateInverse(design_dim=DESIGN_DIM, surrogate_checkpoints=checkpoints)
+    return SurrogateInverse(
+        design_dim=design_dim(design_param, NUM_RES), surrogate_checkpoints=checkpoints,
+        spectrum_encoder=spectrum_encoder, num_res=NUM_RES,
+    )
+
+
+def _builder(cls, *, uses_spectrum_encoder: bool = True, **fixed):
+    """build(design_param="full15", spectrum_encoder="pooled", dataset_tag=None)."""
+
+    def build(design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None):
+        kwargs = dict(fixed, design_dim=design_dim(design_param, NUM_RES))
+        if uses_spectrum_encoder:
+            kwargs["spectrum_encoder"] = spectrum_encoder
+        return cls(**kwargs)
+
+    build.uses_spectrum_encoder = uses_spectrum_encoder
+    return build
+
+
+# --------------------------------------------------------------------------
+# Model variants: spectrum encoder (pooled | positional) x design space
+# (full15 | bounded12). The variant is part of the model's name, e.g.
+# "Flow", "Flow_pos", "Flow_b12", "Flow_pos_b12", so checkpoints/plots of
+# different variants never overwrite each other.
+# --------------------------------------------------------------------------
+
+_POS_SUFFIX = "_pos"
+_B12_SUFFIX = "_b12"
+
+
+def variant_name(short: str, spectrum_encoder: str = POOLED, design_param: str = FULL15) -> str:
+    return short + (_POS_SUFFIX if spectrum_encoder == POSITIONAL else "") + (_B12_SUFFIX if design_param == BOUNDED12 else "")
+
+
+def parse_variant(name: str) -> tuple[str, str, str]:
+    """``"Flow_pos_b12"`` -> ``("Flow", "positional", "bounded12")``."""
+    design_param = BOUNDED12 if name.endswith(_B12_SUFFIX) else FULL15
+    if design_param == BOUNDED12:
+        name = name[: -len(_B12_SUFFIX)]
+    spectrum_encoder = POSITIONAL if name.endswith(_POS_SUFFIX) else POOLED
+    if spectrum_encoder == POSITIONAL:
+        name = name[: -len(_POS_SUFFIX)]
+    return name, spectrum_encoder, design_param
 
 
 INVERSE_MODELS = {
     "1": {
         "name": "Mixture Density Network",
         "short": "MDN",
-        "build": lambda: MDN(design_dim=DESIGN_DIM, num_components=10),
+        "build": _builder(MDN, num_components=10),
         "loss_fn": _mdn_loss,
         "lr": 1e-3,
         "epochs": 150,
@@ -79,7 +124,7 @@ INVERSE_MODELS = {
     "2": {
         "name": "Conditional VAE",
         "short": "cVAE",
-        "build": lambda: ConditionalVAE(design_dim=DESIGN_DIM, latent_dim=8),
+        "build": _builder(ConditionalVAE, latent_dim=8),
         "loss_fn": _cvae_loss,
         "lr": 1e-3,
         "epochs": 150,
@@ -87,7 +132,7 @@ INVERSE_MODELS = {
     "3": {
         "name": "Conditional Normalizing Flow",
         "short": "Flow",
-        "build": lambda: ConditionalFlow(design_dim=DESIGN_DIM, num_layers=8, hidden=96),
+        "build": _builder(ConditionalFlow, num_layers=8, hidden=96),
         "loss_fn": _flow_loss,
         "lr": 5e-4,
         "epochs": 150,
@@ -95,7 +140,7 @@ INVERSE_MODELS = {
     "4": {
         "name": "Conditional Diffusion",
         "short": "Diffusion",
-        "build": lambda: ConditionalDiffusion(design_dim=DESIGN_DIM, num_steps=100, hidden=128),
+        "build": _builder(ConditionalDiffusion, num_steps=100, hidden=128),
         "loss_fn": _diffusion_loss,
         "lr": 1e-3,
         "epochs": 150,
@@ -103,7 +148,7 @@ INVERSE_MODELS = {
     "5": {
         "name": "Basis Flow (invertible, bidirectional)",
         "short": "BasisFlow",
-        "build": lambda: BasisFlow(design_dim=DESIGN_DIM, n_freq=301, num_layers=8, flow_hidden=96),
+        "build": _builder(BasisFlow, n_freq=301, num_layers=8, flow_hidden=96),
         "loss_fn": _basis_flow_loss,
         "lr": 5e-4,
         "epochs": 150,
@@ -111,7 +156,7 @@ INVERSE_MODELS = {
     "6": {
         "name": "Padding INN (Ardizzone et al., arXiv:1808.04730)",
         "short": "PadINN",
-        "build": lambda: PadINN(design_dim=DESIGN_DIM, n_freq=301, z_dim=16, num_layers=8, hidden=96),
+        "build": _builder(PadINN, uses_spectrum_encoder=False, n_freq=301, z_dim=16, num_layers=8, hidden=96),
         "loss_fn": _padding_inn_loss,
         "lr": 5e-4,
         "epochs": 150,
@@ -119,7 +164,7 @@ INVERSE_MODELS = {
     "7": {
         "name": "Surrogate-in-the-loop inverse (deterministic, frozen DCO+GNO)",
         "short": "Surrogate",
-        "build": _build_surrogate,          # optional arg: dataset tag
+        "build": _build_surrogate,
         "loss_fn": _surrogate_loss,         # needs norm_params=..., see train_all
         "needs_norm_params": True,
         "lr": 5e-4,
@@ -129,4 +174,4 @@ INVERSE_MODELS = {
 
 SHORT_TO_KEY = {spec["short"]: key for key, spec in INVERSE_MODELS.items()}
 
-__all__ = ["INVERSE_MODELS", "SHORT_TO_KEY", "NUM_RES", "DESIGN_DIM"]
+__all__ = ["INVERSE_MODELS", "SHORT_TO_KEY", "NUM_RES", "DESIGN_DIM", "variant_name", "parse_variant"]

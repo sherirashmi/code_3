@@ -63,12 +63,13 @@ class ConditionalDiffusion(nn.Module):
         time_dim: int = 32,
         hidden: int = 128,
         cosine_s: float = 0.008,
+        spectrum_encoder: str = "pooled",
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
         self.num_steps = int(num_steps)
 
-        self.encoder = SpectrumEncoder(embed_dim=embed_dim)
+        self.encoder = SpectrumEncoder(embed_dim=embed_dim, mode=spectrum_encoder)
         self.denoiser = Denoiser(design_dim, embed_dim, time_dim, hidden)
 
         # Cosine schedule (Nichol & Dhariwal, "Improved DDPM") instead of the

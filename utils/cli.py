@@ -844,6 +844,26 @@ def _run_inverse_evaluations(model_names, tag, dataset_file, num_configurations,
     return results
 
 
+def _prompt_inverse_variant() -> tuple[str, str]:
+    """(spectrum_encoder, design_param) for the inverse models."""
+    print("\nSpectrum encoder (how the target ERP spectrum is embedded)")
+    print("1. Pooled      (conv + global mean/max pooling)  [standard, all existing models]")
+    print("2. Positional  (keeps frequency position: positional channel + ordered frequency bins)  -> saved as <MODEL>_pos")
+    spectrum_encoder = "positional" if _prompt_choice("Select spectrum encoder: ", {"1": None, "2": None}) == "2" else "pooled"
+    print("\nDesign parameterisation")
+    print("1. Full 15-D   [m, k, f_t, x, y] per resonator, z-scored  [standard, all existing models]")
+    print("2. Bounded 12-D [m, f_t, x, y], logit-bounded, k = m(2 pi f_t)^2 derived (exact densities, no clipping)")
+    print("               -> saved as <MODEL>_b12")
+    design_param = "bounded12" if _prompt_choice("Select design parameterisation: ", {"1": None, "2": None}) == "2" else "full15"
+    return spectrum_encoder, design_param
+
+
+def _inverse_name(key: str, spectrum_encoder: str, design_param: str) -> str:
+    from erp_inverse_operators.train_all import resolve_variant
+
+    return resolve_variant(key, spectrum_encoder, design_param)[0]
+
+
 def main_all_inverse_models():
     """Train every (or a selection of) inverse model(s), then optionally evaluate."""
     print("\nAll-inverse-model training parameters (per-model defaults):")
@@ -851,6 +871,7 @@ def main_all_inverse_models():
         print(f"  {spec['short']:>10s}: epochs={spec['epochs']}, lr={spec['lr']:g}")
 
     keys = _prompt_selection("Which inverse models to train (e.g. 1,3,7)", INVERSE_MODELS)
+    spectrum_encoder, design_param = _prompt_inverse_variant()
     tag, dataset_file = _prompt_dataset()
     num_configurations = _prompt_num_configurations(tag)
     batch_size = _prompt_int("Batch size (target spectra per batch)", default=64, minimum=1)
@@ -867,8 +888,10 @@ def main_all_inverse_models():
         dataset_file=dataset_file,
         keys=keys,
         seed=SEED,
+        spectrum_encoder=spectrum_encoder,
+        design_param=design_param,
     )
-    names = [INVERSE_MODELS[k]["short"] for k in keys]
+    names = [_inverse_name(k, spectrum_encoder, design_param) for k in keys]
     return _run_inverse_evaluations(names, tag, dataset_file, num_configurations, ask=True)
 
 
@@ -893,14 +916,16 @@ def main_inverse():
     spec = INVERSE_MODELS[key]
     _print_inverse_action_menu()
     action = INVERSE_ACTIONS[_prompt_choice("Select operation: ", INVERSE_ACTIONS)]
+    spectrum_encoder, design_param = _prompt_inverse_variant()
+    name = _inverse_name(key, spectrum_encoder, design_param)
     tag, dataset_file = _prompt_dataset("100k" if action != "train" else DEFAULT_DATASET_TAG)
 
     print("\n" + "=" * 68)
-    print(f"Model      : {spec['name']} ({spec['short']})")
+    print(f"Model      : {spec['name']} ({name})")
     print(f"Action     : {action}")
     print(f"Dataset    : {tag}")
-    print(f"Checkpoint : {inverse_model_path(spec['short'], tag)}")
-    print(f"Plots      : {INVERSE_ROOT / 'plots' / tag / spec['short']}")
+    print(f"Checkpoint : {inverse_model_path(name, tag)}")
+    print(f"Plots      : {INVERSE_ROOT / 'plots' / tag / name}")
     print("=" * 68)
 
     if action == "train":
@@ -910,18 +935,19 @@ def main_inverse():
         model, history, dataset = train_one_inverse_model(
             key, num_configurations=num_configurations, epochs=epochs,
             batch_size=batch_size, dataset_file=dataset_file, seed=SEED,
+            spectrum_encoder=spectrum_encoder, design_param=design_param,
         )
-        print(f"\n{spec['short']} trained: final val loss={history['val'][-1]:.4f}, "
+        print(f"\n{name} trained: final val loss={history['val'][-1]:.4f}, "
               f"best val loss={min(history['val']):.4f}")
         result = {"model": model, "history": history, "dataset": dataset}
         if _prompt_yes_no("Evaluate it now (solver-scored)?", default=True):
-            result.update(_run_inverse_evaluations([spec["short"]], tag, dataset_file, num_configurations, ask=False))
+            result.update(_run_inverse_evaluations([name], tag, dataset_file, num_configurations, ask=False))
         return result
 
-    if not inverse_model_path(spec["short"], tag).exists():
-        print(f"\nNo checkpoint {inverse_model_path(spec['short'], tag)} -- train {spec['short']} on '{tag}' first.")
+    if not inverse_model_path(name, tag).exists():
+        print(f"\nNo checkpoint {inverse_model_path(name, tag)} -- train {name} on '{tag}' first.")
         return None
-    recorded = inverse_evaluate.checkpoint_num_configurations(spec["short"], tag)
+    recorded = inverse_evaluate.checkpoint_num_configurations(name, tag)
     default_n = recorded or int(DATASETS[tag]["num_configurations"])
     num_configurations = _prompt_int(
         "Number of configurations backing the test split (must match training)",
@@ -929,7 +955,7 @@ def main_inverse():
     )
 
     if action == "evaluate":
-        return _run_inverse_evaluations([spec["short"]], tag, dataset_file, num_configurations, ask=False)
+        return _run_inverse_evaluations([name], tag, dataset_file, num_configurations, ask=False)
 
     print("\nPrediction target")
     print("1. Enter a resonator configuration manually (its real solver-computed "
@@ -942,14 +968,14 @@ def main_inverse():
     from erp_inverse_operators.predict import predict_one, print_report
 
     result = predict_one(
-        spec["short"],
+        name,
         configuration=configuration,
         num_samples=num_samples,
         num_configurations=num_configurations,
         dataset_file=dataset_file,
         seed=SEED,
     )
-    print_report(spec["short"], result)
+    print_report(name, result)
     return result
 
 

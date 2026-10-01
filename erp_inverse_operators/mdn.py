@@ -37,13 +37,14 @@ class MDN(nn.Module):
         embed_dim: int = 96,
         hidden: int = 128,
         min_std: float = 1e-3,
+        spectrum_encoder: str = "pooled",
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
         self.num_components = int(num_components)
         self.min_std = float(min_std)
 
-        self.encoder = SpectrumEncoder(embed_dim=embed_dim)
+        self.encoder = SpectrumEncoder(embed_dim=embed_dim, mode=spectrum_encoder)
         out_dim = num_components * (1 + 2 * design_dim)
         self.head = MLP([embed_dim, hidden, hidden, out_dim], activation=nn.SiLU)
 

@@ -75,6 +75,7 @@ from utils.erp_dataset import recorded_modal_resolution
 from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
 
 from .common import SpectrumEncoder, flatten_configuration
+from .design_space import decode_bounded_torch
 
 _CONFIG_FIELDS = ("m", "k", "f_t", "x", "y")
 
@@ -177,14 +178,20 @@ class SurrogateInverse(nn.Module):
         surrogate_checkpoints: Sequence[str] = DEFAULT_SURROGATE_CHECKPOINTS,
         embed_dim: int = 96,
         hidden: int = 128,
+        spectrum_encoder: str = "pooled",
+        num_res: int = 3,
     ) -> None:
         super().__init__()
         self.design_dim = int(design_dim)
-        if self.design_dim % 5 != 0:
-            raise ValueError("design_dim must be num_res*5 ([m,k,f_t,x,y] per resonator).")
-        self.num_res = self.design_dim // 5
+        self.num_res = int(num_res)
+        if self.design_dim not in (5 * self.num_res, 4 * self.num_res):
+            raise ValueError(
+                "design_dim must be num_res*5 (full15: [m,k,f_t,x,y]) or num_res*4 "
+                "(bounded12: [m,f_t,x,y], see design_space.py)."
+            )
+        self.bounded = self.design_dim == 4 * self.num_res
 
-        self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim)
+        self.spectrum_encoder = SpectrumEncoder(embed_dim=embed_dim, mode=spectrum_encoder)
         self.head = MLP([embed_dim, hidden, hidden, self.design_dim], activation=nn.SiLU)
 
         if len(surrogate_checkpoints) == 0:
@@ -315,18 +322,30 @@ class SurrogateInverse(nn.Module):
         versus a hard ``torch.clamp``.
         """
         batch = design_norm.shape[0]
-        configuration_own = design_norm.view(batch, self.num_res, 5)
-
-        own_mean = torch.tensor(
-            [float(own_norm_params[f"{f}_mean"]) for f in _CONFIG_FIELDS], device=design_norm.device
-        ).view(1, 1, 5)
-        own_std = torch.tensor(
-            [float(own_norm_params[f"{f}_std"]) for f in _CONFIG_FIELDS], device=design_norm.device
-        ).view(1, 1, 5)
-        configuration_physical = configuration_own * own_std + own_mean
-        configuration_physical = _soft_clamp(
-            configuration_physical, self.design_physical_min, self.design_physical_max
-        )
+        if self.bounded:
+            # bounded12: exact, differentiable decode -- always inside the
+            # generation bounds with k = m (2 pi f_t)^2, nothing to clamp.
+            configuration_physical = decode_bounded_torch(design_norm, self.num_res, own_norm_params)
+        else:
+            configuration_own = design_norm.view(batch, self.num_res, 5)
+            own_mean = torch.tensor(
+                [float(own_norm_params[f"{f}_mean"]) for f in _CONFIG_FIELDS], device=design_norm.device
+            ).view(1, 1, 5)
+            own_std = torch.tensor(
+                [float(own_norm_params[f"{f}_std"]) for f in _CONFIG_FIELDS], device=design_norm.device
+            ).view(1, 1, 5)
+            configuration_physical = _soft_clamp(
+                configuration_own * own_std + own_mean, self.design_physical_min, self.design_physical_max
+            )
+            # The solver only uses m and k; derive k from the (soft-bounded)
+            # m and f_t so the surrogates are only ever queried with
+            # physically consistent resonators, k = m (2 pi f_t)^2.
+            m = configuration_physical[..., 0]
+            f_t = configuration_physical[..., 2]
+            configuration_physical = torch.stack(
+                (m, m * (2.0 * math.pi * f_t) ** 2, f_t, configuration_physical[..., 3], configuration_physical[..., 4]),
+                dim=-1,
+            )
 
         own_erp_mean = float(own_norm_params["erp_mean"])
         own_erp_std = float(own_norm_params["erp_std"])

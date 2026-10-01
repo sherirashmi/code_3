@@ -92,6 +92,60 @@ Training (and evaluate/predict) in `main.py` asks which resonator encoder to use
 GNO, STO, NN and iGNO do not use the set encoder and always train in their
 standard form. `ResonanceQueryEncoder` is unchanged in both variants.
 
+## Inverse-model options and evaluation
+
+Inverse training / evaluate / predict in `main.py` ask for two options
+(saved as part of the model name, so variants never overwrite each other):
+
+| Option | Choices | Name suffix |
+|---|---|---|
+| Spectrum encoder | **pooled** (conv + global mean/max; all existing models) or **positional** (normalised-frequency input channel + 16 ordered frequency bins, flattened, so peak *positions* are kept) | `_pos` |
+| Design space | **full 15-D** `[m,k,f_t,x,y]` z-scored (existing models) or **bounded 12-D** `[m,f_t,x,y]`, logit-bounded to the generation ranges, `k = m(2πf_t)²` derived (`erp_inverse_operators/design_space.py`) | `_b12` |
+
+With the bounded 12-D space every model output decodes to a valid,
+consistent design (no clipping), and densities are exact: they are
+converted to the physical `(m, f_t, x, y)` space with the transform's
+log-Jacobian. In the 15-D space predicted designs are projected
+(`k` re-derived, bounds clipped) and **re-scored** at the projected design,
+so the reported log p belongs to the design that is evaluated.
+SurrogateInverse derives `k` before querying its frozen forward surrogates.
+
+**Evaluation** (`evaluate.py`) reports three selection rules per model, each
+scored with the actual solver:
+
+* **random** -- the first i.i.d. sample (no selection);
+* **own** -- the model's own target-blind rule: highest log p (MDN, Flow,
+  BasisFlow exact; cVAE via an importance-sampled marginal, 64 samples),
+  the point estimate for Surrogate, n/a for Diffusion/PadINN;
+* **oracle** -- best of N by solver error against the target, the same rule
+  for every model (uses the target, so it is an upper bound).
+
+Design-parameter recovery (`evaluate_design.py`) uses the target-blind
+selection only and sorts predicted resonators by predicted `f_t` before the
+slot-by-slot comparison. The "%" shown next to sampled designs is a softmax
+over the drawn samples -- a relative ranking, not a calibrated probability.
+Validation losses use fixed randomness (and the cVAE its final KL weight),
+so best-epoch selection is not Monte-Carlo luck.
+
+## Running on a GPU (e.g. Google Colab)
+
+The code uses CUDA automatically when available (`utils/support.py`).
+In Colab: *Runtime -> Change runtime type -> T4 GPU*, then in cells:
+
+```python
+!git clone -b ai_code https://github.com/sherirashmi/code_3.git   # private repo: use a token URL
+%cd code_3
+!pip -q install scipy matplotlib     # torch with CUDA is preinstalled on Colab
+import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))
+!python main.py                      # answer the prompts in the input box
+```
+
+Colab sessions end after ~12 h or when idle, and their disk is wiped:
+copy results out when a run finishes, e.g. mount Drive
+(`from google.colab import drive; drive.mount('/content/drive')`) and
+`!cp -r erp_*_operators/models erp_*_operators/plots /content/drive/MyDrive/thesis_runs/`.
+A GPU speeds up training; the solver-scored evaluation runs on the CPU cores.
+
 ## Training details
 
 ### Forward operators (`erp_forward_operators/neural_operator_utils.py`)
