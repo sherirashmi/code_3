@@ -162,13 +162,23 @@ class FrequencyRefinement1d(nn.Module):
 def physics_aware_resonator_features(
     configuration: torch.Tensor,
     harmonics: int = 10,
+    coordinate_affine: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Augment normalized ``[m, k, f_t, x, y]`` with plate-inspired sine features.
 
-    ``x`` and ``y`` are z-scored (not range-scaled) in the common
-    preprocessing pipeline, but still span the plate roughly linearly, so
-    ``sin(m*pi*x)`` and ``sin(n*pi*y)`` still follow the same spatial
-    structure that appears in the plate mode shapes. Low-order tensor-product
+    ``coordinate_affine=None`` (the default, ``coordinate_features="zscored"``)
+    applies ``sin(i*pi*x)`` / ``sin(j*pi*y)`` directly to the z-scored
+    coordinates. Those are centred on the plate middle, so every such
+    feature is odd about the centre and none of them can represent the
+    physical modes with odd index (``sin(m*pi*x/Lx)``, m = 1, 3, 5, ... are
+    even about the centre). It is kept as the default because every
+    existing checkpoint was trained with it.
+
+    ``coordinate_affine`` (shape ``(2, 2)``, rows ``[scale, shift]`` for x
+    and y; see :func:`enable_physical_features`) first maps the z-scored
+    coordinates to ``x/Lx`` and ``y/Ly`` in ``[0, 1]``, so the harmonics are
+    exactly the plate's own simply-supported mode shapes
+    ``sin(m*pi*x/Lx)``, ``sin(n*pi*y/Ly)``. Low-order tensor-product
     terms are included so the network does not have to rediscover the
     dominant modal spatial interactions from raw coordinates. ``m`` and ``k``
     are passed through unaugmented (mass ratio / coupling-strength
@@ -189,10 +199,122 @@ def physics_aware_resonator_features(
     x = configuration[..., 3:4]
     y = configuration[..., 4:5]
 
-    x_modes = [torch.sin(math.pi * float(i) * x) for i in range(1, harmonics + 1)]
-    y_modes = [torch.sin(math.pi * float(j) * y) for j in range(1, harmonics + 1)]
+    u, v = x, y
+    if coordinate_affine is not None:
+        u = x * coordinate_affine[0, 0] + coordinate_affine[0, 1]  # x / Lx
+        v = y * coordinate_affine[1, 0] + coordinate_affine[1, 1]  # y / Ly
+    x_modes = [torch.sin(math.pi * float(i) * u) for i in range(1, harmonics + 1)]
+    y_modes = [torch.sin(math.pi * float(j) * v) for j in range(1, harmonics + 1)]
     products = [xm * yn for xm in x_modes for yn in y_modes]
     return torch.cat([m, k, f_t, x, y, *x_modes, *y_modes, *products], dim=-1)
+
+
+# ==================================================
+# Optional physical feature scaling (coordinate_features="physical")
+# ==================================================
+#
+# Modules that build modal features set ``uses_modal_features = True``;
+# modules that build query-resonator detuning set ``uses_detuning = True``.
+# By default they behave exactly as before (and have no extra buffers, so
+# existing checkpoints load unchanged). ``enable_physical_features`` gives
+# them buffers that map the z-scored inputs to physical scales:
+#
+# * ``coord_affine``     z-scored x, y  ->  x/Lx, y/Ly
+# * ``detuning_affine``  z-scored f_t   ->  f_t on the query-frequency scale,
+#   so ``query - f_t`` is exactly ``(f - f_t[Hz]) / freq_std``: one scale for
+#   every resonator, instead of the difference of two separately z-scored
+#   quantities.
+#
+# The buffer values come from the training data's norm_params
+# (``set_physical_feature_normalization``) and are saved in the state dict.
+
+COORDINATE_FEATURE_MODES = ("zscored", "physical")
+
+
+def modal_features(module: nn.Module, configuration: torch.Tensor, harmonics: int) -> torch.Tensor:
+    """``physics_aware_resonator_features`` using ``module``'s coordinate mode."""
+    return physics_aware_resonator_features(
+        configuration,
+        harmonics=harmonics,
+        coordinate_affine=getattr(module, "coord_affine", None),
+    )
+
+
+def resonance_detuning(module: nn.Module, query: torch.Tensor, f_t: torch.Tensor) -> torch.Tensor:
+    """Normalized detuning ``query - f_t`` using ``module``'s detuning scale."""
+    affine = getattr(module, "detuning_affine", None)
+    if affine is None:
+        return query - f_t
+    return query - (f_t * affine[0] + affine[1])
+
+
+def enable_physical_features(model: nn.Module) -> nn.Module:
+    """Switch every feature-building submodule of ``model`` to physical scales.
+
+    Registers identity-initialised buffers; their real values are set by
+    :func:`set_physical_feature_normalization` (training) or come from the
+    checkpoint's state dict (loading).
+    """
+    for module in model.modules():
+        if getattr(module, "uses_modal_features", False) and not hasattr(module, "coord_affine"):
+            module.register_buffer("coord_affine", torch.tensor([[1.0, 0.0], [1.0, 0.0]]))
+        if getattr(module, "uses_detuning", False) and not hasattr(module, "detuning_affine"):
+            module.register_buffer("detuning_affine", torch.tensor([1.0, 0.0]))
+    return model
+
+
+def set_physical_feature_normalization(model: nn.Module, norm_params: Mapping[str, object]) -> None:
+    """Fill the buffers of :func:`enable_physical_features` from ``norm_params``."""
+    lx, ly = float(_physics.Lx), float(_physics.Ly)
+    coord = torch.tensor(
+        [
+            [float(norm_params["x_std"]) / lx, float(norm_params["x_mean"]) / lx],
+            [float(norm_params["y_std"]) / ly, float(norm_params["y_mean"]) / ly],
+        ]
+    )
+    freq_std = float(norm_params["freq_std"])
+    detuning = torch.tensor(
+        [
+            float(norm_params["f_t_std"]) / freq_std,
+            (float(norm_params["f_t_mean"]) - float(norm_params["freq_mean"])) / freq_std,
+        ]
+    )
+    for module in model.modules():
+        if hasattr(module, "coord_affine"):
+            module.coord_affine.copy_(coord.to(module.coord_affine))
+        if hasattr(module, "detuning_affine"):
+            module.detuning_affine.copy_(detuning.to(module.detuning_affine))
+
+
+# model_config keys that are not constructor arguments of any architecture.
+BUILD_OPTION_KEYS = ("coordinate_features", "permutation_augment")
+
+
+def build_operator_model(
+    build_model: Callable[..., nn.Module],
+    num_res: int,
+    model_config: Mapping[str, object],
+    norm_params: Mapping[str, object] | None = None,
+) -> nn.Module:
+    """Build a forward operator from a (checkpoint) ``model_config``.
+
+    Strips the build options in ``BUILD_OPTION_KEYS`` before calling the
+    architecture's constructor and applies ``coordinate_features``. Pass
+    ``norm_params`` when building a fresh model for training; when loading a
+    checkpoint the physical buffers come from its state dict instead.
+    """
+    config = dict(model_config)
+    options = {key: config.pop(key) for key in BUILD_OPTION_KEYS if key in config}
+    model = build_model(num_res=num_res, **config)
+    mode = str(options.get("coordinate_features", "zscored"))
+    if mode not in COORDINATE_FEATURE_MODES:
+        raise ValueError(f"coordinate_features must be one of {COORDINATE_FEATURE_MODES}, got {mode!r}.")
+    if mode == "physical":
+        enable_physical_features(model)
+        if norm_params is not None:
+            set_physical_feature_normalization(model, norm_params)
+    model.permutation_augment = bool(options.get("permutation_augment", False))
+    return model
 
 
 class ResonatorSetEncoder(nn.Module):
@@ -203,6 +325,8 @@ class ResonatorSetEncoder(nn.Module):
     Mean and max pooling preserve permutation invariance while retaining both
     distributed and dominant-resonator information.
     """
+
+    uses_modal_features = True
 
     def __init__(
         self,
@@ -229,9 +353,7 @@ class ResonatorSetEncoder(nn.Module):
     def forward(self, configuration: torch.Tensor) -> torch.Tensor:
         if configuration.ndim != 3 or configuration.shape[-1] != 5:
             raise ValueError("configuration must have shape (batch, num_res, 5).")
-        features = physics_aware_resonator_features(
-            configuration, harmonics=self.modal_harmonics
-        )
+        features = modal_features(self, configuration, self.modal_harmonics)
         h = self.element_net(features)
         pooled = torch.cat((h.mean(dim=1), h.max(dim=1).values), dim=-1)
         return self.fusion_net(pooled)
@@ -264,6 +386,8 @@ class SortedResonatorEncoder(nn.Module):
     pooling throws away.
     """
 
+    uses_modal_features = True
+
     def __init__(
         self,
         num_res: int,
@@ -290,9 +414,7 @@ class SortedResonatorEncoder(nn.Module):
         sorted_configuration = torch.gather(
             configuration, dim=1, index=order[..., None].expand(-1, -1, 5)
         )
-        features = physics_aware_resonator_features(
-            sorted_configuration, harmonics=self.modal_harmonics
-        )
+        features = modal_features(self, sorted_configuration, self.modal_harmonics)
         flat = features.reshape(features.shape[0], -1)
         return self.net(flat)
 
@@ -386,9 +508,14 @@ class ResonanceQueryEncoder(nn.Module):
     element network followed by mean/max pooling keeps the result invariant to
     resonator ordering while exposing near-resonance information explicitly.
 
-    Note that frequency and resonator tuning frequency use the project's existing
-    normalization rules, so the detuning is dimensionless rather than Hz.
+    By default frequency and resonator tuning frequency use the project's
+    existing (separate) normalization rules, so the detuning is the
+    difference of two z-scores; with ``coordinate_features="physical"`` it
+    is ``(f - f_t) / freq_std`` exactly (see ``resonance_detuning``).
     """
+
+    uses_modal_features = True
+    uses_detuning = True
 
     def __init__(
         self,
@@ -424,14 +551,12 @@ class ResonanceQueryEncoder(nn.Module):
 
         b, n, _ = configuration.shape
         f = frequency.shape[1]
-        resonator = physics_aware_resonator_features(
-            configuration, harmonics=self.modal_harmonics
-        )
+        resonator = modal_features(self, configuration, self.modal_harmonics)
         resonator = resonator[:, None, :, :].expand(b, f, n, -1)
 
         query = frequency[:, :, None, :].expand(b, f, n, 1)
         f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
-        delta = query - f_t
+        delta = resonance_detuning(self, query, f_t)
         pair = torch.cat((resonator, query, delta, delta.abs(), delta.square()), dim=-1)
         h = self.element_net(pair)
         pooled = torch.cat((h.mean(dim=2), h.max(dim=2).values), dim=-1)
@@ -781,6 +906,13 @@ class DWAWeightedERPLoss:
         }
 
 
+def permute_resonators(configuration: torch.Tensor) -> torch.Tensor:
+    """Random resonator order per sample, ``(B, num_res, 5) -> (B, num_res, 5)``."""
+    b, n, d = configuration.shape
+    order = torch.argsort(torch.rand(b, n, device=configuration.device), dim=1)
+    return torch.gather(configuration, 1, order[..., None].expand(b, n, d))
+
+
 def train_operator(
     model: nn.Module,
     loaders: Mapping[str, DataLoader],
@@ -816,6 +948,13 @@ def train_operator(
         raise ValueError("lbfgs_epochs cannot be negative.")
 
     model = model.to(device)
+    # Set by build_operator_model from model_config["permutation_augment"]:
+    # shuffle the resonator order of every training batch, so a model that is
+    # not permutation invariant by construction (the plain NN) learns that
+    # the order carries no information.
+    permutation_augment = bool(getattr(model, "permutation_augment", False))
+    if permutation_augment:
+        print("Resonator-permutation augmentation: ON (random order every training batch)")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=epochs, eta_min=1e-6
@@ -834,6 +973,9 @@ def train_operator(
             configuration = configuration.to(device, dtype=torch.float32, non_blocking=True)
             frequency = frequency.to(device, dtype=torch.float32, non_blocking=True)
             target = target.to(device, dtype=torch.float32, non_blocking=True)
+
+            if permutation_augment:
+                configuration = permute_resonators(configuration)
 
             optimizer.zero_grad(set_to_none=True)
             prediction = model(configuration, frequency)
@@ -988,6 +1130,75 @@ def train_operator(
     return model, history
 
 
+def spectrum_error_diagnostics(
+    pred: np.ndarray,
+    true: np.ndarray,
+    configurations: np.ndarray,
+    frequency_values: np.ndarray,
+    *,
+    band_fraction: float = 0.05,
+    stratum_fraction: float = 0.10,
+    peak_window: int = 7,
+) -> dict[str, float]:
+    """Where the test error sits, in dB (all values are RMSEs unless noted).
+
+    * frequency bands: the lowest / highest ``band_fraction`` of the
+      frequency axis vs the interior -- shows edge effects such as the FNO's
+      periodic FFT wrap;
+    * resonance peaks: every local maximum of the TRUE spectrum (the same
+      ``spectrum_peak_mask`` the training loss uses) vs everything else;
+    * hard-case strata (``stratum_fraction`` of the test configurations
+      each): the closest pair of tuning frequencies ``min |f_t,i - f_t,j|``
+      and the resonator closest to a plate edge, each vs the rest.
+
+    ``pred``/``true`` are ``(N, n_freq)`` in dB, ``configurations``
+    ``(N, num_res, 5)`` in physical units. The strata are defined by
+    percentiles of the test set, so every model scored on the same split
+    uses the same configurations.
+    """
+    pred = np.asarray(pred, dtype=np.float64)
+    true = np.asarray(true, dtype=np.float64)
+    config = np.asarray(configurations, dtype=np.float64)
+    se = (pred - true) ** 2
+    n_freq = se.shape[1]
+    band = max(1, int(round(band_fraction * n_freq)))
+
+    def rmse(values: np.ndarray) -> float:
+        return float(np.sqrt(values.mean())) if values.size else float("nan")
+
+    peak_mask = (
+        spectrum_peak_mask(torch.from_numpy(true[..., None]).float(), window=peak_window)
+        .squeeze(-1).numpy().astype(bool)
+    )
+
+    f_t = np.sort(config[..., 2], axis=1)
+    min_ft_gap = np.diff(f_t, axis=1).min(axis=1) if f_t.shape[1] > 1 else np.full(len(f_t), np.inf)
+    x, y = config[..., 3], config[..., 4]
+    edge_distance = np.minimum.reduce(
+        [x, float(_physics.Lx) - x, y, float(_physics.Ly) - y]
+    ).min(axis=1)
+    close_ft = min_ft_gap <= np.quantile(min_ft_gap, stratum_fraction)
+    near_edge = edge_distance <= np.quantile(edge_distance, stratum_fraction)
+
+    freq = np.asarray(frequency_values, dtype=np.float64)
+    return {
+        "rmse_low_band_db": rmse(se[:, :band]),
+        "rmse_interior_db": rmse(se[:, band:-band]),
+        "rmse_high_band_db": rmse(se[:, -band:]),
+        "low_band_hz": float(freq[band - 1]),
+        "high_band_hz": float(freq[-band]),
+        "rmse_at_peaks_db": rmse(se[peak_mask]),
+        "rmse_off_peaks_db": rmse(se[~peak_mask]),
+        "peaks_per_spectrum_mean": float(peak_mask.sum(axis=1).mean()),
+        "rmse_close_ft_db": rmse(se[close_ft]),
+        "rmse_not_close_ft_db": rmse(se[~close_ft]),
+        "close_ft_threshold_hz": float(np.quantile(min_ft_gap, stratum_fraction)),
+        "rmse_near_edge_db": rmse(se[near_edge]),
+        "rmse_not_near_edge_db": rmse(se[~near_edge]),
+        "near_edge_threshold_m": float(np.quantile(edge_distance, stratum_fraction)),
+    }
+
+
 def evaluate_operator(
     model: nn.Module,
     loaders: Mapping[str, DataLoader],
@@ -1105,6 +1316,17 @@ def evaluate_operator(
     print(f"R^2 score                   : {r2_score:.6f}")
     print(f"Dominant peak frequency MAE : {peak_frequency_mae:.4f} Hz")
     print(f"ERP error at true peak MAE  : {peak_amplitude_mae:.6f} dB")
+    diagnostics = spectrum_error_diagnostics(pred, true, configurations, freq)
+    d = diagnostics
+    print("-" * 68)
+    print(f"RMSE by frequency band      : low {d['rmse_low_band_db']:.3f} | interior "
+          f"{d['rmse_interior_db']:.3f} | high {d['rmse_high_band_db']:.3f} dB")
+    print(f"RMSE at / off true peaks    : {d['rmse_at_peaks_db']:.3f} / {d['rmse_off_peaks_db']:.3f} dB "
+          f"({d['peaks_per_spectrum_mean']:.1f} peaks per spectrum)")
+    print(f"RMSE closest-f_t 10% / rest : {d['rmse_close_ft_db']:.3f} / {d['rmse_not_close_ft_db']:.3f} dB "
+          f"(min |df_t| <= {d['close_ft_threshold_hz']:.2f} Hz)")
+    print(f"RMSE near-edge 10% / rest   : {d['rmse_near_edge_db']:.3f} / {d['rmse_not_near_edge_db']:.3f} dB "
+          f"(edge distance <= {d['near_edge_threshold_m']:.3f} m)")
     print("=" * 68)
 
     plot_dir = operator_plot_dir(operator_name, plots_dir) if save_plots else None
@@ -1147,6 +1369,7 @@ def evaluate_operator(
         "r2_score": r2_score,
         "peak_frequency_mae_hz": peak_frequency_mae,
         "peak_amplitude_mae_db": peak_amplitude_mae,
+        "diagnostics": diagnostics,
         "predictions": pred,
         "targets": true,
         "configurations": configurations,
@@ -1321,7 +1544,9 @@ def run_operator_experiment(
             num_workers=num_workers,
             verbose=True,
         )
-        model = build_model(num_res=dataset.num_res, **dict(model_config)).to(device)
+        model = build_operator_model(
+            build_model, dataset.num_res, model_config, norm_params=dataset.norm_params
+        ).to(device)
         print(f"{operator_name} trainable parameters: {parameter_count(model):,}")
         model, history = train_operator(
             model,
@@ -1420,7 +1645,7 @@ def run_operator_experiment(
         verbose=True,
     )
     try:
-        model = build_model(num_res=dataset.num_res, **saved_config).to(device)
+        model = build_operator_model(build_model, dataset.num_res, saved_config).to(device)
         model.load_state_dict(checkpoint["model_state_dict"])
     except (TypeError, RuntimeError) as exc:
         raise RuntimeError(
@@ -1545,6 +1770,13 @@ __all__ = [
     "ResidualMLPBlock",
     "FrequencyRefinement1d",
     "physics_aware_resonator_features",
+    "COORDINATE_FEATURE_MODES",
+    "modal_features",
+    "resonance_detuning",
+    "enable_physical_features",
+    "set_physical_feature_normalization",
+    "BUILD_OPTION_KEYS",
+    "build_operator_model",
     "ResonatorSetEncoder",
     "SortedResonatorEncoder",
     "SetAndSortedResonatorEncoder",
@@ -1556,7 +1788,9 @@ __all__ = [
     "erp_spectrum_loss",
     "UncertaintyWeightedERPLoss",
     "DWAWeightedERPLoss",
+    "permute_resonators",
     "train_operator",
+    "spectrum_error_diagnostics",
     "evaluate_operator",
     "predict_erp_spectrum",
     "parameter_count",

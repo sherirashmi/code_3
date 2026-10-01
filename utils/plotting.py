@@ -694,6 +694,64 @@ def save_operator_experiment_plots(
 # ==================================================
 
 
+# Fixed categorical order (validated colour-blind-safe adjacent slots) for
+# the error-breakdown categories; colour follows the category, never rank.
+_BREAKDOWN_COLORS = ("#2a78d6", "#eb6834", "#1baf7a")
+
+
+def plot_error_breakdown(
+    rows: list[dict[str, object]],
+    *,
+    save_path: str | Path | None = None,
+    title_suffix: str = "",
+    show: bool = False,
+) -> None:
+    """Where each model's test error sits: frequency bands, peaks, hard cases.
+
+    ``rows`` need the ``spectrum_error_diagnostics`` keys plus ``model`` and
+    ``rmse``. Three panels with their own y-axes (the at-peak error is
+    several times the band errors), each a grouped bar chart per model.
+    """
+    names = [str(r["model"]) for r in rows]
+    panels = (
+        ("Frequency bands", (
+            ("rmse_low_band_db", "Lowest 5% of $f$"),
+            ("rmse_interior_db", "Interior"),
+            ("rmse_high_band_db", "Highest 5% of $f$"),
+        )),
+        ("Resonance peaks", (
+            ("rmse_at_peaks_db", "At true peaks"),
+            ("rmse_off_peaks_db", "Off peaks"),
+        )),
+        ("Hard-case strata (10% each)", (
+            ("rmse_close_ft_db", r"Closest $f_t$ pair"),
+            ("rmse_near_edge_db", "Nearest plate edge"),
+            ("rmse", "All test spectra"),
+        )),
+    )
+    x = np.arange(len(names), dtype=float)
+    fig, axes = plt.subplots(3, 1, figsize=(max(8.0, 0.9 * len(names) + 3.0), 10.5), sharex=True)
+    for ax, (title, series) in zip(axes, panels):
+        width = 0.8 / len(series)
+        for j, (key, label) in enumerate(series):
+            values = np.array([float(r[key]) for r in rows])
+            ax.bar(
+                x + (j - (len(series) - 1) / 2) * width, values, width,
+                color=_BREAKDOWN_COLORS[j], edgecolor="white", linewidth=1.0, label=label,
+            )
+        ax.set_ylabel("RMSE (dB)")
+        ax.set_title(title)
+        ax.grid(True, axis="y", alpha=0.4)
+        ax.set_axisbelow(True)
+        ax.legend(loc="upper left", ncol=len(series), fontsize=9)
+        ax.margins(y=0.18)
+    axes[-1].set_xticks(x, names)
+    axes[-1].set_xlabel("Architecture")
+    fig.suptitle(f"Test-error breakdown{title_suffix}")
+    fig.tight_layout()
+    _finalize_figure(fig, save_path=save_path, show=show)
+
+
 def save_all_model_comparison_plots(
     plot_data: dict[str, dict[str, np.ndarray]],
     comparison_rows: list[dict[str, object]],
@@ -818,6 +876,14 @@ def save_all_model_comparison_plots(
     fig.tight_layout()
     _finalize_figure(fig, save_path=out_dir / "overall_agreement_bars.png", show=show)
 
+    if all("rmse_at_peaks_db" in row for row in comparison_rows):
+        plot_error_breakdown(
+            [row_by_model[name] for name in model_names],
+            save_path=out_dir / "error_breakdown_bars.png",
+            title_suffix=suffix,
+            show=show,
+        )
+
     print(f"Saved all-model comparison plots to: {out_dir}")
     return out_dir
 
@@ -840,6 +906,7 @@ __all__ = [
     "plot_prediction_scatter",
     "plot_mode_shape",
     "save_operator_experiment_plots",
+    "plot_error_breakdown",
     "save_all_model_comparison_plots",
     "save_figure",
 ]

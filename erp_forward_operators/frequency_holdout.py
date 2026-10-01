@@ -42,12 +42,13 @@ import matplotlib.pyplot as plt
 from erp_forward_operators.neural_operator_utils import (
     _configuration_features,
     _split_ids,
+    build_operator_model,
     device,
     parameter_count,
     prepare_operator_data,
     train_operator,
 )
-from erp_forward_operators.operator_registry import OPERATORS
+from erp_forward_operators.operator_registry import OPERATORS, forward_variant
 from utils.erp_dataset import (
     dataset_tag_for,
     denormalize_configuration_array,
@@ -131,6 +132,7 @@ def run_frequency_holdout(
     num_plot: int = 5,
     seed: int = 727,
     use_sorted_branch: bool = False,
+    forward_options: dict[str, object] | None = None,
 ) -> dict[str, dict[str, object]]:
     """Run the frequency-holdout experiment for the given operators (default: all).
 
@@ -181,16 +183,19 @@ def run_frequency_holdout(
 
     names = []
     for spec in specs:
-        # Optional f_t-sorted resonator branch (set-encoder architectures
-        # only), saved/plotted as <MODEL>_sorted.
-        sorted_variant = bool(use_sorted_branch and spec.get("supports_sorted_branch"))
-        short = f"{spec['short']}_sorted" if sorted_variant else spec["short"]
-        model_config = {**dict(spec["model_config"]), **({"use_sorted_branch": True} if sorted_variant else {})}
+        # Opt-in variants (f_t-sorted branch, physical features, ...; see
+        # operator_registry.forward_variant), saved/plotted under the
+        # variant's own name, e.g. DNO_sorted_phys.
+        options = {"sorted": use_sorted_branch, **dict(forward_options or {})}
+        short, overrides = forward_variant(spec, options)
+        model_config = {**dict(spec["model_config"]), **overrides}
         names.append(short)
         print("\n" + "#" * 76)
         print(f"Frequency-holdout training: {short}")
         print("#" * 76)
-        model = spec["build_model"](num_res=dataset.num_res, **model_config).to(device)
+        model = build_operator_model(
+            spec["build_model"], dataset.num_res, model_config, norm_params=dataset.norm_params
+        ).to(device)
         print(f"{short} trainable parameters: {parameter_count(model):,}")
 
         model, history = train_operator(

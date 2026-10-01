@@ -78,6 +78,9 @@ class FNOBlock1d(nn.Module):
         return self.dropout(self.activation(self.norm(y)))
 
 
+FNO_PADDING_MODES = ("replicate", "reflect", "zero")
+
+
 class FNO(nn.Module):
     """FNO with more retained modes, local mixing, padding and detuning features."""
 
@@ -90,6 +93,7 @@ class FNO(nn.Module):
         config_hidden: int = 128,
         query_dim: int = 48,
         padding: int = 8,
+        padding_mode: str = "replicate",
         dropout: float = 0.1,
         activation: str | type[nn.Module] = "gelu",
         use_sorted_branch: bool = False,
@@ -97,6 +101,15 @@ class FNO(nn.Module):
         super().__init__()
         self.num_res = int(num_res)
         self.padding = int(padding)
+        # How the frequency axis is extended before the FFT layers. The FFT
+        # treats the (padded) axis as periodic, so the lowest and highest
+        # frequency bins otherwise wrap onto each other:
+        #   replicate -- repeat the edge values (default; existing checkpoints)
+        #   reflect   -- mirror the interior next to each edge
+        #   zero      -- pad with zeros (non-periodic extension of the FNO paper)
+        if padding_mode not in FNO_PADDING_MODES:
+            raise ValueError(f"padding_mode must be one of {FNO_PADDING_MODES}, got {padding_mode!r}.")
+        self.padding_mode = str(padding_mode)
         activation_cls = resolve_activation(activation)
         # use_sorted_branch adds the f_t-sorted resonator branch next to the
         # pooled set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
@@ -133,7 +146,8 @@ class FNO(nn.Module):
         x = self.lift(torch.cat((context, query, frequency), dim=-1)).transpose(1, 2)
 
         if self.padding > 0:
-            x = F.pad(x, (self.padding, self.padding), mode="replicate")
+            mode = "constant" if self.padding_mode == "zero" else self.padding_mode
+            x = F.pad(x, (self.padding, self.padding), mode=mode)
         for block in self.blocks:
             x = block(x)
         if self.padding > 0:

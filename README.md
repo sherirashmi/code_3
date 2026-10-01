@@ -92,6 +92,70 @@ Training (and evaluate/predict) in `main.py` asks which resonator encoder to use
 GNO, STO, NN and iGNO do not use the set encoder and always train in their
 standard form. `ResonanceQueryEncoder` is unchanged in both variants.
 
+## Forward-model options and error diagnostics
+
+After the encoder question, forward training (single model, train-all and
+frequency holdout) asks only the questions that apply to the selected
+architectures. The defaults reproduce the existing models; every option
+adds a name suffix, and suffixes combine (e.g. `DNO_sorted_phys`).
+
+| Option | Applies to | What it does | Suffix |
+|---|---|---|---|
+| Physical feature scaling | all except NN | Modal features `sin(m*pi*x/Lx)`, `sin(n*pi*y/Ly)` (the plate's own mode shapes) instead of `sin(i*pi*x_z)` on z-scored coordinates, and one detuning scale `(f - f_t)/std(f)` | `_phys` |
+| Permutation augmentation | NN | Random resonator order in every training batch | `_perm` |
+| FFT padding | FNO | `reflect` or `zero` instead of `replicate` | `_reflect`, `_zpad` |
+
+Why the physical scaling: the z-scored x and y are centred on the plate
+middle, so every standard feature `sin(i*pi*x_z)` is odd about the centre.
+The odd-index plate modes `sin(m*pi*x/Lx)` (m = 1, 3, 5, ...) are even about
+it, so none of the 10 standard harmonics can represent them. A least-squares
+fit of each plate mode from those harmonics gives R^2 = 0.001 / 0.03 / 0.002
+for m = 1 / 2 / 3 along x, and similar along y. The models still learn the
+mode shapes from the raw x, y inputs; the `_phys` variant hands them over
+directly. The detuning change is small: with the standard scaling the
+offset is at most 0.24 Hz, under half a frequency step.
+
+The scaling factors (x and y mean/std over Lx, Ly; f_t over f
+statistics) are taken from the training data's normalisation and stored as
+buffers in the checkpoint, so evaluate/predict reproduce them exactly.
+
+**Error diagnostics.** Every evaluation now also prints the RMSE in the
+lowest / interior / highest 5 % of the frequency axis, at vs. off the true
+resonance peaks, and on the 10 % of test configurations with the closest
+pair of tuning frequencies or a resonator nearest a plate edge. The same
+columns go into the train-all comparison table, plus an
+`ALL_MODELS/error_breakdown_bars.png`. To re-score already trained models
+without retraining, use forward method 3 in `main.py`, or run
+`python -m erp_forward_operators.diagnose 100k`.
+
+100k results (`plots/GENERAL/100k/ALL_MODELS/error_breakdown.txt`, RMSE in dB):
+
+| Model | All | Low 5 % f | Interior | High 5 % f | At peaks | Off peaks | Close f_t | Near edge |
+|---|---|---|---|---|---|---|---|---|
+| DNO | 2.69 | 0.25 | 2.75 | 2.84 | 11.74 | 2.06 | 2.81 | 2.58 |
+| LNO | 2.86 | 0.37 | 2.93 | 2.95 | 12.48 | 2.18 | 2.99 | 2.71 |
+| STO | 2.94 | 0.42 | 3.02 | 2.99 | 13.39 | 2.17 | 3.13 | 2.76 |
+| SIREN | 2.98 | 0.43 | 3.05 | 3.19 | 12.78 | 2.31 | 3.10 | 2.88 |
+| FNO | 3.11 | 0.94 | 3.15 | 3.71 | 13.67 | 2.37 | 3.26 | 2.95 |
+| WNO | 3.30 | 1.88 | 3.33 | 3.72 | 14.34 | 2.53 | 3.42 | 3.21 |
+| DCO | 3.68 | 0.35 | 3.76 | 3.98 | 7.60 | 3.53 | 3.92 | 3.50 |
+| GNO | 4.41 | 0.53 | 4.51 | 4.63 | 7.86 | 4.29 | 4.62 | 4.10 |
+| DON | 5.21 | 0.53 | 5.39 | 4.40 | 20.39 | 4.27 | 5.20 | 4.91 |
+
+Key observations:
+
+* Error at the resonance peaks is 4-5 times the overall RMSE. DCO and GNO
+  are clearly best at the peaks despite ranking low overall.
+* FNO and WNO have a visible low-frequency edge error (2-5 times the
+  others), consistent with the FFT/wavelet boundary.
+* The close-f_t stratum is only 3-5 % harder; near-edge resonators are
+  slightly easier (they couple weakly to the plate).
+
+**LNO poles.** LNO's pole/residue terms are a learned rational basis on the
+normalised frequency axis that feeds a nonlinear dB-output head. They are
+not identified physical poles, so do not report them as natural
+frequencies or damping ratios.
+
 ## Inverse-model options and evaluation
 
 Inverse training / evaluate / predict in `main.py` ask for two options

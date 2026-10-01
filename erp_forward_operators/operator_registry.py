@@ -34,6 +34,51 @@ from erp_forward_operators.lno import build_model as build_lno, DEFAULT_MODEL_CO
 SORTED_BRANCH_OPERATORS = ("DON", "DNO", "FNO", "DCO", "SIREN", "WNO", "LNO")
 SORTED_SUFFIX = "_sorted"
 
+# Optional, opt-in forward variants (defaults reproduce every existing
+# checkpoint). Each one adds a suffix to the model name, so variants are
+# saved and plotted next to -- never over -- the standard models.
+#   physical     coordinate_features="physical": modal sine features on
+#                x/Lx, y/Ly and one detuning scale (f - f_t)/freq_std.
+#                Every architecture except NN builds these features.
+#   permutation  random resonator order every training batch (NN only; all
+#                other architectures are permutation invariant by design).
+#   padding_mode FFT frequency-axis padding (FNO only).
+PHYSICAL_FEATURE_OPERATORS = ("DON", "DNO", "FNO", "DCO", "GNO", "STO", "SIREN", "WNO", "LNO")
+PERMUTATION_AUGMENT_OPERATORS = ("NN",)
+PADDING_MODE_OPERATORS = ("FNO",)
+PHYSICAL_SUFFIX = "_phys"
+PERMUTATION_SUFFIX = "_perm"
+PADDING_SUFFIXES = {"replicate": "", "reflect": "_reflect", "zero": "_zpad"}
+
+
+def forward_variant(spec, options=None) -> tuple[str, dict[str, object]]:
+    """(model name, model_config overrides) of a forward-operator variant.
+
+    ``options`` keys (all optional): ``sorted`` (bool), ``physical`` (bool),
+    ``permutation`` (bool), ``padding_mode`` (str). Options an architecture
+    does not support are ignored for it, e.g. ``{"sorted": True,
+    "physical": True}`` gives ``DNO_sorted_phys`` but ``GNO_phys``.
+    A plain bool is accepted as ``{"sorted": bool}`` (older call sites).
+    """
+    if isinstance(options, bool) or options is None:
+        options = {"sorted": bool(options)}
+    short = str(spec["short"])
+    name, overrides = short, {}
+    if options.get("sorted") and short in SORTED_BRANCH_OPERATORS:
+        name += SORTED_SUFFIX
+        overrides["use_sorted_branch"] = True
+    if options.get("physical") and short in PHYSICAL_FEATURE_OPERATORS:
+        name += PHYSICAL_SUFFIX
+        overrides["coordinate_features"] = "physical"
+    if options.get("permutation") and short in PERMUTATION_AUGMENT_OPERATORS:
+        name += PERMUTATION_SUFFIX
+        overrides["permutation_augment"] = True
+    padding_mode = str(options.get("padding_mode") or "replicate")
+    if padding_mode != "replicate" and short in PADDING_MODE_OPERATORS:
+        name += PADDING_SUFFIXES[padding_mode]
+        overrides["padding_mode"] = padding_mode
+    return name, overrides
+
 
 def _make_spec(
     *,
@@ -167,4 +212,13 @@ OPERATORS = {
 }
 
 
-__all__ = ["OPERATORS", "SORTED_BRANCH_OPERATORS", "SORTED_SUFFIX"]
+__all__ = [
+    "OPERATORS",
+    "SORTED_BRANCH_OPERATORS",
+    "SORTED_SUFFIX",
+    "PHYSICAL_FEATURE_OPERATORS",
+    "PERMUTATION_AUGMENT_OPERATORS",
+    "PADDING_MODE_OPERATORS",
+    "PADDING_SUFFIXES",
+    "forward_variant",
+]

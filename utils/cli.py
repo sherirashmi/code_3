@@ -57,7 +57,13 @@ from utils.paths import (
     inverse_model_path,
     inverse_plot_dir,
 )
-from erp_forward_operators.operator_registry import OPERATORS, SORTED_SUFFIX
+from erp_forward_operators.operator_registry import (
+    OPERATORS,
+    PADDING_MODE_OPERATORS,
+    PERMUTATION_AUGMENT_OPERATORS,
+    PHYSICAL_FEATURE_OPERATORS,
+    forward_variant,
+)
 from erp_forward_operators.frequency_holdout import run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
@@ -287,17 +293,16 @@ def _prompt_configuration(num_res: int) -> np.ndarray:
     return configuration
 
 
-def _variant(spec, use_sorted_branch: bool) -> tuple[str, dict[str, object]]:
-    """(model name, model_config overrides) for the chosen encoder variant.
+def _variant(spec, options) -> tuple[str, dict[str, object]]:
+    """(model name, model_config overrides) for the chosen forward variant.
 
-    With the sorted branch the model is saved/plotted as ``<SHORT>_sorted``
-    (e.g. ``DCO_sorted``), so it never overwrites the set-encoder model.
-    Architectures without a set encoder (GNO, STO, NN) always use their
-    standard encoder.
+    ``options`` comes from :func:`_prompt_forward_options` (a bool is read
+    as the sorted-branch choice). Every variant gets its own name suffix,
+    e.g. ``DCO_sorted``, ``DNO_phys``, ``NN_perm``, ``FNO_reflect``, so it
+    never overwrites the standard model. Options an architecture does not
+    support are ignored for it.
     """
-    if use_sorted_branch and spec.get("supports_sorted_branch"):
-        return f"{spec['short']}{SORTED_SUFFIX}", {"use_sorted_branch": True}
-    return spec["short"], {}
+    return forward_variant(spec, options)
 
 
 def _prompt_encoder_variant(names_supported: list[str]) -> bool:
@@ -309,6 +314,39 @@ def _prompt_encoder_variant(names_supported: list[str]) -> bool:
     print("2. Set encoder + f_t-sorted branch   (DCO_sorted design; saved as <MODEL>_sorted)")
     print(f"   (available for: {', '.join(names_supported)})")
     return _prompt_choice("Select encoder: ", {"1": None, "2": None}) == "2"
+
+
+def _prompt_forward_options(specs) -> dict[str, object]:
+    """All opt-in forward variants for the selected operators.
+
+    Only the questions that apply to at least one selected architecture are
+    asked; the defaults reproduce the existing (standard) models.
+    """
+    shorts = [str(s["short"]) for s in specs]
+    options: dict[str, object] = {
+        "sorted": _prompt_encoder_variant([s["short"] for s in specs if s.get("supports_sorted_branch")])
+    }
+    phys = [n for n in shorts if n in PHYSICAL_FEATURE_OPERATORS]
+    if phys:
+        print("\nResonator feature scaling")
+        print("1. z-scored x, y and f_t   [standard, all existing models]")
+        print("2. Physical                (sin(m*pi*x/Lx), sin(n*pi*y/Ly) plate-mode features and")
+        print("                            one detuning scale (f - f_t)/std(f); saved as <MODEL>_phys)")
+        print(f"   (available for: {', '.join(phys)})")
+        options["physical"] = _prompt_choice("Select feature scaling: ", {"1": None, "2": None}) == "2"
+    if any(n in PERMUTATION_AUGMENT_OPERATORS for n in shorts):
+        options["permutation"] = _prompt_yes_no(
+            "NN: shuffle the resonator order every training batch (saved as NN_perm)", default=False
+        )
+    if any(n in PADDING_MODE_OPERATORS for n in shorts):
+        print("\nFNO frequency-axis padding before the FFT layers")
+        print("1. replicate  [standard]")
+        print("2. reflect    (saved as FNO_reflect)")
+        print("3. zero       (saved as FNO_zpad)")
+        options["padding_mode"] = {"1": "replicate", "2": "reflect", "3": "zero"}[
+            _prompt_choice("Select padding: ", {"1": None, "2": None, "3": None})
+        ]
+    return options
 
 
 def _release_memory() -> None:
@@ -361,12 +399,21 @@ _TABLE_COLUMNS = [
     ("R^2", "r2", ".6f"),
     ("Peak Freq MAE (Hz)", "peak_frequency_mae_hz", ".4f"),
     ("Peak Amp MAE (dB)", "peak_amplitude_mae_db", ".6f"),
+    # spectrum_error_diagnostics: where the error sits (RMSE, dB)
+    ("Low 5% f", "rmse_low_band_db", ".3f"),
+    ("High 5% f", "rmse_high_band_db", ".3f"),
+    ("At Peaks", "rmse_at_peaks_db", ".3f"),
+    ("Close f_t", "rmse_close_ft_db", ".3f"),
+    ("Near Edge", "rmse_near_edge_db", ".3f"),
 ]
 
 
 def _format_comparison_table(rows: list[dict[str, object]]) -> str:
     formatted_rows = [
-        [str(row[key]) if fmt is None else format(float(row[key]), fmt) for _, key, fmt in _TABLE_COLUMNS]
+        [
+            str(row[key]) if fmt is None else format(float(row.get(key, float("nan"))), fmt)
+            for _, key, fmt in _TABLE_COLUMNS
+        ]
         for row in rows
     ]
     widths = [
@@ -413,6 +460,7 @@ def _comparison_entry(name, history, metrics, frequency_values):
         "r2": metrics["r2_score"],
         "peak_frequency_mae_hz": metrics["peak_frequency_mae_hz"],
         "peak_amplitude_mae_db": metrics["peak_amplitude_mae_db"],
+        **dict(metrics.get("diagnostics") or {}),
     }
 
     pred = np.asarray(metrics["predictions"], dtype=np.float64)
@@ -467,11 +515,14 @@ def train_all_models(
     lbfgs_epochs: int = 0,
     epochs_override: int | None = None,
     use_sorted_branch: bool = False,
+    forward_options: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Train and evaluate the given operators sequentially (default: all).
 
     ``use_sorted_branch=True`` trains the set-encoder architectures with the
-    extra f_t-sorted resonator branch, saved as ``<MODEL>_sorted``.
+    extra f_t-sorted resonator branch, saved as ``<MODEL>_sorted``;
+    ``forward_options`` selects the other opt-in variants (see
+    :func:`_prompt_forward_options`).
 
     For every operator, saves into ``plots/GENERAL/<dataset>/<MODEL>/`` its
     loss curve, 5 test-spectrum comparisons and the predicted-vs-true parity
@@ -486,6 +537,7 @@ def train_all_models(
         raise ValueError("operator_specs must not be empty.")
     tag = dataset_tag_for(dataset_file)
     plot_root = forward_plot_root(tag, GENERAL)
+    options = {"sorted": use_sorted_branch, **dict(forward_options or {})}
 
     comparison_rows: list[dict[str, object]] = []
     all_model_plot_data: dict[str, dict[str, np.ndarray]] = {}
@@ -493,7 +545,7 @@ def train_all_models(
 
     print("\n" + "=" * 76)
     print("TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
-    print(f"Operators      : {', '.join(_variant(spec, use_sorted_branch)[0] for spec in specs)}")
+    print(f"Operators      : {', '.join(_variant(spec, options)[0] for spec in specs)}")
     print(f"Dataset        : {tag} ({dataset_file})")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
@@ -511,7 +563,7 @@ def train_all_models(
         epochs = int(epochs_override) if epochs_override is not None else int(spec["epochs"])
         learning_rate = float(spec["lr"])
         regenerate_this_model = bool(regenerate_dataset and model_index == 0)
-        name, overrides = _variant(spec, use_sorted_branch)
+        name, overrides = _variant(spec, options)
 
         print("\n" + "#" * 76)
         print(f"[{model_index + 1}/{len(specs)}] Training {spec['name']} ({name})")
@@ -590,9 +642,7 @@ def main_all_models():
         print(f"  {spec['short']:>5s}: epochs={int(spec['epochs'])}, lr={float(spec['lr']):g}")
 
     operator_specs = _prompt_operator_selection("Which operators to train (e.g. 2,4,5)")
-    use_sorted_branch = _prompt_encoder_variant(
-        [s["short"] for s in operator_specs if s.get("supports_sorted_branch")]
-    )
+    forward_options = _prompt_forward_options(operator_specs)
     tag, dataset_file = _prompt_dataset()
     num_configurations = _prompt_num_configurations(tag, "Number of configurations to use for every model")
     batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=64, minimum=1)
@@ -616,7 +666,7 @@ def main_all_models():
         seed=SEED,
         lbfgs_epochs=lbfgs_epochs,
         epochs_override=epochs_override,
-        use_sorted_branch=use_sorted_branch,
+        forward_options=forward_options,
     )
 
 
@@ -630,14 +680,21 @@ def _print_forward_method_menu() -> None:
     print("1. General training  (train/evaluate/predict on the full frequency range)")
     print("2. Frequency-holdout generalization experiment  (mask a contiguous band of "
           "frequencies out of training entirely, then score seen vs. unseen frequencies)")
+    print("3. Error diagnostics of the trained models  (no training: RMSE by frequency band, at the "
+          "resonance peaks, and on close-f_t / near-edge configurations)")
 
 
 def main_forward():
     """Interactive entry point for the forward (configuration -> ERP) workflow."""
     _print_forward_method_menu()
-    method = _prompt_choice("Select method: ", {"1": None, "2": None})
+    method = _prompt_choice("Select method: ", {"1": None, "2": None, "3": None})
     if method == "2":
         return main_frequency_holdout()
+    if method == "3":
+        from erp_forward_operators import diagnose
+
+        tag, _dataset_file = _prompt_dataset("100k")
+        return diagnose.main(tag)
 
     _print_operator_menu()
     all_models_key = str(len(OPERATORS) + 1)
@@ -649,8 +706,7 @@ def main_forward():
     _print_action_menu()
     action = ACTIONS[_prompt_choice("Select operation: ", ACTIONS)]
     runner = spec["runner"]
-    use_sorted_branch = _prompt_encoder_variant([spec["short"]] if spec.get("supports_sorted_branch") else [])
-    name, overrides = _variant(spec, use_sorted_branch)
+    name, overrides = _variant(spec, _prompt_forward_options([spec]))
     tag, dataset_file = _prompt_dataset("100k" if action != "train" else DEFAULT_DATASET_TAG)
     plot_dir = forward_plot_root(tag, GENERAL) / name  # created when plots are saved
     checkpoint = forward_model_path(name, tag)
@@ -769,9 +825,7 @@ def main_frequency_holdout():
     operator_specs = _prompt_operator_selection(
         "Which operators to run the frequency-holdout experiment on (e.g. 2,4,5)"
     )
-    use_sorted_branch = _prompt_encoder_variant(
-        [s["short"] for s in operator_specs if s.get("supports_sorted_branch")]
-    )
+    forward_options = _prompt_forward_options(operator_specs)
     tag, dataset_file = _prompt_dataset()
     num_configurations = _prompt_num_configurations(tag)
     batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=16, minimum=1)
@@ -807,7 +861,7 @@ def main_frequency_holdout():
         holdout_end_frac=holdout_end_frac,
         num_plot=num_plot,
         seed=SEED,
-        use_sorted_branch=use_sorted_branch,
+        forward_options=forward_options,
     )
 
 

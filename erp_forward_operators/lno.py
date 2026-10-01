@@ -13,6 +13,17 @@ residues -- exactly the classical modal/Laplace expansion of a linear damped
 system. FNO's Fourier basis assumes periodic/steady-state structure; LNO's
 pole-residue basis is built for damped, resonant, decaying structure, which
 is what every ERP peak/notch in this dataset actually is.
+
+How to read the learned poles: they are a *learned rational basis*, not the
+physical poles of the plate-resonator system. The pole/residue terms are
+evaluated on the normalized frequency axis, their real/imaginary parts are
+only intermediate feature channels, and the network output is the
+normalized ERP in dB (a log-magnitude after a nonlinear projection), not
+the complex response itself. ``num_poles`` (14) is a capacity choice, not
+the number of system modes (150 or 18 plate modes plus the resonators).
+So a pole's location should not be reported as a natural frequency or
+damping ratio; what the design does supply is an inductive bias towards
+sharp, resonance-shaped features along the frequency axis.
 """
 
 from __future__ import annotations
@@ -36,7 +47,8 @@ class LNO(nn.Module):
 
     The configuration is encoded once into a context vector, which predicts
     ``num_poles`` complex conjugate pole/residue pairs (a data-dependent
-    rational transfer function). Each pole contributes one complex term
+    rational basis -- see the module docstring: these are learned basis
+    functions, not identified physical poles). Each pole contributes one complex term
     ``r/(s-p) + conj(r)/(s-conj(p))`` evaluated at ``s = j*frequency`` for
     every query frequency; the resulting real/imaginary parts become
     per-pole feature channels, combined with the same detuning-aware query

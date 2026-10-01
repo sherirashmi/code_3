@@ -8,7 +8,8 @@ import torch.nn as nn
 from erp_forward_operators.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
-    physics_aware_resonator_features,
+    modal_features,
+    resonance_detuning,
     resolve_activation,
     run_operator_experiment,
 )
@@ -61,6 +62,9 @@ class GraphMessageLayer(nn.Module):
 class GNO(nn.Module):
     """Graph encoder with detuning-aware query kernels and learned node attention."""
 
+    uses_modal_features = True
+    uses_detuning = True
+
     def __init__(
         self,
         num_res: int,
@@ -97,9 +101,7 @@ class GNO(nn.Module):
         self.output = MLP([width, width // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        node_features = physics_aware_resonator_features(
-            configuration, harmonics=self.modal_harmonics
-        )
+        node_features = modal_features(self, configuration, self.modal_harmonics)
         h = self.node_lift(node_features)
         for layer in self.layers:
             h = layer(h, configuration)
@@ -112,7 +114,7 @@ class GNO(nn.Module):
         query_embedding = freq[:, :, None, :].expand(b, f, n, -1)
         query_frequency = frequency[:, :, None, :].expand(b, f, n, 1)
         f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
-        detuning = query_frequency - f_t
+        detuning = resonance_detuning(self, query_frequency, f_t)
 
         pair = torch.cat(
             (

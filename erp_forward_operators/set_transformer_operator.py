@@ -9,7 +9,8 @@ import torch.nn as nn
 
 from erp_forward_operators.neural_operator_utils import (
     MLP,
-    physics_aware_resonator_features,
+    modal_features,
+    resonance_detuning,
     resolve_activation,
     run_operator_experiment,
 )
@@ -17,6 +18,8 @@ from erp_forward_operators.neural_operator_utils import (
 
 class DetuningCrossAttention(nn.Module):
     """Multi-head frequency-to-resonator attention with learned detuning bias."""
+
+    uses_detuning = True
 
     def __init__(
         self,
@@ -58,7 +61,7 @@ class DetuningCrossAttention(nn.Module):
         raw = configuration[:, None, :, :].expand(b, f, n, -1)
         query_f = frequency[:, :, None, :].expand(b, f, n, 1)
         f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
-        delta = query_f - f_t
+        delta = resonance_detuning(self, query_f, f_t)
         bias_features = torch.cat((raw, query_f, delta, delta.abs()), dim=-1)
         bias = self.bias_net(bias_features).permute(0, 3, 1, 2)
         attention = torch.softmax(score + bias, dim=-1)
@@ -85,6 +88,8 @@ class FrequencyMixer(nn.Module):
 
 class SetTransformerOperator(nn.Module):
     """Resonator self-attention + detuning-biased frequency cross-attention."""
+
+    uses_modal_features = True
 
     def __init__(
         self,
@@ -129,9 +134,7 @@ class SetTransformerOperator(nn.Module):
         self.output = MLP([width, width, width // 2, 1], activation=activation_cls)
 
     def forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        node_features = physics_aware_resonator_features(
-            configuration, harmonics=self.modal_harmonics
-        )
+        node_features = modal_features(self, configuration, self.modal_harmonics)
         tokens = self.encoder(self.node_lift(node_features))
         query = self.frequency_query(frequency)
         attended = self.cross_attention(query, tokens, configuration, frequency)

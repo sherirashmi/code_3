@@ -69,7 +69,7 @@ import torch.nn.functional as F
 
 from erp_forward_operators.dco import build_model as _build_dco
 from erp_forward_operators.gno import build_model as _build_gno
-from erp_forward_operators.neural_operator_utils import MLP, erp_spectrum_loss
+from erp_forward_operators.neural_operator_utils import MLP, build_operator_model, erp_spectrum_loss
 import utils.physics as _physics
 from utils.erp_dataset import recorded_modal_resolution
 from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
@@ -221,7 +221,9 @@ class SurrogateInverse(nn.Module):
                     f"Surrogate checkpoint {checkpoint_path} was trained with num_res="
                     f"{surrogate_norm['num_res']}, but design_dim={design_dim} implies num_res={self.num_res}."
                 )
-            surrogate = _SURROGATE_BUILDERS[operator_name](num_res=self.num_res, **checkpoint["model_config"])
+            surrogate = build_operator_model(
+                _SURROGATE_BUILDERS[operator_name], self.num_res, checkpoint["model_config"]
+            )
             surrogate.load_state_dict(checkpoint["model_state_dict"])
             surrogate.eval()
             for parameter in surrogate.parameters():
