@@ -100,10 +100,30 @@ _DESIGN_PHYSICAL_BOUNDS = {
 # plain DCO, just a different checkpoint's worth of trained weights.
 _SURROGATE_BUILDERS = {"dco": _build_dco, "dco_staged": _build_dco, "gno": _build_gno}
 
+from utils.paths import FORWARD_ROOT as _FORWARD_ROOT, forward_model_path as _forward_model_path
+
+# Trained on the 100k (150-mode) dataset.
 DEFAULT_SURROGATE_CHECKPOINTS = (
-    "erp_forward_operators/models/dco_staged_erp.pth",
-    "erp_forward_operators/models/gno_erp.pth",
+    str(_FORWARD_ROOT / "models" / "DCO_VARIANTS" / "dco_staged.pth"),
+    str(_FORWARD_ROOT / "models" / "GENERAL" / "100k" / "gno.pth"),
 )
+
+
+def surrogate_checkpoints_for(dataset_tag: str) -> tuple[str, ...]:
+    """Frozen DCO+GNO surrogates trained on the SAME dataset (hence the same
+    plate-mode physics) as the inverse model, when they exist; otherwise the
+    100k defaults, with a warning if that means mixing modal resolutions."""
+    candidates = tuple(str(_forward_model_path(name, dataset_tag)) for name in ("dco", "gno"))
+    if all(Path(c).exists() for c in candidates):
+        return candidates
+    if dataset_tag != "100k":
+        print(
+            f"WARNING: no forward DCO/GNO checkpoints for dataset '{dataset_tag}' "
+            f"({', '.join(candidates)}); SurrogateInverse falls back to the 100k-trained "
+            "surrogates. Train DCO and GNO on this dataset first (ERP -> Forward) for a "
+            "physically consistent surrogate."
+        )
+    return DEFAULT_SURROGATE_CHECKPOINTS
 
 
 _SOFT_CLAMP_SHARPNESS = 3.0

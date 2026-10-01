@@ -73,7 +73,10 @@ from utils.erp_dataset import configuration_to_resonators, denormalize_configura
 from utils.solver import compute_erp_spectrum
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
+from utils.paths import inverse_plot_dir
+from utils.plotting import save_figure
+
+OUT_DIR = inverse_plot_dir("100k")  # these report scripts use the 100k-trained models
 F_T_IDX = [i * 5 + 2 for i in range(NUM_RES)]  # flat-design index of each resonator's f_t
 MASS_IDX = [i * 5 + 0 for i in range(NUM_RES)]  # flat-design index of each resonator's mass
 
@@ -248,7 +251,7 @@ def calibration_curve(
     ax.grid(alpha=0.3)
     fig.tight_layout()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_DIR / "calibration_curve.png", dpi=150)
+    save_figure(fig, OUT_DIR / "calibration_curve.png")
     plt.close(fig)
     print(f"Saved {OUT_DIR / 'calibration_curve.png'}")
 
@@ -331,7 +334,7 @@ def single_example_posterior(
     )
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_DIR / "single_example_posterior.png", dpi=150)
+    save_figure(fig, OUT_DIR / "single_example_posterior.png")
     plt.close(fig)
     print(f"Saved {OUT_DIR / 'single_example_posterior.png'}")
 
@@ -412,6 +415,6 @@ def noise_robustness_check(
     )
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_DIR / "noise_robustness.png", dpi=150)
+    save_figure(fig, OUT_DIR / "noise_robustness.png")
     plt.close(fig)
     print(f"Saved {OUT_DIR / 'noise_robustness.png'}")

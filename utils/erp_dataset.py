@@ -59,6 +59,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
+import utils.physics as _physics
 from utils.physics import (
     Lx,
     Ly,
@@ -75,6 +76,105 @@ from utils.support import lhs_sampling, load_dataset, save_dataset
 FEATURE_NAMES = ("m", "k", "f_t", "x", "y")
 DATASET_SCHEMA_VERSION = 2
 DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
+
+
+# ==================================================
+# Dataset registry (raw files + the modal resolution they were solved with)
+# ==================================================
+
+# Every raw ERP dataset in datasets/, keyed by a short tag that is also used
+# as the folder name for that dataset's checkpoints and plots. The modal
+# resolution is part of the dataset's identity: the 18-mode dataset was
+# solved with a 6x3 plate-mode basis, the others with 15x10, and the
+# solver must use the SAME basis whenever it produces a reference spectrum
+# for comparison against data/models built from that dataset.
+DATASETS: dict[str, dict[str, object]] = {
+    "10k": {
+        "label": "10k configurations, 150 plate modes (15x10)",
+        "files": ["datasets/dataset_erp_ft.pth"],
+        "num_configurations": 10_000,
+        "modal_resolution": (15, 10),
+    },
+    "100k": {
+        "label": "100k configurations, 150 plate modes (15x10)",
+        "files": [
+            "datasets/dataset_erp_ft_100k_part1.pth",
+            "datasets/dataset_erp_ft_100k_part2.pth",
+        ],
+        "num_configurations": 100_000,
+        "modal_resolution": (15, 10),
+    },
+    "200k_18modes": {
+        "label": "200k configurations, 18 plate modes (6x3)",
+        "files": [
+            "datasets/dataset_erp_ft_200k_18_modes_part1.pth",
+            "datasets/dataset_erp_ft_200k_18_modes_part2.pth",
+            "datasets/dataset_erp_ft_200k_18_modes_part3.pth",
+            "datasets/dataset_erp_ft_200k_18_modes_part4.pth",
+        ],
+        "num_configurations": 200_000,
+        "modal_resolution": (6, 3),
+    },
+}
+DEFAULT_DATASET_TAG = "10k"
+
+
+def _as_file_list(dataset_file: str | Path | Sequence[str]) -> list[str]:
+    if isinstance(dataset_file, (str, Path)):
+        return [Path(dataset_file).as_posix()]
+    return [Path(f).as_posix() for f in dataset_file]
+
+
+def dataset_files(tag: str) -> str | list[str]:
+    """Files for a registry tag: a plain string for single-file datasets
+    (so regeneration stays possible), a list for sharded ones."""
+    files = list(DATASETS[tag]["files"])
+    return files[0] if len(files) == 1 else files
+
+
+def dataset_tag_for(dataset_file: str | Path | Sequence[str]) -> str:
+    """Registry tag for a raw file/shard list, or a filename-derived tag for
+    an unregistered file (e.g. a freshly generated custom dataset)."""
+    files = _as_file_list(dataset_file)
+    for tag, spec in DATASETS.items():
+        if files == list(spec["files"]):
+            return tag
+    stem = Path(files[0]).stem.replace("dataset_erp_ft", "").strip("_")
+    return stem or "custom"
+
+
+def modal_resolution_for(
+    dataset_file: str | Path | Sequence[str],
+    payload: Mapping[str, object] | None = None,
+) -> tuple[int, int]:
+    """Plate-mode basis (Nx, Ny) a raw dataset was solved with.
+
+    Priority: the payload's own ``modal_resolution`` field (written by
+    :meth:`ERPDataset.to_payload` from now on), then the registry, then an
+    "18_modes" filename heuristic, then the 15x10 default.
+    """
+    if payload is not None and payload.get("modal_resolution") is not None:
+        nx, ny = payload["modal_resolution"]
+        return int(nx), int(ny)
+    tag = dataset_tag_for(dataset_file)
+    if tag in DATASETS:
+        nx, ny = DATASETS[tag]["modal_resolution"]
+        return int(nx), int(ny)
+    if any("18_modes" in f for f in _as_file_list(dataset_file)):
+        return 6, 3
+    return _physics.DEFAULT_NX, _physics.DEFAULT_NY
+
+
+def apply_dataset_modal_resolution(
+    dataset_file: str | Path | Sequence[str],
+    payload: Mapping[str, object] | None = None,
+    *,
+    verbose: bool = True,
+) -> tuple[int, int]:
+    """Switch the solver to the modal basis ``dataset_file`` was generated with."""
+    nx, ny = modal_resolution_for(dataset_file, payload)
+    _physics.set_modal_resolution(nx, ny, verbose=verbose)
+    return nx, ny
 
 
 # ==================================================
@@ -324,6 +424,7 @@ class ERPDataset(Dataset):
 
         self.configuration_features = configuration_features
         self.responses = responses
+        self.modal_resolution = _physics.get_modal_resolution()
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
         self.norm_params = None
@@ -348,6 +449,7 @@ class ERPDataset(Dataset):
             "configuration_features": self.configuration_features,
             "responses": self.responses,
             "plate_geometry": {"Lx": float(Lx), "Ly": float(Ly)},
+            "modal_resolution": [int(_physics.Nx), int(_physics.Ny)],
             "resonator_mass_bounds": {"m_min": float(m_min), "m_max": float(m_max)},
         }
 
@@ -392,6 +494,7 @@ class ERPDataset(Dataset):
                 f"expected {expected_response_shape}."
             )
 
+        self.modal_resolution = apply_dataset_modal_resolution(filename, payload)
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
         self.norm_params = None
@@ -445,6 +548,10 @@ class ERPDataset(Dataset):
             [np.asarray(p["responses"], dtype=np.float32) for p in payloads], axis=0
         )
         self.num_samples = self.configuration_features.shape[0]
+        resolutions = {modal_resolution_for(filenames, p) for p in payloads}
+        if len(resolutions) > 1 and any(p.get("modal_resolution") is not None for p in payloads):
+            raise ValueError(f"Shards {list(filenames)} were generated with different modal resolutions.")
+        self.modal_resolution = apply_dataset_modal_resolution(filenames, first)
 
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
@@ -735,6 +842,9 @@ class ERPDataset(Dataset):
             # field existed -- those fall back to whatever dataset_file the
             # caller passes, same as always.
             "dataset_file": getattr(self, "raw_dataset_file", None),
+            # Plate-mode basis of the raw data; restored by evaluate/predict
+            # so solver reference spectra use the same physics.
+            "modal_resolution": list(getattr(self, "modal_resolution", _physics.get_modal_resolution())),
         }
 
     # --------------------------------------------------
@@ -900,6 +1010,9 @@ def prepare_erp_dataset(
             if n_generate < num_samples and preprocessing_state is None:
                 raise ValueError("num_generate cannot be smaller than num_samples.")
 
+            # Generate with the basis this file is registered with (15x10
+            # unless it is a registered reduced-mode dataset).
+            apply_dataset_modal_resolution(dataset_file, verbose=verbose)
             if verbose:
                 reason = "regenerate_dataset=True" if regenerate_dataset else "file missing"
                 print(f"Creating raw ERP dataset ({reason}): {dataset_file}")
@@ -974,6 +1087,8 @@ def prepare_erp_dataset(
         print(f"Configurations used          : {info['num_configurations']}")
         print(f"Resonators/configuration     : {info['num_res']}")
         print(f"Frequencies/configuration    : {info['num_frequencies']}")
+        nx, ny = getattr(dataset, "modal_resolution", _physics.get_modal_resolution())
+        print(f"Plate modes (solver)  : {nx} x {ny} = {nx * ny}")
         print(f"Model input shape     : {info['model_input_shape']}")
         print(f"Target                : ERP, shape {info['target_shape']}")
         print(
@@ -999,6 +1114,12 @@ __all__ = [
     "configuration_to_resonators",
     "FEATURE_NAMES",
     "DEFAULT_DATASET_FILE",
+    "DATASETS",
+    "DEFAULT_DATASET_TAG",
+    "dataset_files",
+    "dataset_tag_for",
+    "modal_resolution_for",
+    "apply_dataset_modal_resolution",
 ]
 
 

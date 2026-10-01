@@ -29,7 +29,10 @@ from erp_inverse_operators.registry import NUM_RES
 from erp_inverse_operators.surrogate_inverse import _CONFIG_FIELDS, _DESIGN_PHYSICAL_BOUNDS
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
+from utils.paths import inverse_plot_dir
+from utils.plotting import save_figure
+
+OUT_DIR = inverse_plot_dir("100k")  # these report scripts use the 100k-trained models
 NUM_TEST_EXAMPLES = 3000
 NUM_BINS = 8
 
@@ -53,7 +56,7 @@ test_spectrum = torch.cat(test_spectrum, dim=0)[:NUM_TEST_EXAMPLES]
 test_design = torch.cat(test_design, dim=0)[:NUM_TEST_EXAMPLES]
 n = test_spectrum.shape[0]
 
-true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm)  # (n, num_res, 5)
+true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm, consistent=False)  # (n, num_res, 5)
 
 names = list(MODEL_BUILDERS)
 predictions = {}
@@ -117,6 +120,6 @@ fig.suptitle(
     fontsize=13,
 )
 fig.tight_layout(rect=[0, 0, 1, 0.97])
-fig.savefig(OUT_DIR / "all_models_parameter_boxplots.png", dpi=150)
+save_figure(fig, OUT_DIR / "all_models_parameter_boxplots.png")
 plt.close(fig)
 print(f"Saved {OUT_DIR / 'all_models_parameter_boxplots.png'}")

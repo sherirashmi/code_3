@@ -16,16 +16,14 @@ parameterized the same way this project's other CLI-driven workflows are,
 so it can run against any operator subset and any dataset (including the
 current 100k-configuration, [m,k,f_t,x,y]-schema one).
 
-Results are kept in the same places and the same visual style ``main.py``'s
-general training branch already uses (``utils.plotting``'s shared plot
-helpers, checkpoints in ``erp_forward_operators/models/``), rather than a
-one-off ad-hoc layout: per-operator loss-curve/spectrum plots live in a
-``freq_holdout`` subfolder of that operator's own plot directory (the same
-``erp_forward_operators/plots/<short>/`` folder the general branch fills),
-and the cross-operator seen-vs-unseen summary lives in
-``erp_forward_operators/plots/FREQ_HOLDOUT`` -- the same top-level,
-aggregate-folder pattern ``ALL_MODELS`` uses for the "train every operator"
-workflow.
+Output layout (see utils/paths.py), mirroring the general branch:
+
+    erp_forward_operators/models/FREQ_HOLDOUT/<dataset>/<model>.pth
+    erp_forward_operators/plots/FREQ_HOLDOUT/<dataset>/<MODEL>/
+        loss_curve.png, erp_comparison_config_01..NN.png,
+        prediction_vs_ground_truth.png
+    erp_forward_operators/plots/FREQ_HOLDOUT/<dataset>/ALL_MODELS/
+        seen_vs_unseen_rmse.png, all_models_loss.png, results.json
 """
 
 from __future__ import annotations
@@ -51,15 +49,23 @@ from erp_forward_operators.neural_operator_utils import (
 )
 from erp_forward_operators.operator_registry import OPERATORS
 from utils.erp_dataset import (
+    dataset_tag_for,
+    denormalize_configuration_array,
     denormalize_erp_array,
     normalize_configuration_array,
     normalize_erp_array,
     normalize_frequency_array,
 )
-from utils.plotting import plot_erp_comparison, plot_loss_curves
+from utils.paths import FREQ_HOLDOUT, forward_model_path, forward_plot_dir, forward_plot_root
+from utils.plotting import (
+    ERP_LABEL,
+    plot_all_models_loss,
+    plot_erp_comparison,
+    plot_loss_curves,
+    plot_prediction_scatter,
+    save_figure,
+)
 
-PLOTS_DIR = Path("erp_forward_operators/plots")
-OUT_DIR = PLOTS_DIR / "FREQ_HOLDOUT"
 
 
 class _MaskedFrequencyDataset(Dataset):
@@ -160,6 +166,10 @@ def run_frequency_holdout(
         f"(full range {freq_hz[0]:.1f}-{freq_hz[-1]:.1f} Hz)"
     )
 
+    dataset_tag = dataset_tag_for(dataset_file)
+    summary_dir = forward_plot_root(dataset_tag, FREQ_HOLDOUT) / "ALL_MODELS"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
     seen_loaders = _build_masked_loaders(dataset, seen_idx, batch_size=batch_size, seed=seed)
     full_loaders = _build_masked_loaders(dataset, np.arange(n_freq), batch_size=batch_size, seed=seed)
     train_val_loaders = {"train": seen_loaders["train"], "val": seen_loaders["val"]}
@@ -167,7 +177,6 @@ def run_frequency_holdout(
 
     norm = dataset.norm_params
     results: dict[str, dict[str, object]] = {}
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     for spec in specs:
         short = spec["short"]
@@ -178,14 +187,15 @@ def run_frequency_holdout(
         print(f"{short} trainable parameters: {parameter_count(model):,}")
 
         model, history = train_operator(
-            model, train_val_loaders, epochs=epochs, lbfgs_epochs=0,
+            model, train_val_loaders, epochs=epochs, lr=float(spec["lr"]), lbfgs_epochs=0,
             plot=False, save_plots=False, operator_name=f"{short}_holdout",
         )
 
         model.eval()
-        preds, trues = [], []
+        preds, trues, configs = [], [], []
         with torch.inference_mode():
             for configuration, frequency, target in test_loader_full:
+                configs.append(configuration.numpy())
                 configuration = configuration.to(device, dtype=torch.float32)
                 frequency = frequency.to(device, dtype=torch.float32)
                 prediction = model(configuration, frequency)
@@ -193,6 +203,7 @@ def run_frequency_holdout(
                 trues.append(target.numpy())
         pred = denormalize_erp_array(np.concatenate(preds, axis=0)[..., 0], norm)
         true = denormalize_erp_array(np.concatenate(trues, axis=0)[..., 0], norm)
+        physical_configs = denormalize_configuration_array(np.concatenate(configs, axis=0), norm)
 
         rmse_seen, mae_seen, pear_seen = _metrics_on(pred, true, seen_idx)
         rmse_unseen, mae_unseen, pear_unseen = _metrics_on(pred, true, unseen_idx)
@@ -207,31 +218,61 @@ def run_frequency_holdout(
             history_val=[float(v) for v in history["val"]],
         )
 
-        # Same per-operator plot folder the general branch fills
-        # (erp_forward_operators/plots/<short>/), nested under a
-        # "freq_holdout" subfolder so this run never overwrites that
-        # operator's general-training plots.
-        plot_dir = PLOTS_DIR / short / "freq_holdout"
-        plot_dir.mkdir(parents=True, exist_ok=True)
+        # erp_forward_operators/plots/FREQ_HOLDOUT/<dataset>/<MODEL>/
+        plot_dir = forward_plot_dir(short, dataset_tag, FREQ_HOLDOUT)
 
         plot_loss_curves(
             history["train"], history["val"],
-            title=f"{short} frequency-holdout training loss",
-            ylabel="Normalized loss", log_y=True,
+            title=f"{short}: frequency-holdout training history",
+            ylabel="Normalised ERP loss (seen frequencies)", log_y=True,
             save_path=plot_dir / "loss_curve.png", show=False,
         )
         for i in range(min(num_plot, pred.shape[0])):
             plot_erp_comparison(
                 freq_hz, true[i], pred[i],
-                title=f"{short} - test config {i + 1:02d} - frequency-holdout generalization",
+                title=f"{short}: test configuration {i + 1} (frequency holdout)",
+                configuration=physical_configs[i],
                 highlight_band=(freq_hz[start], freq_hz[end - 1]),
                 save_path=plot_dir / f"erp_comparison_config_{i + 1:02d}.png", show=False,
             )
+        plot_prediction_scatter(
+            true[:, unseen_idx], pred[:, unseen_idx],
+            xlabel=f"True {ERP_LABEL}", ylabel=f"Predicted {ERP_LABEL}",
+            title=f"{short}: held-out band only (never trained on)",
+            save_path=plot_dir / "prediction_vs_ground_truth_unseen_band.png", show=False,
+        )
+        plot_prediction_scatter(
+            true[:, seen_idx], pred[:, seen_idx],
+            xlabel=f"True {ERP_LABEL}", ylabel=f"Predicted {ERP_LABEL}",
+            title=f"{short}: seen frequencies",
+            save_path=plot_dir / "prediction_vs_ground_truth_seen.png", show=False,
+        )
 
-        torch.save(model.state_dict(), f"erp_forward_operators/models/{short.lower()}_freq_holdout.pth")
-        print(f"Saved checkpoint + plots for {short}")
+        checkpoint_path = forward_model_path(short, dataset_tag, FREQ_HOLDOUT)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "operator_name": short,
+                "model_config": dict(spec["model_config"]),
+                "model_state_dict": model.state_dict(),
+                "preprocessing_state": dataset.preprocessing_state(),
+                "holdout_band_indices": [int(start), int(end)],
+                "training_config": {"epochs": int(epochs), "batch_size": int(batch_size),
+                                    "learning_rate": float(spec["lr"]), "optimizer": "AdamW", "dataset_tag": dataset_tag},
+                "history": {"train": results[short]["history_train"], "val": results[short]["history_val"]},
+            },
+            checkpoint_path,
+        )
+        print(f"Saved checkpoint {checkpoint_path} + plots in {plot_dir}")
 
-    with open(OUT_DIR / "results.json", "w") as f:
+    plot_all_models_loss(
+        {m: {"train": r["history_train"], "val": r["history_val"]} for m, r in results.items()},
+        title="Frequency-holdout training history: all operators",
+        ylabel="Normalised ERP loss",
+        save_path=summary_dir / "all_models_loss.png",
+    )
+
+    with open(summary_dir / "results.json", "w") as f:
         json.dump(
             {k: {kk: vv for kk, vv in v.items() if kk not in ("history_train", "history_val")}
              for k, v in results.items()},
@@ -249,15 +290,13 @@ def run_frequency_holdout(
     ax.set_xticks(x)
     ax.set_xticklabels(models_order)
     ax.set_ylabel("RMSE (dB)")
-    ax.set_title("Frequency-holdout generalization: seen vs unseen RMSE per operator")
+    ax.set_title("Frequency-holdout generalisation: seen vs unseen RMSE")
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
     ax.bar_label(b1, fmt="%.2f", padding=2, fontsize=8)
     ax.bar_label(b2, fmt="%.2f", padding=2, fontsize=8)
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "seen_vs_unseen_rmse.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved comparison chart to {OUT_DIR / 'seen_vs_unseen_rmse.png'}")
+    save_figure(fig, summary_dir / "seen_vs_unseen_rmse.png")
 
     print("\nFINAL SUMMARY")
     header = (

@@ -34,13 +34,14 @@ from erp_inverse_operators.registry import NUM_RES
 from erp_inverse_operators.train_all import format_configuration
 from utils.erp_dataset import (
     configuration_to_resonators,
+    dataset_tag_for,
     denormalize_configuration_array,
     denormalize_erp_array,
 )
+from utils.paths import inverse_plot_dir
+from utils.plotting import ERP_LABEL, FREQ_LABEL, save_figure
 from utils.solver import compute_erp_spectrum
 from utils.support import device
-
-OUT_DIR = Path("erp_inverse_operators/plots")
 
 
 def predict_one(
@@ -89,7 +90,10 @@ def predict_one(
     target_norm = (target_erp_db - norm["erp_mean"]) / norm["erp_std"]
     target_spectrum = torch.from_numpy(target_norm.astype(np.float32))[None, :].to(device)
 
-    model, _ = load_inverse_model(key_short)
+    dataset_tag = dataset_tag_for(dataset_file)
+    model, model_norm = load_inverse_model(key_short, dataset_tag)
+    from erp_inverse_operators.evaluate import _check_norm
+    _check_norm(key_short, model_norm, norm)
     model.eval()
     with torch.no_grad():
         result = model.sample(target_spectrum, num_samples=num_samples)
@@ -119,8 +123,7 @@ def predict_one(
         score_label = "spectrum-consistency (-MSE, NOT a probability)"
         scores = -recon_mse
 
-    model_out_dir = OUT_DIR / key_short
-    model_out_dir.mkdir(parents=True, exist_ok=True)
+    model_out_dir = inverse_plot_dir(dataset_tag, key_short)
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
     for i in range(num_samples):
         if i == best_idx:
@@ -128,15 +131,14 @@ def predict_one(
         ax.plot(freq_hz, predicted_erp[i], color="#4C72B0", alpha=0.3, lw=1.1)
     ax.plot(freq_hz, predicted_erp[best_idx], color="#C44E52", lw=2.0, label="Best sample")
     ax.plot(freq_hz, target_erp_db, color="black", lw=2, label="Target")
-    ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel("ERP (dB)")
+    ax.set_xlabel(FREQ_LABEL)
+    ax.set_ylabel(ERP_LABEL)
     ax.set_title(f"{key_short}: {num_samples} sampled designs vs. target ({score_label})")
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     fig.tight_layout()
     out_path = model_out_dir / f"predict_{key_short.lower()}.png"
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+    save_figure(fig, out_path)
 
     return {
         "target_erp_db": target_erp_db,

@@ -110,9 +110,8 @@ def run_one(key: str):
     axes[1].grid(alpha=0.3)
     fig.suptitle(f"{name} training curves ({EPOCHS} epochs, {POINTS_PER_CONFIG_USED} pts/config)")
     fig.tight_layout()
-    fig.savefig(f"{plot_dir}/loss_curve.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {plot_dir}/loss_curve.png")
+    from utils.plotting import save_figure
+    save_figure(fig, f"{plot_dir}/loss_curve.png")
 
     result = evaluate_displacement_operator(
         model, data, num_plot=5, grid_nx=40, grid_ny=15, operator_name=name, plot=False,

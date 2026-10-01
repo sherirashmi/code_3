@@ -1,4 +1,4 @@
-"""Train all 4 trainable probabilistic inverse models and validate them.
+"""Train the inverse-design models (all 7, or a selection) and validate them.
 
 Validation here does NOT check "did we recover the exact original design" --
 the inverse problem is genuinely non-unique (see module docstrings), so that
@@ -37,6 +37,8 @@ labeled as such, not as a probability, so the two aren't confused.
 from __future__ import annotations
 
 import copy
+import functools
+import math
 import os
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -48,15 +50,16 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from utils.erp_dataset import denormalize_erp_array
+from utils.erp_dataset import dataset_tag_for, denormalize_erp_array
+from utils.paths import inverse_model_path, inverse_plot_dir
+from utils.plotting import FREQ_LABEL, ERP_LABEL, model_colors, plot_loss_curves, save_figure
 
 from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, denormalize_design
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.mdn import MDN
 from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM
-from erp_inverse_operators.surrogate_inverse import SurrogateInverse
-from utils.support import device
+from utils.support import device, seed_everything
 
 
 def _warm_start_if_mdn(model, loaders) -> None:
@@ -111,27 +114,42 @@ def _padinn_checkpoint_extra(model, loaders, max_calibration_examples: int = 500
 
 
 def train_one(model, loaders, loss_fn, epochs, lr, name):
+    """Adam + cosine LR schedule, grad-clip 5, best-validation checkpointing.
+
+    Non-finite batch losses are skipped (with a warning) rather than
+    poisoning the weights; if a whole epoch is non-finite training stops
+    early and the best weights so far are kept.
+    """
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable, lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
     history = {"train": [], "val": []}
     best_val = float("inf")
     best_state = None
     for epoch in range(epochs):
         model.train()
-        total, n = 0.0, 0
+        total, n, skipped = 0.0, 0, 0
         for spectrum, design in loaders["train"]:
             spectrum = spectrum.to(device, non_blocking=True)
             design = design.to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
             loss = loss_fn(model, spectrum, design, epoch)
+            if not torch.isfinite(loss):
+                skipped += 1
+                continue
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+            torch.nn.utils.clip_grad_norm_(trainable, 5.0)
             optimizer.step()
             total += loss.item() * spectrum.shape[0]
             n += spectrum.shape[0]
-        train_loss = total / n
         scheduler.step()
+        if n == 0:
+            print(f"[{name}] epoch {epoch + 1}: every batch loss was non-finite -- stopping early.")
+            break
+        if skipped:
+            print(f"[{name}] epoch {epoch + 1}: skipped {skipped} non-finite batch(es).")
+        train_loss = total / n
 
         model.eval()
         with torch.no_grad():
@@ -140,13 +158,14 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
                 spectrum = spectrum.to(device, non_blocking=True)
                 design = design.to(device, non_blocking=True)
                 loss = loss_fn(model, spectrum, design, epoch)
-                total += loss.item() * spectrum.shape[0]
-                n += spectrum.shape[0]
-            val_loss = total / n
+                if torch.isfinite(loss):
+                    total += loss.item() * spectrum.shape[0]
+                    n += spectrum.shape[0]
+            val_loss = total / n if n else float("nan")
 
         history["train"].append(train_loss)
         history["val"].append(val_loss)
-        if val_loss < best_val:
+        if np.isfinite(val_loss) and val_loss < best_val:
             best_val = val_loss
             best_state = copy.deepcopy(model.state_dict())
         print(f"[{name}] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
@@ -164,6 +183,57 @@ def format_configuration(configuration: np.ndarray) -> str:
     return "\n".join(lines)
 
 
+def _bound_loss_fn(spec, norm_params):
+    """Registry loss with the training set's norm_params bound where needed."""
+    if spec.get("needs_norm_params"):
+        return functools.partial(spec["loss_fn"], norm_params=norm_params)
+    return spec["loss_fn"]
+
+
+def _build(spec, dataset_tag):
+    return spec["build"](dataset_tag) if spec.get("needs_norm_params") else spec["build"]()
+
+
+def _train_and_save(key, dataset, loaders, *, epochs, batch_size, dataset_file, num_configurations, seed):
+    """Train one registry model on already-prepared loaders, then save its
+    checkpoint (``models/<dataset>/inverse_<model>.pth``) and loss curve
+    (``plots/<dataset>/<MODEL>/loss_curve.png``)."""
+    spec = INVERSE_MODELS[key]
+    short = spec["short"]
+    tag = dataset_tag_for(dataset_file)
+    norm = dataset.norm_params
+
+    print("\n" + "#" * 70 + f"\nTraining {spec['name']} ({short}) on dataset '{tag}'\n" + "#" * 70)
+    model = _build(spec, tag)
+    _warm_start_if_mdn(model, loaders)
+    history = train_one(model, loaders, _bound_loss_fn(spec, norm), epochs=epochs, lr=spec["lr"], name=short)
+
+    extra = dict(_padinn_checkpoint_extra(model, loaders) or {})
+    extra.update(
+        {
+            "model_short": short,
+            "history": history,
+            "dataset_file": list(dataset_file) if isinstance(dataset_file, (list, tuple)) else dataset_file,
+            "dataset_tag": tag,
+            "num_configurations": int(num_configurations),
+            "modal_resolution": list(getattr(dataset, "modal_resolution", (15, 10))),
+            "training_config": {
+                "optimizer": "Adam", "learning_rate": float(spec["lr"]), "epochs": int(epochs),
+                "batch_size": int(batch_size), "lr_schedule": "CosineAnnealingLR(eta_min=0.01*lr)",
+                "grad_clip_norm": 5.0, "seed": int(seed),
+            },
+        }
+    )
+    save_checkpoint(model, norm, inverse_model_path(short, tag), extra=extra)
+    plot_loss_curves(
+        history["train"], history["val"],
+        title=f"{short}: training history ({tag})",
+        ylabel="Loss (model-specific NLL / MSE)", log_y=True,
+        save_path=inverse_plot_dir(tag, short) / "loss_curve.png", show=False,
+    )
+    return model, history
+
+
 def train_one_inverse_model(
     key: str,
     num_configurations: int = 10000,
@@ -174,64 +244,55 @@ def train_one_inverse_model(
 ):
     """Train and checkpoint exactly one inverse model (``INVERSE_MODELS`` key).
 
-    Used by the CLI to run a single inverse model instead of always training
-    all 4. ``epochs`` defaults to that model's own registry default when
-    omitted, matching how forward operators fall back to their own
-    ``DEFAULT_MODEL_CONFIG``-adjacent epoch default in ``operator_registry.py``.
+    ``epochs`` defaults to that model's own registry default when omitted.
     """
     spec = INVERSE_MODELS[key]
     epochs = int(epochs) if epochs is not None else int(spec["epochs"])
-
+    seed_everything(seed)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
         dataset_file=dataset_file, seed=seed,
     )
-    model = spec["build"]()
-    _warm_start_if_mdn(model, loaders)
-    history = train_one(model, loaders, spec["loss_fn"], epochs=epochs, lr=spec["lr"], name=spec["short"])
-    extra = _padinn_checkpoint_extra(model, loaders)
-    save_checkpoint(
-        model, dataset.norm_params, f"erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth", extra=extra
+    model, history = _train_and_save(
+        key, dataset, loaders, epochs=epochs, batch_size=batch_size,
+        dataset_file=dataset_file, num_configurations=num_configurations, seed=seed,
     )
     return model, history, dataset
 
 
 def main(
     num_configurations: int = 10000,
-    epochs: int = 150,
+    epochs: int | None = 150,
     batch_size: int = 64,
     dataset_file="datasets/dataset_erp_ft.pth",
+    keys: list[str] | None = None,
+    seed: int = 727,
 ):
+    """Train every (or the selected) inverse model on ONE shared dataset/split,
+    save each one's checkpoint + loss curve, the all-models loss figure and
+    the solver-scored validation figure + per-sample report."""
+    seed_everything(seed)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size,
-        dataset_file=dataset_file, seed=727,
+        dataset_file=dataset_file, seed=seed,
     )
     norm = dataset.norm_params
+    tag = dataset_tag_for(dataset_file)
+    keys = list(keys) if keys else list(INVERSE_MODELS)
 
-    models = {}
-    for spec in INVERSE_MODELS.values():
-        built_model = spec["build"]()
-        _warm_start_if_mdn(built_model, loaders)
-        models[spec["short"]] = (built_model, spec["loss_fn"], spec["lr"])
+    models, histories = {}, {}
+    for key in keys:
+        spec = INVERSE_MODELS[key]
+        model_epochs = int(epochs) if epochs is not None else int(spec["epochs"])
+        model, history = _train_and_save(
+            key, dataset, loaders, epochs=model_epochs, batch_size=batch_size,
+            dataset_file=dataset_file, num_configurations=num_configurations, seed=seed,
+        )
+        models[spec["short"]] = (model,)
+        histories[spec["short"]] = history
 
-    # SurrogateInverse isn't in INVERSE_MODELS (its loss needs this dataset's
-    # own norm_params, unavailable to a zero-arg registry build() lambda --
-    # see surrogate_inverse.py's docstring), so it's wired in here instead,
-    # once norm_params exists, to train and plot alongside the other 6.
-    def surrogate_loss_fn(model, spectrum, design, epoch):
-        return model.training_loss(spectrum, design, own_norm_params=norm, surrogate_weight=1.0)
-
-    models["Surrogate"] = (SurrogateInverse(design_dim=DESIGN_DIM), surrogate_loss_fn, 5e-4)
-
-    histories = {}
-    for name, (model, loss_fn, lr) in models.items():
-        print("\n" + "#" * 70)
-        print(f"Training {name}")
-        print("#" * 70)
-        history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name=name)
-        histories[name] = history
-        extra = _padinn_checkpoint_extra(model, loaders)
-        save_checkpoint(model, norm, f"erp_inverse_operators/models/inverse_{name.lower()}.pth", extra=extra)
+    out_dir = inverse_plot_dir(tag)  # plots/<dataset>/ALL_MODELS
+    _plot_all_histories(histories, out_dir / "all_models_loss.png", tag)
 
     # ------------------------------------------------------------------
     # Validation + per-sample reporting.
@@ -247,19 +308,15 @@ def main(
         if sum(s.shape[0] for s in test_spectrum) >= num_examples:
             break
     test_spectrum = torch.cat(test_spectrum, dim=0)[:num_examples]
-    frequency = torch.from_numpy(
-        ((dataset.frequency_values - norm["freq_mean"]) / norm["freq_std"]).astype(np.float32)
-    )[None, :, None].expand(num_examples, -1, -1)
-
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum.numpy(), norm)
     test_spectrum = test_spectrum.to(device)
 
-    out_dir = Path("erp_inverse_operators/plots/ALL_MODELS")
-    out_dir.mkdir(parents=True, exist_ok=True)
     report_lines = []
 
-    fig, axes = plt.subplots(num_examples, len(models), figsize=(4.8 * len(models), 4.2 * num_examples))
+    fig, axes = plt.subplots(
+        num_examples, len(models), figsize=(4.8 * len(models), 4.2 * num_examples), squeeze=False
+    )
     for row in range(num_examples):
         report_lines.append(f"\n{'=' * 90}\nExample {row + 1}\n{'=' * 90}")
         for col, name in enumerate(models):
@@ -301,7 +358,7 @@ def main(
                 )
                 report_lines.append(format_configuration(physical[i]))
 
-            ax = axes[row, col] if num_examples > 1 else axes[col]
+            ax = axes[row, col]
             for i in range(num_samples):
                 if i == best_idx:
                     continue
@@ -318,8 +375,8 @@ def main(
             if row == 0:
                 ax.set_title(name, fontsize=11)
             if col == 0:
-                ax.set_ylabel(f"Example {row + 1}\nERP (dB)")
-            ax.set_xlabel("Frequency (Hz)")
+                ax.set_ylabel(f"Example {row + 1}\n{ERP_LABEL}")
+            ax.set_xlabel(FREQ_LABEL)
             ax.grid(alpha=0.3)
             if row == 0 and col == 0:
                 ax.legend(fontsize=8)
@@ -330,30 +387,44 @@ def main(
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(out_dir / "validation_reconstructions.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved validation figure to {out_dir / 'validation_reconstructions.png'}")
+    save_figure(fig, out_dir / "validation_reconstructions.png")
 
     report_path = out_dir / "sample_configurations_and_scores.txt"
     report_path.write_text("\n".join(report_lines))
     print(f"Saved per-sample configurations + scores to {report_path}")
 
     solver_pool.shutdown()
-
-    fig, ax = plt.subplots(figsize=(9, 6))
-    for name, history in histories.items():
-        ax.plot(history["val"], label=name, lw=2)
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Validation loss (method-specific NLL/MSE, not comparable across methods)")
-    ax.set_title("Inverse model training curves (post-fix: LR schedule + best-checkpoint + KL annealing + cosine diffusion schedule)")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(out_dir / "training_curves.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved training curves to {out_dir / 'training_curves.png'}")
-
     print("\nDONE")
+
+
+def _plot_all_histories(histories, save_path, tag):
+    """One panel per model (losses are model-specific NLL/MSE and NOT on a
+    common scale, so overlaying them on one axis would be misleading)."""
+    names = list(histories)
+    if not names:
+        return
+    colors = model_colors(names)
+    ncols = min(4, len(names))
+    nrows = math.ceil(len(names) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.4 * nrows), squeeze=False)
+    for ax, name in zip(axes.ravel(), names):
+        tr = np.asarray(histories[name]["train"], dtype=float)
+        va = np.asarray(histories[name]["val"], dtype=float)
+        ax.plot(np.arange(1, tr.size + 1), tr, color=colors[name], lw=1.6, label="Training")
+        ax.plot(np.arange(1, va.size + 1), va, color=colors[name], lw=1.6, ls="--", label="Validation")
+        both = np.concatenate([tr, va])
+        if both.size and np.nanmin(both) > 0:
+            ax.set_yscale("log")
+        ax.set_title(name)
+        ax.set_xlabel("Epoch")
+        ax.grid(True, which="both")
+    for ax in axes.ravel()[len(names):]:
+        ax.set_visible(False)
+    axes[0, 0].set_ylabel("Loss")
+    axes[0, 0].legend()
+    fig.suptitle(f"Inverse models: training history ({tag})")
+    fig.tight_layout()
+    save_figure(fig, save_path)
 
 
 if __name__ == "__main__":

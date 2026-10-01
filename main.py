@@ -17,13 +17,28 @@ menus, prompts, and orchestration live in utils/cli.py. Dataset
 preprocessing is handled by utils/erp_dataset.py (ERP) and
 utils/field_dataset.py (displacement); training/evaluation lives in
 erp_forward_operators/, erp_inverse_operators/,
-displacement_forward_operators/, and erp_forward_inverse_operators/
+displacement_forward_operators/, and erp_invertible_operators/
 respectively; all figure creation/saving goes through utils/plotting.py.
 """
 
 from __future__ import annotations
 
-from utils.cli import main
+import os
+import sys
+from pathlib import Path
+
+# Dataset/checkpoint paths are stored relative to the repository root, so
+# always run from there -- `python path/to/main.py` works from any folder.
+PROJECT_ROOT = Path(__file__).resolve().parent
+os.chdir(PROJECT_ROOT)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils.cli import main  # noqa: E402
 
 if __name__ == "__main__":
-    results = main()
+    try:
+        results = main()
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        sys.exit(130)

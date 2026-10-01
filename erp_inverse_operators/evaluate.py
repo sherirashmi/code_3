@@ -71,12 +71,11 @@ import torch
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES
-from erp_inverse_operators.surrogate_inverse import SurrogateInverse
-from utils.erp_dataset import configuration_to_resonators, denormalize_erp_array
+from utils.erp_dataset import configuration_to_resonators, dataset_tag_for, denormalize_erp_array
+from utils.paths import ALL_MODELS, inverse_model_path, inverse_plot_dir
+from utils.plotting import ERP_LABEL, save_figure
 from utils.solver import compute_erp_spectrum
 from utils.support import device
-
-OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 
 # Keyed by short name ("MDN", "cVAE", ...) rather than the registry's "1".."4"
 # keys, matching this module's own reporting convention; built from the same
@@ -92,13 +91,16 @@ OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 # here identically -- every constructor arg besides design_dim already
 # has a usable default.
 MODEL_BUILDERS = {spec["short"]: spec["build"] for spec in INVERSE_MODELS.values()}
-MODEL_BUILDERS["Surrogate"] = lambda: SurrogateInverse(design_dim=DESIGN_DIM)
 
 
-def load_inverse_model(name: str):
-    checkpoint = torch.load(
-        f"erp_inverse_operators/models/inverse_{name.lower()}.pth", map_location=device, weights_only=False
-    )
+def load_inverse_model(name: str, dataset_tag: str = "100k"):
+    """Load ``models/<dataset_tag>/inverse_<name>.pth`` -> (model, norm_params)."""
+    path = inverse_model_path(name, dataset_tag)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found -- train {name} on dataset '{dataset_tag}' first (ERP -> Inverse -> Train)."
+        )
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
     model = MODEL_BUILDERS[name]()
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
@@ -112,6 +114,28 @@ def load_inverse_model(name: str):
         # without each needing its own PadINN special-case.
         model.sample = functools.partial(model.sample, temperature=checkpoint["padinn_temperature"])
     return model, checkpoint["norm_params"]
+
+
+def checkpoint_num_configurations(name: str, dataset_tag: str) -> int | None:
+    """``num_configurations`` a checkpoint was trained with (None if unrecorded)."""
+    path = inverse_model_path(name, dataset_tag)
+    if not path.exists():
+        return None
+    value = torch.load(path, map_location="cpu", weights_only=False).get("num_configurations")
+    return int(value) if value is not None else None
+
+
+def _check_norm(name: str, model_norm, dataset_norm) -> None:
+    """Warn loudly if a model was trained with different normalisation than
+    the evaluation split uses (different dataset or num_configurations) --
+    its outputs would then be denormalised with the wrong statistics."""
+    keys = ("erp_mean", "erp_std", "f_t_mean", "m_mean")
+    if any(not np.isclose(float(model_norm[k]), float(dataset_norm[k]), rtol=1e-4) for k in keys):
+        print(
+            f"WARNING: {name} was trained with different normalisation than this evaluation "
+            "split (different dataset or number of configurations). Re-run with the "
+            "dataset/configuration count it was trained on for valid numbers."
+        )
 
 
 def pick_best_indices(has_log_prob: bool, log_probs: np.ndarray | None, recon_mse: np.ndarray) -> np.ndarray:
@@ -159,10 +183,19 @@ def main(
     nothing else in the run.
     """
     active_models = {name: MODEL_BUILDERS[name] for name in (model_names or MODEL_BUILDERS)}
+    dataset_tag = dataset_tag_for(dataset_file)
+    # Only models that have actually been trained on this dataset.
+    missing = [n for n in active_models if not inverse_model_path(n, dataset_tag).exists()]
+    for n in missing:
+        print(f"Skipping {n}: no checkpoint at {inverse_model_path(n, dataset_tag)}")
+        active_models.pop(n)
+    if not active_models:
+        raise FileNotFoundError(f"No trained inverse models found for dataset '{dataset_tag}'.")
+    out_dir = inverse_plot_dir(dataset_tag, next(iter(active_models)) if model_names and len(active_models) == 1 else ALL_MODELS)
 
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=64,
-        dataset_file=list(dataset_file), seed=727,
+        dataset_file=dataset_file, seed=727,
     )
     norm = dataset.norm_params
     freq_hz = np.asarray(dataset.frequency_values)
@@ -185,7 +218,8 @@ def main(
     with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
         for name in active_models:
             print(f"Evaluating {name} ({n} targets x {num_samples} samples, actual solver) ...")
-            model, _ = load_inverse_model(name)
+            model, model_norm = load_inverse_model(name, dataset_tag)
+            _check_norm(name, model_norm, norm)
 
             with torch.no_grad():
                 result = model.sample(test_spectrum, num_samples=num_samples)
@@ -225,8 +259,6 @@ def main(
             }
             print(f"  {name}: MAE={mae:.3f} dB  RMSE={rmse:.3f} dB  Pearson r={r_global:.4f}  R^2={r2:.4f}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
     # ---- summary table ----
     lines = [
         f"Inverse-design prediction quality ({n} held-out target spectra, "
@@ -242,7 +274,7 @@ def main(
             f"{s['mean_spectrum_r']:>13.4f} {s['r2']:>8.4f}"
         )
     table_text = "\n".join(lines)
-    (OUT_DIR / "prediction_stats.txt").write_text(table_text + "\n")
+    (out_dir / "prediction_stats.txt").write_text(table_text + "\n")
     print("\n" + table_text)
 
     # ---- bar charts: MAE, Pearson r, R^2 per method ----
@@ -258,13 +290,13 @@ def main(
     axes[0].grid(axis="y", alpha=0.3)
 
     axes[1].bar(names, [stats[m]["pearson_r"] for m in names], color=colors)
-    axes[1].set_ylabel("Pearson r")
+    axes[1].set_ylabel(r"Pearson $r$")
     axes[1].set_title("Global Pearson correlation (higher better)")
     axes[1].set_ylim(0, 1)
     axes[1].grid(axis="y", alpha=0.3)
 
     axes[2].bar(names, [stats[m]["r2"] for m in names], color=colors)
-    axes[2].set_ylabel("R^2")
+    axes[2].set_ylabel(r"$R^2$")
     axes[2].set_title("Coefficient of determination (higher better)")
     axes[2].grid(axis="y", alpha=0.3)
 
@@ -273,9 +305,7 @@ def main(
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(OUT_DIR / "prediction_stats_bars.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'prediction_stats_bars.png'}")
+    save_figure(fig, out_dir / "prediction_stats_bars.png")
 
     # ---- prediction vs ground truth scatter, one panel per method ----
     # squeeze=False keeps axes a 2D array even when only 1 model is being
@@ -297,15 +327,13 @@ def main(
         ax.scatter(true_flat, pred_flat, s=4, alpha=0.25, color=color, edgecolors="none")
         ax.plot([lo, hi], [lo, hi], "k--", lw=1.2, label="y = x")
         ax.set_title(f"{name}\nMAE={stats[name]['mae_db']:.2f} dB, r={stats[name]['pearson_r']:.3f}")
-        ax.set_xlabel("Ground truth ERP (dB)")
+        ax.set_xlabel(f"True {ERP_LABEL}")
         ax.grid(alpha=0.3)
-    axes[0].set_ylabel("Predicted ERP (dB)\n(actual solver, not a neural surrogate)")
+    axes[0].set_ylabel(f"Predicted {ERP_LABEL}\n(solver-evaluated design)")
     axes[0].legend(fontsize=8, loc="upper left")
     fig.suptitle("Inverse-design prediction vs. ground truth ERP (solver-scored)", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
-    fig.savefig(OUT_DIR / "prediction_vs_ground_truth.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'prediction_vs_ground_truth.png'}")
+    save_figure(fig, out_dir / "prediction_vs_ground_truth.png")
 
     return stats
 

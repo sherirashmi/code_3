@@ -1,4 +1,5 @@
-"""Central registry for the 6 trainable probabilistic inverse models.
+"""Central registry for the 7 trainable inverse models (6 probabilistic +
+the deterministic, forward-surrogate-in-the-loop SurrogateInverse).
 
 Mirrors ``erp_forward_operators/operator_registry.py``'s shape (a key -> spec dict) so
 the CLI can select "just MDN" or "all inverse models" the same way it
@@ -47,6 +48,23 @@ def _basis_flow_loss(model, spectrum, design, epoch):
 
 def _padding_inn_loss(model, spectrum, design, epoch):
     return model.training_loss(spectrum, design)
+
+
+def _surrogate_loss(model, spectrum, design, epoch, *, norm_params):
+    # Needs the TRAINING dataset's own normalisation to cross into each
+    # frozen surrogate's physical units -- bound by train_all at train time.
+    return model.training_loss(spectrum, design, own_norm_params=norm_params, surrogate_weight=1.0)
+
+
+def _build_surrogate(dataset_tag: str | None = None):
+    from erp_inverse_operators.surrogate_inverse import (
+        DEFAULT_SURROGATE_CHECKPOINTS,
+        SurrogateInverse,
+        surrogate_checkpoints_for,
+    )
+
+    checkpoints = surrogate_checkpoints_for(dataset_tag) if dataset_tag else DEFAULT_SURROGATE_CHECKPOINTS
+    return SurrogateInverse(design_dim=DESIGN_DIM, surrogate_checkpoints=checkpoints)
 
 
 INVERSE_MODELS = {
@@ -98,6 +116,17 @@ INVERSE_MODELS = {
         "lr": 5e-4,
         "epochs": 150,
     },
+    "7": {
+        "name": "Surrogate-in-the-loop inverse (deterministic, frozen DCO+GNO)",
+        "short": "Surrogate",
+        "build": _build_surrogate,          # optional arg: dataset tag
+        "loss_fn": _surrogate_loss,         # needs norm_params=..., see train_all
+        "needs_norm_params": True,
+        "lr": 5e-4,
+        "epochs": 100,
+    },
 }
 
-__all__ = ["INVERSE_MODELS", "NUM_RES", "DESIGN_DIM"]
+SHORT_TO_KEY = {spec["short"]: key for key, spec in INVERSE_MODELS.items()}
+
+__all__ = ["INVERSE_MODELS", "SHORT_TO_KEY", "NUM_RES", "DESIGN_DIM"]

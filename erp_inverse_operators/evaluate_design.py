@@ -36,21 +36,23 @@ from erp_inverse_operators.common import denormalize_design, prepare_inverse_dat
 from erp_inverse_operators.evaluate import (
     MODEL_BUILDERS,
     SPAWN_CONTEXT,
+    _check_norm,
     load_inverse_model,
     solve_configs,
 )
-from utils.erp_dataset import denormalize_configuration_array, denormalize_erp_array
+from utils.erp_dataset import dataset_tag_for, denormalize_configuration_array, denormalize_erp_array
+from utils.paths import ALL_MODELS, inverse_model_path, inverse_plot_dir
+from utils.plotting import save_figure
 from utils.support import device
 from concurrent.futures import ProcessPoolExecutor
 
 NUM_RES = 3
-OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
 PARAMS = [
-    ("m", 0, "Mass (kg)"),
-    ("k", 1, "Spring constant (N/m)"),
-    ("f_t", 2, "Tuned frequency (Hz)"),
-    ("x", 3, "x position (m)"),
-    ("y", 4, "y position (m)"),
+    ("m", 0, r"mass $m$ (kg)"),
+    ("k", 1, r"stiffness $k$ (N/m)"),
+    ("f_t", 2, r"tuning frequency $f_t$ (Hz)"),
+    ("x", 3, r"position $x$ (m)"),
+    ("y", 4, r"position $y$ (m)"),
 ]
 
 
@@ -67,11 +69,18 @@ def main(
     """``model_names`` restricts this to a subset of MODEL_BUILDERS (default
     all), same rationale as evaluate.main()'s own ``model_names`` param.
     """
-    active_models = list(model_names) if model_names else list(MODEL_BUILDERS)
+    dataset_tag = dataset_tag_for(dataset_file)
+    active_models = [
+        n for n in (list(model_names) if model_names else list(MODEL_BUILDERS))
+        if inverse_model_path(n, dataset_tag).exists() or print(f"Skipping {n}: not trained on '{dataset_tag}'.")
+    ]
+    if not active_models:
+        raise FileNotFoundError(f"No trained inverse models found for dataset '{dataset_tag}'.")
+    out_dir = inverse_plot_dir(dataset_tag, active_models[0] if model_names and len(active_models) == 1 else ALL_MODELS)
 
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=64,
-        dataset_file=list(dataset_file), seed=727,
+        dataset_file=dataset_file, seed=727,
     )
     norm = dataset.norm_params
     freq_hz = np.asarray(dataset.frequency_values)
@@ -100,7 +109,8 @@ def main(
     with ProcessPoolExecutor(max_workers=num_workers, mp_context=SPAWN_CONTEXT) as pool:
         for name in active_models:
             print(f"Evaluating {name} design-parameter recovery ...")
-            model, _ = load_inverse_model(name)
+            model, model_norm = load_inverse_model(name, dataset_tag)
+            _check_norm(name, model_norm, norm)
             with torch.no_grad():
                 result = model.sample(test_spectrum_device, num_samples=num_samples)
             has_log_prob = isinstance(result, tuple)
@@ -124,7 +134,6 @@ def main(
             best_physical = physical[np.arange(n), best_idx]  # (n, num_res, 5)
             predictions[name] = best_physical
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
     names = active_models
     # tab10 scales to any number of models automatically -- this literal
     # list has needed a manual bump every time a model was added (4 -> 5 -> 6).
@@ -159,7 +168,7 @@ def main(
             ax.scatter(true_vals, pred_vals, s=8, alpha=0.35, color=colors[col], edgecolors="none")
             span = [min(lo, pred_vals.min()), max(hi, pred_vals.max())]
             ax.plot(span, span, "k--", lw=1.1, label="y = x" if row == 0 and col == 0 else None)
-            ax.set_title(f"{name}\nMAE={mae:.3g}, r={r:.3f}", fontsize=10)
+            ax.set_title(f"{name}\nMAE $= {mae:.3g}$, $r = {r:.3f}$", fontsize=10)
             if row == len(PARAMS) - 1:
                 ax.set_xlabel(f"True {label}")
             if col == 0:
@@ -168,17 +177,15 @@ def main(
     axes[0, 0].legend(fontsize=8, loc="upper left")
 
     fig.suptitle(
-        "Inverse-design parameter recovery: predicted vs. true [m, k, x, y]\n"
+        "Inverse-design parameter recovery: predicted vs. true $[m, k, f_t, x, y]$\n"
         "(non-unique problem -- low correlation can mean a different valid design, not a wrong one)",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(OUT_DIR / "design_parameter_recovery.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'design_parameter_recovery.png'}")
+    save_figure(fig, out_dir / "design_parameter_recovery.png")
 
     table_text = "\n".join(lines)
-    (OUT_DIR / "design_parameter_stats.txt").write_text(table_text + "\n")
+    (out_dir / "design_parameter_stats.txt").write_text(table_text + "\n")
     print("\n" + table_text)
 
     return stats

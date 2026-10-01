@@ -123,7 +123,7 @@ class InverseDesignDataset(Dataset):
 def prepare_inverse_data(
     num_configurations: int = 10000,
     batch_size: int = 32,
-    dataset_file: str = "datasets/dataset_erp_ft.pth",
+    dataset_file: str | list[str] | tuple[str, ...] = "datasets/dataset_erp_ft.pth",
     seed: int = 727,
 ):
     """Build spectrum->design train/val/test loaders sharing the forward split."""
@@ -148,10 +148,47 @@ def prepare_inverse_data(
     return dataset, loaders
 
 
-def denormalize_design(flat_design: np.ndarray, num_res: int, norm_params: Mapping[str, object]) -> np.ndarray:
-    """Normalized flat design vector(s) -> physical ``(..., num_res, 5)`` [m,k,f_t,x,y]."""
+def enforce_physical_consistency(configuration: np.ndarray) -> np.ndarray:
+    """Project predicted physical ``(..., num_res, 5)`` designs onto the
+    feasible, self-consistent design space the dataset was generated in.
+
+    Every model predicts ``m``, ``k`` and ``f_t`` as three independent
+    outputs, but the solver only uses ``m`` and ``k`` -- so an unprojected
+    prediction resonates at ``sqrt(k/m)/(2*pi)``, generally NOT at the
+    predicted ``f_t``, and its solver-validated spectrum misses the target's
+    peaks even when ``f_t`` itself was predicted well. ``f_t`` is the
+    best-identified quantity (it sets the peak/notch frequency directly), so
+    it is kept and the stiffness is re-derived exactly as at generation time,
+    ``k = m*(2*pi*f_t)**2``. ``m``, ``f_t``, ``x``, ``y`` are clipped to the
+    generation bounds (the solver is meaningless for negative masses or
+    resonators off the plate).
+    """
+    from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
+
+    out = np.array(configuration, dtype=np.float64, copy=True)
+    out[..., 0] = np.clip(out[..., 0], m_min, m_max)
+    out[..., 2] = np.clip(out[..., 2], fmin, fmax)
+    out[..., 3] = np.clip(out[..., 3], edge_margin, Lx - edge_margin)
+    out[..., 4] = np.clip(out[..., 4], edge_margin, Ly - edge_margin)
+    out[..., 1] = out[..., 0] * (2.0 * np.pi * out[..., 2]) ** 2
+    return out.astype(np.float32)
+
+
+def denormalize_design(
+    flat_design: np.ndarray,
+    num_res: int,
+    norm_params: Mapping[str, object],
+    *,
+    consistent: bool = True,
+) -> np.ndarray:
+    """Normalized flat design vector(s) -> physical ``(..., num_res, 5)`` [m,k,f_t,x,y].
+
+    ``consistent=True`` (default) applies :func:`enforce_physical_consistency`
+    so every returned design is one the solver can evaluate meaningfully.
+    """
     configuration = flat_design.reshape(*flat_design.shape[:-1], num_res, 5)
-    return denormalize_configuration_array(configuration, norm_params)
+    physical = denormalize_configuration_array(configuration, norm_params)
+    return enforce_physical_consistency(physical) if consistent else physical
 
 
 def save_checkpoint(

@@ -56,18 +56,7 @@ def plot_erp_mode_convergence(
     # Save original modal settings
     # --------------------------------------------------
 
-    original_values = {
-        "Nx": physics.Nx,
-        "Ny": physics.Ny,
-        "modes": physics.modes.copy(),
-        "omega_n": physics.omega_n.copy(),
-        "omega_sq": physics.omega_sq.copy(),
-        "m_idx": physics.m_idx.copy(),
-        "n_idx": physics.n_idx.copy(),
-        "N": physics.N,
-    }
-
-
+    original_resolution = physics.get_modal_resolution()
     results = {}
 
     try:
@@ -77,29 +66,9 @@ def plot_erp_mode_convergence(
         # --------------------------------------------------
 
         for Nx, Ny in mode_settings:
-
-            # Rebuild modal basis
-            physics.Nx = Nx
-            physics.Ny = Ny
-
-            physics.modes = physics.modal_table(
-                nx_modes=Nx,
-                ny_modes=Ny,
-            )
-
-            physics.omega_n = physics.modes[:, 0]
-
-            physics.omega_sq = physics.omega_n**2
-
-            physics.m_idx = physics.modes[:, 1].astype(np.int32)
-
-            physics.n_idx = physics.modes[:, 2].astype(np.int32)
-
-            physics.N = len(physics.modes)
-
-            # Reload solver so imported N, omega_n, etc.
-            # match the new modal basis
-            importlib.reload(utils.solver)
+            # utils.solver reads the basis from utils.physics at call time
+            # (caches are keyed on the resolution), so no reload is needed.
+            physics.set_modal_resolution(Nx, Ny, verbose=False)
 
             print(
                 f"Calculating: Nx={Nx}, Ny={Ny}, "
@@ -113,23 +82,8 @@ def plot_erp_mode_convergence(
 
             results[(Nx, Ny)] = erp.copy()
 
-
     finally:
-
-        # --------------------------------------------------
-        # Restore original physics settings
-        # --------------------------------------------------
-
-        physics.Nx = original_values["Nx"]
-        physics.Ny = original_values["Ny"]
-        physics.modes = original_values["modes"]
-        physics.omega_n = original_values["omega_n"]
-        physics.omega_sq = original_values["omega_sq"]
-        physics.m_idx = original_values["m_idx"]
-        physics.n_idx = original_values["n_idx"]
-        physics.N = original_values["N"]
-
-        importlib.reload(utils.solver)
+        physics.set_modal_resolution(*original_resolution, verbose=False)
 
 
     # --------------------------------------------------

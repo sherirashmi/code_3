@@ -8,6 +8,8 @@ Description : Physical parameters and modal basis
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 from utils.support import grid
@@ -121,8 +123,22 @@ bounds = resonator_bounds(num_res)
 # Modal Expansion Parameters
 # ==================================================
 
-Nx = 15
-Ny = 10
+# Default modal resolution (15 x 10 = 150 plate modes) -- what the 10k and
+# 100k datasets were generated with. The 200k "18 modes" dataset was
+# generated with 6 x 3 = 18 modes instead, so the solver MUST be switched to
+# that basis (``set_modal_resolution(6, 3)``) whenever that dataset is used,
+# otherwise every solver-computed "ground truth" (prediction plots, inverse
+# validation) disagrees with the dataset by tens of dB.
+#
+# The resolution can also be preset through the ERP_MODAL_NX / ERP_MODAL_NY
+# environment variables. ``set_modal_resolution`` writes them too, so solver
+# worker processes started with the 'spawn' method (see
+# erp_inverse_operators/evaluate.py) inherit the same basis as the parent.
+DEFAULT_NX = 15
+DEFAULT_NY = 10
+
+Nx = int(os.environ.get("ERP_MODAL_NX", DEFAULT_NX))
+Ny = int(os.environ.get("ERP_MODAL_NY", DEFAULT_NY))
 
 
 def omega_mn(m: int, n: int) -> complex:
@@ -147,12 +163,50 @@ def modal_table(nx_modes: int, ny_modes: int) -> np.ndarray:
     return np.asarray(sorted(modes_list, key=lambda row: row[0]), dtype=np.float64)
 
 
-modes = modal_table(nx_modes=Nx, ny_modes=Ny)
-omega_n = modes[:, 0]
-omega_sq = omega_n**2
-m_idx = modes[:, 1].astype(np.int32)
-n_idx = modes[:, 2].astype(np.int32)
-N = len(modes)
+def _build_modal_basis(nx_modes: int, ny_modes: int) -> None:
+    """(Re)compute every module-level modal-basis global for ``nx x ny`` modes."""
+    global Nx, Ny, modes, omega_n, omega_sq, m_idx, n_idx, N
+    if int(nx_modes) < 1 or int(ny_modes) < 1:
+        raise ValueError("nx_modes and ny_modes must both be >= 1.")
+    Nx, Ny = int(nx_modes), int(ny_modes)
+    modes = modal_table(nx_modes=Nx, ny_modes=Ny)
+    omega_n = modes[:, 0]
+    omega_sq = omega_n**2
+    m_idx = modes[:, 1].astype(np.int32)
+    n_idx = modes[:, 2].astype(np.int32)
+    N = len(modes)
+
+
+def set_modal_resolution(nx_modes: int, ny_modes: int, *, verbose: bool = True) -> bool:
+    """Switch the plate modal basis used by the solver to ``nx x ny`` modes.
+
+    Returns True if the resolution actually changed. Solver caches are keyed
+    on the resolution (see utils/solver.py), so switching back and forth is
+    safe. Also exported to the environment so 'spawn'-started worker
+    processes rebuild the same basis on import.
+    """
+    nx_modes, ny_modes = int(nx_modes), int(ny_modes)
+    os.environ["ERP_MODAL_NX"] = str(nx_modes)
+    os.environ["ERP_MODAL_NY"] = str(ny_modes)
+    if (nx_modes, ny_modes) == (Nx, Ny):
+        return False
+    _build_modal_basis(nx_modes, ny_modes)
+    if verbose:
+        print(f"Solver modal resolution set to {Nx} x {Ny} = {N} plate modes")
+    return True
+
+
+def get_modal_resolution() -> tuple[int, int]:
+    return Nx, Ny
+
+
+modes: np.ndarray
+omega_n: np.ndarray
+omega_sq: np.ndarray
+m_idx: np.ndarray
+n_idx: np.ndarray
+N: int
+_build_modal_basis(Nx, Ny)
 
 
 def mode_shapes(x: np.ndarray | float, y: np.ndarray | float) -> np.ndarray:

@@ -24,7 +24,10 @@ from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import denormalize_erp_array
 from utils.support import device
 
-OUT_DIR = Path("erp_inverse_operators/plots/ALL_MODELS")
+from utils.paths import inverse_plot_dir
+from utils.plotting import save_figure
+
+OUT_DIR = inverse_plot_dir("100k")  # these report scripts use the 100k-trained models
 NUM_EXAMPLES = 3
 NUM_SAMPLES = 6
 
@@ -102,7 +105,7 @@ def main():
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(OUT_DIR / "validation_reconstructions.png", dpi=150)
+    save_figure(fig, OUT_DIR / "validation_reconstructions.png")
     plt.close(fig)
     solver_pool.shutdown()
     print(f"Saved {OUT_DIR / 'validation_reconstructions.png'}")

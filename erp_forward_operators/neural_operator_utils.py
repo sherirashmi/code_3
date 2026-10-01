@@ -32,6 +32,7 @@ from torch.utils.data import DataLoader, Dataset
 from utils.erp_dataset import (
     DEFAULT_DATASET_FILE,
     configuration_to_resonators,
+    dataset_tag_for,
     denormalize_configuration_array,
     denormalize_erp_array,
     normalize_configuration_array,
@@ -46,6 +47,7 @@ from utils.plotting import (
     plot_loss_curves,
     plot_prediction_scatter,
 )
+from utils.paths import forward_model_path
 from utils.solver import compute_erp_spectrum
 from utils.support import device, seed_everything
 
@@ -447,7 +449,7 @@ def prepare_operator_data(
     num_configurations: int = 500,
     *,
     batch_size: int = 16,
-    dataset_file: str = DEFAULT_DATASET_FILE,
+    dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
     num_res: int = default_num_res,
@@ -1147,7 +1149,9 @@ def save_operator_checkpoint(
     operator_name: str,
     model_config: Mapping[str, object],
     preprocessing_state: Mapping[str, object],
-    filename: str,
+    filename: str | Path,
+    training_config: Mapping[str, object] | None = None,
+    history: Mapping[str, list[float]] | None = None,
 ) -> None:
     path = Path(filename)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1157,6 +1161,10 @@ def save_operator_checkpoint(
             "model_config": dict(model_config),
             "model_state_dict": model.state_dict(),
             "preprocessing_state": preprocessing_state,
+            # Hyperparameters + loss history, so every checkpoint documents
+            # exactly how it was trained (epochs, lr, loss weights, ...).
+            "training_config": dict(training_config or {}),
+            "history": {k: [float(v) for v in vals] for k, vals in (history or {}).items()},
         },
         path,
     )
@@ -1196,7 +1204,7 @@ def run_operator_experiment(
     num_generate: int | None = None,
     seed: int = 727,
     num_workers: int = 0,
-    checkpoint_file: str | None = None,
+    checkpoint_file: str | Path | None = None,
     configuration: np.ndarray | None = None,
     plot: bool = True,
     save_plots: bool = True,
@@ -1211,7 +1219,8 @@ def run_operator_experiment(
 
     seed_everything(seed)
     if checkpoint_file is None:
-        checkpoint_file = f"erp_forward_operators/models/{operator_name.lower()}_erp.pth"
+        # erp_forward_operators/models/GENERAL/<dataset>/<operator>.pth
+        checkpoint_file = forward_model_path(operator_name, dataset_tag_for(dataset_file))
 
     if action == "train":
         dataset, loaders = prepare_operator_data(
@@ -1248,6 +1257,24 @@ def run_operator_experiment(
             model_config=model_config,
             preprocessing_state=dataset.preprocessing_state(),
             filename=checkpoint_file,
+            training_config={
+                "optimizer": "AdamW",
+                "learning_rate": float(learning_rate),
+                "weight_decay": float(weight_decay),
+                "lr_schedule": "CosineAnnealingLR(T_max=epochs, eta_min=1e-6)",
+                "epochs": int(epochs),
+                "batch_size": int(batch_size),
+                "grad_clip_norm": 5.0,
+                "loss": "MSE + slope_weight*MSE(first difference) + peak_weight*sum(peak sq. error)",
+                "slope_weight": float(slope_weight),
+                "peak_weight": float(peak_weight),
+                "lbfgs_epochs": int(lbfgs_epochs),
+                "num_configurations": int(num_configurations),
+                "split": "80/10/10 train/val/test by configuration",
+                "seed": int(seed),
+                "dataset_tag": dataset_tag_for(dataset_file),
+            },
+            history=history,
         )
 
         result: dict[str, object] = {
@@ -1257,6 +1284,7 @@ def run_operator_experiment(
             "dataset": dataset,
             "loaders": loaders,
             "history": history,
+            "checkpoint_file": str(checkpoint_file),
         }
         if evaluate_after_training:
             result["metrics"] = evaluate_operator(
@@ -1303,8 +1331,15 @@ def run_operator_experiment(
         num_workers=num_workers,
         verbose=True,
     )
-    model = build_model(num_res=dataset.num_res, **saved_config).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    try:
+        model = build_model(num_res=dataset.num_res, **saved_config).to(device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+    except (TypeError, RuntimeError) as exc:
+        raise RuntimeError(
+            f"Checkpoint {checkpoint_file} does not match the current {operator_name} architecture "
+            f"(the model code changed after it was trained). Retrain {operator_name} on this dataset. "
+            f"Details: {type(exc).__name__}: {str(exc)[:200]}"
+        ) from exc
     model.eval()
 
     if action == "evaluate":
@@ -1325,6 +1360,8 @@ def run_operator_experiment(
             "model": model,
             "metrics": metrics,
             "frequency_values": np.asarray(dataset.frequency_values).copy(),
+            "history": checkpoint.get("history"),
+            "dataset": dataset,
         }
 
     if configuration is None:
@@ -1369,7 +1406,7 @@ def make_operator_runner(
         epochs: int = default_epochs,
         learning_rate: float = default_learning_rate,
         lbfgs_epochs: int = 0,
-        dataset_file: str = DEFAULT_DATASET_FILE,
+        dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
         regenerate_dataset: bool = False,
         seed: int = 727,
         configuration=None,

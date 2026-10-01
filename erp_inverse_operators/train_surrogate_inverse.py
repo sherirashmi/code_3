@@ -41,11 +41,10 @@ from erp_inverse_operators.surrogate_inverse import (
     SurrogateInverse,
 )
 from erp_inverse_operators.train_all import train_one
-from utils.erp_dataset import denormalize_erp_array
+from utils.erp_dataset import dataset_tag_for, denormalize_erp_array
+from utils.paths import inverse_model_path, inverse_plot_dir
+from utils.plotting import ERP_LABEL, FREQ_LABEL, save_figure
 from utils.support import device
-
-OUT_DIR = Path("erp_inverse_operators/plots/Surrogate")
-CHECKPOINT_PATH = "erp_inverse_operators/models/inverse_surrogate.pth"
 
 
 def main(
@@ -62,8 +61,13 @@ def main(
         "datasets/dataset_erp_ft_100k_part2.pth",
     ),
     seed: int = 727,
-    surrogate_checkpoints=DEFAULT_SURROGATE_CHECKPOINTS,
+    surrogate_checkpoints=None,
 ):
+    tag = dataset_tag_for(dataset_file)
+    out_dir = inverse_plot_dir(tag, "Surrogate")
+    if surrogate_checkpoints is None:
+        from erp_inverse_operators.surrogate_inverse import surrogate_checkpoints_for
+        surrogate_checkpoints = surrogate_checkpoints_for(tag)
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
     )
@@ -86,9 +90,10 @@ def main(
         )
 
     history = train_one(model, loaders, loss_fn, epochs=epochs, lr=lr, name="SurrogateInverse")
-    save_checkpoint(model, norm_params, CHECKPOINT_PATH)
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    save_checkpoint(
+        model, norm_params, inverse_model_path("Surrogate", tag),
+        extra={"history": history, "dataset_tag": tag, "num_configurations": int(num_configurations)},
+    )
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(history["train"], label="train", lw=2)
     ax.plot(history["val"], label="val", lw=2)
@@ -98,16 +103,14 @@ def main(
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "surrogate_inverse_training_curves.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'surrogate_inverse_training_curves.png'}")
+    save_figure(fig, out_dir / "loss_curve.png")
 
-    _evaluate(model, dataset, loaders, norm_params)
-    _plot_parameter_recovery(model, loaders, norm_params)
+    _evaluate(model, dataset, loaders, norm_params, out_dir)
+    _plot_parameter_recovery(model, loaders, norm_params, out_dir)
     return model, history, dataset
 
 
-def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
+def _evaluate(model, dataset, loaders, norm_params, out_dir, num_examples: int = 5):
     """Solver-validated point-estimate check -- same convention as every
     other inverse model's own validation figure (real coupled-plate
     solver, not a neural forward surrogate, scores the FINAL comparison
@@ -140,9 +143,9 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
         ax.plot(freq_hz, predicted_erp, color="#C44E52", lw=2.0, label="Prediction")
         ax.plot(freq_hz, true_erp[row], color="black", lw=2, label="Target")
         ax.set_title(f"Example {row + 1} (MSE={recon_mse:.3f})", fontsize=10)
-        ax.set_xlabel("Frequency (Hz)")
+        ax.set_xlabel(FREQ_LABEL)
         if row == 0:
-            ax.set_ylabel("ERP (dB)")
+            ax.set_ylabel(ERP_LABEL)
             ax.legend(fontsize=8)
         ax.grid(alpha=0.3)
     solver_pool.shutdown()
@@ -152,12 +155,10 @@ def _evaluate(model, dataset, loaders, norm_params, num_examples: int = 5):
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(OUT_DIR / "surrogate_inverse_validation_reconstructions.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'surrogate_inverse_validation_reconstructions.png'}")
+    save_figure(fig, out_dir / "surrogate_inverse_validation_reconstructions.png")
 
 
-def _plot_parameter_recovery(model, loaders, norm_params, num_bins: int = 8, max_examples: int = 3000):
+def _plot_parameter_recovery(model, loaders, norm_params, out_dir, num_bins: int = 8, max_examples: int = 3000):
     """Predicted-vs-true design parameters, binned across the COMPLETE
     physical range each field was Latin-Hypercube-sampled within (same
     ``_DESIGN_PHYSICAL_BOUNDS`` this model soft-clamps to, not just the
@@ -187,7 +188,7 @@ def _plot_parameter_recovery(model, loaders, norm_params, num_bins: int = 8, max
     with torch.no_grad():
         predicted = model.sample(test_spectrum.to(device), num_samples=1)[:, 0, :].cpu()  # (n, D)
     predicted_physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)  # (n, num_res, 5)
-    true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm_params)
+    true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm_params, consistent=False)
 
     fig, axes = plt.subplots(1, len(_CONFIG_FIELDS), figsize=(4.6 * len(_CONFIG_FIELDS), 4.6))
     for col, field in enumerate(_CONFIG_FIELDS):
@@ -235,9 +236,7 @@ def _plot_parameter_recovery(model, loaders, norm_params, num_bins: int = 8, max
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.92])
-    fig.savefig(OUT_DIR / "surrogate_inverse_parameter_recovery.png", dpi=150)
-    plt.close(fig)
-    print(f"Saved {OUT_DIR / 'surrogate_inverse_parameter_recovery.png'}")
+    save_figure(fig, out_dir / "surrogate_inverse_parameter_recovery.png")
 
 
 if __name__ == "__main__":
