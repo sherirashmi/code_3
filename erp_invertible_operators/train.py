@@ -52,7 +52,7 @@ import torch
 
 from erp_invertible_operators.common import InvertibleOperatorBase
 from erp_invertible_operators.registry import INVERTIBLE_OPERATORS
-from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
+from erp_inverse_operators.common import denormalize_design, prepare_inverse_data, sort_resonators_by_ft
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from utils.erp_dataset import (
@@ -112,6 +112,7 @@ def _run_stage(
     tag: str,
     stage: str,
     beta_schedule=None,
+    diagnose: bool = False,
 ):
     """Generic stage loop: Adam + cosine, grad clip, best-val restore.
 
@@ -121,6 +122,8 @@ def _run_stage(
     """
     parameters = list(parameters)
     history = {"train": [], "val": []}
+    if diagnose:
+        history["diagnostics"] = []
     if epochs <= 0:
         return history
     optimizer = torch.optim.Adam(parameters, lr=lr)
@@ -173,6 +176,17 @@ def _run_stage(
             best_val = val_loss
             best_state = copy.deepcopy(state_module.state_dict())
         print(f"[{tag} {stage}] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f} | beta={beta:.4f}")
+        if diagnose:
+            # Numerical health of the invertible core on one validation batch.
+            spectrum, design = next(iter(loaders["val"]))
+            diag = model.diagnostics(
+                spectrum.to(device), design.to(device).reshape(design.shape[0], -1)
+            )
+            history["diagnostics"].append(diag)
+            print(
+                f"    core: round-trip err={diag['round_trip_rel_err']:.1e} | latent norm x{diag['latent_norm_ratio']:.2f}"
+                f" | gate [{diag['gate_min']:.2f}, {diag['gate_max']:.2f}] | fwd/inv latent misalignment {diag['latent_alignment']:.2f}"
+            )
 
     if best_state is not None:
         state_module.load_state_dict(best_state)
@@ -180,26 +194,43 @@ def _run_stage(
     return history
 
 
-def train_stage1(model, loaders, epochs: int, tag: str, lr: float = STAGE1_LR):
+def train_stage1(model, loaders, epochs: int, tag: str, lr: float = STAGE1_LR, cycle_weight: float = 0.0, align_weight: float = 0.0):
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=_non_vae_parameters(model),
-        loss_fn=lambda s, d, _b: model.stage1_loss(s, d), state_module=model, tag=tag, stage="stage1",
+        loss_fn=lambda s, d, _b: model.stage1_loss(s, d, cycle_weight=cycle_weight, align_weight=align_weight),
+        state_module=model, tag=tag, stage="stage1", diagnose=True,
     )
 
 
-def train_stage2(model, loaders, epochs: int, tag: str, lr: float = STAGE2_LR):
+def train_stage2(model, loaders, epochs: int, tag: str, lr: float = STAGE2_LR, source: str = "true"):
+    """``source="true"`` (paper): VAE on true designs. ``"estimates"``: the
+    VAE encoder sees the (frozen) stage-1 inverse point estimates -- the
+    input it gets in stage 3 / at inference -- and decodes the true design."""
+    if source == "estimates":
+        def loss_fn(s, d, b):
+            with torch.no_grad():
+                estimate = model.infer_point_estimate(s)
+            return model.stage2_loss(d, beta=b, encoder_input=estimate)
+    else:
+        def loss_fn(_s, d, b):
+            return model.stage2_loss(d, beta=b)
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=model.vae.parameters(),
-        loss_fn=lambda _s, d, b: model.stage2_loss(d, beta=b), state_module=model.vae, tag=tag, stage="stage2",
+        loss_fn=loss_fn, state_module=model.vae, tag=tag, stage="stage2",
         beta_schedule=lambda epoch: KL_TARGET_BETA * min(1.0, epoch / max(KL_WARMUP_EPOCHS, 1)),
     )
 
 
-def train_stage3(model, loaders, epochs: int, tag: str, lr: float = STAGE3_LR, inverse_weight: float = STAGE3_INVERSE_WEIGHT):
+def train_stage3(
+    model, loaders, epochs: int, tag: str, lr: float = STAGE3_LR, inverse_weight: float = STAGE3_INVERSE_WEIGHT,
+    cycle_weight: float = 0.0, align_weight: float = 0.0,
+):
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=model.parameters(),
-        loss_fn=lambda s, d, b: model.stage3_loss(s, d, beta=b, inverse_weight=inverse_weight),
-        state_module=model, tag=tag, stage="stage3",
+        loss_fn=lambda s, d, b: model.stage3_loss(
+            s, d, beta=b, inverse_weight=inverse_weight, cycle_weight=cycle_weight, align_weight=align_weight
+        ),
+        state_module=model, tag=tag, stage="stage3", diagnose=True,
     )
 
 
@@ -233,11 +264,11 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
     true_curves, pred_curves, configs_used = [], [], []
     with torch.no_grad():
         for spectrum, design in loaders["test"]:
-            configuration = design.to(device, non_blocking=True)
-            pred = model.predict_spectrum(configuration).squeeze(-1).cpu()  # (B, F) normalized
+            flat = design.to(device, non_blocking=True).reshape(design.shape[0], -1)
+            pred = model.predict_spectrum_from_design(flat).squeeze(-1).cpu()  # (B, F) normalized
             true_curves.append(denormalize_erp_array(spectrum, norm))
             pred_curves.append(denormalize_erp_array(pred, norm))
-            configs_used.append(design.numpy())
+            configs_used.append(design.reshape(design.shape[0], -1).numpy())
     true = np.concatenate(true_curves, axis=0)
     pred = np.concatenate(pred_curves, axis=0)
     configs_used = np.concatenate(configs_used, axis=0)
@@ -264,7 +295,7 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
         metrics={
             "predictions": pred,
             "targets": true,
-            "configurations": denormalize_configuration_array(configs_used, norm),
+            "configurations": denormalize_design(configs_used, NUM_RES, norm, consistent=False),
         },
         frequency_values=np.asarray(dataset.frequency_values),
         plot_dir=out_dir,
@@ -310,7 +341,7 @@ def evaluate_inverse(
     num_plot = min(num_plot, n)
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum, norm)  # (n, F) dB
-    true_design = denormalize_configuration_array(test_design.numpy(), norm)  # (n, R, 5)
+    true_design = denormalize_design(test_design.reshape(n, -1).numpy(), NUM_RES, norm, consistent=False)  # (n, R, 5)
 
     with torch.no_grad():
         samples = model.sample(test_spectrum.to(device), num_samples=num_samples).cpu()  # (n, S, D)
@@ -318,9 +349,11 @@ def evaluate_inverse(
     physical = denormalize_design(samples.numpy(), NUM_RES, norm)  # (n, S, R, 5), physically consistent
     point_physical = denormalize_design(point.numpy(), NUM_RES, norm)  # (n, R, 5)
 
-    # Target-blind (solver-free) selection with the model's OWN forward
-    # direction: re-normalise the projected designs and pick the sample
-    # whose predicted spectrum is closest to the target.
+    # Selection with the model's OWN forward direction: re-normalise the
+    # (physically consistent) designs and pick the sample whose predicted
+    # spectrum is closest to the target. This is TARGET-INFORMED (it compares
+    # with the target spectrum) but solver-free -- a deployable rule for an
+    # invertible model, distinct from the solver-based oracle below.
     with torch.no_grad():
         renorm = torch.from_numpy(normalize_configuration_array(physical, norm)).to(device)
         own = model.predict_spectrum(renorm.reshape(n * num_samples, NUM_RES, 5)).squeeze(-1)
@@ -344,7 +377,10 @@ def evaluate_inverse(
         "point_estimate": _metrics(solved_point, true_erp),
         "oracle_best_of_samples": _metrics(solved[rows, oracle], true_erp),
     }
-    best_design = physical[rows, selected]  # (n, R, 5)
+    # Predicted resonators sorted by their own f_t before slot-by-slot
+    # comparison with the (f_t-sorted) truth -- predictions are not
+    # constrained to stay in that order (the solver score is unaffected).
+    best_design = sort_resonators_by_ft(physical[rows, selected])  # (n, R, 5)
     stats["design_recovery"] = {
         name: {
             "mae": float(np.abs(best_design[..., i] - true_design[..., i]).mean()),
@@ -355,7 +391,7 @@ def evaluate_inverse(
     print("=" * 68)
     print(f"[{tag} inverse] solver-scored, {n} targets x {num_samples} samples")
     for key, label in (("random_sample", "random sample"),
-                       ("selected_by_own_forward", "selected (own forward)"),
+                       ("selected_by_own_forward", "own forward (target-informed)"),
                        ("point_estimate", "point estimate"),
                        ("oracle_best_of_samples", "oracle best-of-N")):
         m = stats[key]
@@ -411,21 +447,68 @@ def evaluate_inverse(
 # ==================================================
 
 
-def variant(key: str, use_sorted_branch: bool = False) -> tuple[str, dict]:
-    """(model name, model_config) for a registry entry and encoder variant.
+# Model options (stored in the checkpoint's model_config) and training
+# options (stored in its training_config). Every non-default choice adds a
+# suffix to the model name, so variants never overwrite each other.
+MODEL_OPTION_DEFAULTS = {
+    "use_sorted_branch": False,   # _sorted : + f_t-sorted resonator branch (iFNO/iDCO)
+    "design_param": "full15",     # _b12    : bounded 12-D [m, f_t, x, y], k derived
+    "gate": "softplus",           # _bg     : bounded, identity-initialised gate exp(c tanh(a L))
+    "readout": "pooled",          # _bin    : + ordered frequency bins in the design readout
+    "spectral_padding": 0,        # _pad    : zero-padded FFT (iFNO only)
+}
+TRAIN_OPTION_DEFAULTS = {
+    "cycle_weight": 0.0,          # _cyc    : design cycle  x -> y_hat -> x_hat
+    "align_weight": 0.0,          #           + forward/inverse latent alignment
+    "stage2_source": "true",      # _s2e    : stage-2 VAE pretrained on stage-1 estimates
+}
+RECOMMENDED_OPTIONS = {
+    "design_param": "bounded12", "gate": "bounded", "readout": "binned", "spectral_padding": 8,
+    "cycle_weight": 0.1, "align_weight": 0.1, "stage2_source": "estimates",
+}
 
-    The f_t-sorted resonator branch (DCO_sorted design) exists for iFNO and
-    iDCO; such models are saved/plotted as ``<MODEL>_sorted``.
-    """
+
+def variant(key: str, use_sorted_branch: bool = False, options: dict | None = None) -> tuple[str, dict, dict]:
+    """(model name, model_config, training options) for a registry entry."""
     spec = INVERTIBLE_OPERATORS[key]
-    if use_sorted_branch and spec.get("supports_sorted_branch"):
-        return f"{spec['short']}_sorted", {**dict(spec["model_config"]), "use_sorted_branch": True}
-    return spec["short"], dict(spec["model_config"])
+    opts = {**MODEL_OPTION_DEFAULTS, **TRAIN_OPTION_DEFAULTS, **dict(options or {})}
+    opts["use_sorted_branch"] = bool(use_sorted_branch or opts["use_sorted_branch"])
+    if not spec.get("supports_sorted_branch"):
+        opts["use_sorted_branch"] = False
+    if spec["short"] != "iFNO":
+        opts["spectral_padding"] = 0
+    name = spec["short"]
+    if opts["use_sorted_branch"]:
+        name += "_sorted"
+    if opts["design_param"] == "bounded12":
+        name += "_b12"
+    if opts["gate"] == "bounded":
+        name += "_bg"
+    if opts["readout"] == "binned":
+        name += "_bin"
+    if opts["spectral_padding"]:
+        name += "_pad"
+    if opts["cycle_weight"] > 0 or opts["align_weight"] > 0:
+        name += "_cyc"
+    if opts["stage2_source"] == "estimates":
+        name += "_s2e"
+    model_config = dict(spec["model_config"])
+    for k in ("use_sorted_branch", "design_param", "gate", "readout", "spectral_padding"):
+        if opts[k] != MODEL_OPTION_DEFAULTS[k]:
+            model_config[k] = opts[k]
+    train_opts = {k: opts[k] for k in TRAIN_OPTION_DEFAULTS}
+    return name, model_config, train_opts
 
 
-def _load_checkpoint(key: str, dataset_tag: str, use_sorted_branch: bool = False):
+def _design_dim_of(model_config: dict) -> int:
+    from erp_inverse_operators.design_space import design_dim
+
+    return design_dim(model_config.get("design_param", "full15"), NUM_RES)
+
+
+def _load_checkpoint(key: str, dataset_tag: str, use_sorted_branch: bool = False, options: dict | None = None):
     spec = INVERTIBLE_OPERATORS[key]
-    name, _config = variant(key, use_sorted_branch)
+    name, _config, _train = variant(key, use_sorted_branch, options)
     path = invertible_model_path(name, dataset_tag)
     if not path.exists():
         raise FileNotFoundError(f"{path} not found -- train {name} on dataset '{dataset_tag}' first.")
@@ -433,7 +516,8 @@ def _load_checkpoint(key: str, dataset_tag: str, use_sorted_branch: bool = False
     if dataset_tag in DATASETS:
         # Solver checks of this model use the Nx x Ny it was trained with.
         apply_model_modal_resolution(checkpoint, DATASETS[dataset_tag]["files"], model_name=name)
-    model = spec["build"](design_dim=DESIGN_DIM, **checkpoint.get("model_config", spec["model_config"]))
+    model_config = dict(checkpoint.get("model_config", spec["model_config"]))
+    model = spec["build"](design_dim=_design_dim_of(model_config), **model_config)
     model.load_state_dict(checkpoint["model_state_dict"])
     return model.to(device), checkpoint
 
@@ -451,40 +535,54 @@ def train_one(
     num_inverse_examples: int = 100,
     num_inverse_samples: int = 8,
     use_sorted_branch: bool = False,
+    options: dict | None = None,
     _data=None,
 ):
-    """Train + evaluate exactly one registry entry (e.g. key="2" for iDCO)."""
+    """Train + evaluate exactly one registry entry (e.g. key="2" for iDCO).
+
+    ``options``: see MODEL_OPTION_DEFAULTS / TRAIN_OPTION_DEFAULTS
+    (``RECOMMENDED_OPTIONS`` = all improvements switched on).
+    """
     spec = INVERTIBLE_OPERATORS[key]
-    tag, model_config = variant(key, use_sorted_branch)
+    tag, model_config, train_opts = variant(key, use_sorted_branch, options)
+    design_param = model_config.get("design_param", "full15")
     dataset_tag = dataset_tag_for(dataset_file)
 
     seed_everything(seed)
-    if _data is None:
+    if _data is None or getattr(_data[0], "design_param", "full15") != design_param:
         _data = prepare_inverse_data(
-            num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file, seed=seed,
+            num_configurations=num_configurations, batch_size=batch_size, dataset_file=dataset_file,
+            seed=seed, design_param=design_param,
         )
     dataset, loaders = _data
     norm = dataset.norm_params
     out_dir = invertible_plot_dir(dataset_tag, tag)
 
-    model: InvertibleOperatorBase = spec["build"](design_dim=DESIGN_DIM, **model_config).to(device)
-    print(f"{tag} params: {sum(p.numel() for p in model.parameters()):,} | dataset '{dataset_tag}'")
+    model: InvertibleOperatorBase = spec["build"](design_dim=_design_dim_of(model_config), **model_config).to(device)
+    model.set_design_normalization(norm)
+    print(f"{tag} params: {sum(p.numel() for p in model.parameters()):,} | dataset '{dataset_tag}' | "
+          f"model options {model_config} | training options {train_opts}")
 
+    cw, aw = float(train_opts["cycle_weight"]), float(train_opts["align_weight"])
     print("\n" + "#" * 70 + f"\n{tag} Stage 1: invertible coupling blocks + P/Q/P'/Q'\n" + "#" * 70)
-    history1 = train_stage1(model, loaders, epochs=stage1_epochs, tag=tag)
-    print("\n" + "#" * 70 + f"\n{tag} Stage 2: beta-VAE pretraining (design space only)\n" + "#" * 70)
-    history2 = train_stage2(model, loaders, epochs=stage2_epochs, tag=tag)
+    history1 = train_stage1(model, loaders, epochs=stage1_epochs, tag=tag, cycle_weight=cw, align_weight=aw)
+    print("\n" + "#" * 70 + f"\n{tag} Stage 2: beta-VAE pretraining\n" + "#" * 70)
+    history2 = train_stage2(model, loaders, epochs=stage2_epochs, tag=tag, source=train_opts["stage2_source"])
     print("\n" + "#" * 70 + f"\n{tag} Stage 3: joint fine-tuning\n" + "#" * 70)
-    history3 = train_stage3(model, loaders, epochs=stage3_epochs, tag=tag, inverse_weight=stage3_inverse_weight)
+    history3 = train_stage3(model, loaders, epochs=stage3_epochs, tag=tag, inverse_weight=stage3_inverse_weight,
+                            cycle_weight=cw, align_weight=aw)
     histories = {"Stage 1 (invertible blocks)": history1, "Stage 2 ($\\beta$-VAE)": history2,
                  "Stage 3 (joint)": history3}
 
     training_config = {
-        "stage1": {"epochs": stage1_epochs, "lr": STAGE1_LR, "loss": "J_FWD + J_INV + J_PQ' + J_P'Q (MSE each)"},
+        "stage1": {"epochs": stage1_epochs, "lr": STAGE1_LR,
+                   "loss": "J_FWD + J_INV + J_PQ' + J_P'Q (+ w_cyc*J_cycle + w_align*J_align)"},
         "stage2": {"epochs": stage2_epochs, "lr": STAGE2_LR, "loss": "MSE recon + beta*KL",
-                   "beta": KL_TARGET_BETA, "kl_warmup_epochs": KL_WARMUP_EPOCHS},
+                   "beta": KL_TARGET_BETA, "kl_warmup_epochs": KL_WARMUP_EPOCHS,
+                   "encoder_input": train_opts["stage2_source"]},
         "stage3": {"epochs": stage3_epochs, "lr": STAGE3_LR, "beta": KL_TARGET_BETA,
-                   "loss": "J_FWD + J_PQ' + J_P'Q + J_betaVAE + w_inv*J_INV", "w_inv": stage3_inverse_weight},
+                   "loss": "J_FWD + J_PQ' + J_P'Q + J_betaVAE + w_inv*J_INV (+ cycle/align)", "w_inv": stage3_inverse_weight},
+        "cycle_weight": cw, "align_weight": aw,
         "optimizer": "Adam + CosineAnnealingLR(eta_min=0.01*lr)", "grad_clip_norm": GRAD_CLIP,
         "batch_size": batch_size, "num_configurations": num_configurations, "seed": seed,
         "dataset_tag": dataset_tag,
@@ -524,15 +622,18 @@ def evaluate_one(
     num_inverse_examples: int = 100,
     num_inverse_samples: int = 8,
     use_sorted_branch: bool = False,
+    options: dict | None = None,
 ):
     """Re-evaluate an existing checkpoint (no training)."""
     dataset_tag = dataset_tag_for(dataset_file)
-    model, checkpoint = _load_checkpoint(key, dataset_tag, use_sorted_branch)
-    tag, _config = variant(key, use_sorted_branch)
+    model, checkpoint = _load_checkpoint(key, dataset_tag, use_sorted_branch, options)
+    tag = variant(key, use_sorted_branch, options)[0]
+    design_param = dict(checkpoint.get("model_config", {})).get("design_param", "full15")
     num_configurations = int(num_configurations or checkpoint.get("num_configurations")
                              or DATASETS.get(dataset_tag, {}).get("num_configurations", NUM_CONFIGURATIONS))
     dataset, loaders = prepare_inverse_data(
         num_configurations=num_configurations, batch_size=BATCH_SIZE, dataset_file=dataset_file, seed=seed,
+        design_param=design_param,
     )
     norm = dataset.norm_params
     from erp_inverse_operators.evaluate import _check_norm
@@ -576,13 +677,20 @@ def _save_comparison(results: dict, dataset_tag: str) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.3))
     x = np.arange(len(names))
     fwd = [results[k][2]["rmse_db"] for k in results]
-    inv = [results[k][3]["selected_by_own_forward"]["rmse_db"] for k in results]
-    for ax, values, title in ((axes[0], fwd, "Forward: test RMSE"), (axes[1], inv, "Inverse: solver-scored RMSE")):
-        bars = ax.bar(x, values, color=[colors[n] for n in names])
-        ax.bar_label(bars, fmt="%.2f", padding=2, fontsize=8)
-        ax.set_xticks(x, names)
+    bars = axes[0].bar(x, fwd, color=[colors[n] for n in names])
+    axes[0].bar_label(bars, fmt="%.2f", padding=2, fontsize=8)
+    axes[0].set_title("Forward: test RMSE")
+    width = 0.27
+    for j, (rule, label) in enumerate((("random_sample", "random sample"),
+                                       ("selected_by_own_forward", "own forward (target-informed)"),
+                                       ("oracle_best_of_samples", "best-of-N by solver (oracle)"))):
+        vals = [results[k][3][rule]["rmse_db"] for k in results]
+        axes[1].bar(x + (j - 1) * width, vals, width, label=label)
+    axes[1].set_title("Inverse: solver-scored RMSE")
+    axes[1].legend(fontsize=8)
+    for ax in axes:
+        ax.set_xticks(x, names, rotation=15)
         ax.set_ylabel("RMSE (dB)")
-        ax.set_title(title)
         ax.grid(True, axis="y")
     fig.suptitle(f"Invertible operators ({dataset_tag})")
     fig.tight_layout()
@@ -602,17 +710,18 @@ def main(keys: tuple[str, ...] = ("1", "2", "3"), evaluate_only: bool = False, *
         if evaluate_only:
             eval_kwargs = {k: v for k, v in kwargs.items()
                            if k in ("dataset_file", "num_configurations", "seed", "num_inverse_examples",
-                                    "num_inverse_samples", "use_sorted_branch")}
+                                    "num_inverse_samples", "use_sorted_branch", "options")}
             _model, history, fwd, inv = evaluate_one(key, **eval_kwargs)
         else:
             if shared is None:
+                design_param = {**MODEL_OPTION_DEFAULTS, **dict(kwargs.get("options") or {})}["design_param"]
                 shared = prepare_inverse_data(
                     num_configurations=kwargs.get("num_configurations", NUM_CONFIGURATIONS),
                     batch_size=kwargs.get("batch_size", BATCH_SIZE),
-                    dataset_file=dataset_file, seed=kwargs.get("seed", SEED),
+                    dataset_file=dataset_file, seed=kwargs.get("seed", SEED), design_param=design_param,
                 )
             _model, history, fwd, inv = train_one(key, _data=shared, **kwargs)
-        results[key] = (variant(key, kwargs.get("use_sorted_branch", False))[0], history, fwd, inv)
+        results[key] = (variant(key, kwargs.get("use_sorted_branch", False), kwargs.get("options"))[0], history, fwd, inv)
     if len(results) > 1:
         _save_comparison(results, dataset_tag)
     return results

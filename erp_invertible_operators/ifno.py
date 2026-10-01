@@ -64,6 +64,7 @@ from typing import Mapping
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from erp_forward_operators.neural_operator_utils import (
     MLP,
@@ -87,8 +88,13 @@ class SpectralConv1d(nn.Module):
     erp_forward_operators/fno.py's own SpectralConv1d.
     """
 
-    def __init__(self, in_channels: int, out_channels: int, modes: int) -> None:
+    def __init__(self, in_channels: int, out_channels: int, modes: int, padding: int = 0) -> None:
         super().__init__()
+        # Zero-padding the (non-periodic) frequency axis before the FFT
+        # stops the FFT's implicit periodicity from coupling the 10 Hz and
+        # 160 Hz ends of the band (same idea as erp_forward_operators/fno.py's
+        # padding). 0 = original behaviour.
+        self.padding = int(padding)
         self.in_channels = int(in_channels)
         self.out_channels = int(out_channels)
         self.modes = int(modes)
@@ -97,12 +103,15 @@ class SpectralConv1d(nn.Module):
         self.weight = nn.Parameter(weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n_orig = x.shape[-1]
+        if self.padding > 0:
+            x = F.pad(x, (0, self.padding))
         n = x.shape[-1]
         x_ft = torch.fft.rfft(x, dim=-1)
         n_modes = min(self.modes, x_ft.shape[-1])
         out_ft = torch.zeros(x.shape[0], self.out_channels, x_ft.shape[-1], device=x.device, dtype=torch.cfloat)
         out_ft[:, :, :n_modes] = torch.einsum("bim,iom->bom", x_ft[:, :, :n_modes], self.weight[:, :, :n_modes])
-        return torch.fft.irfft(out_ft, n=n, dim=-1)
+        return torch.fft.irfft(out_ft, n=n, dim=-1)[..., :n_orig]
 
 
 class FourierLayer1d(nn.Module):
@@ -114,9 +123,9 @@ class FourierLayer1d(nn.Module):
     coupling structure built from it (coupling.py) is.
     """
 
-    def __init__(self, width: int, modes: int, activation: str | type[nn.Module] = "gelu") -> None:
+    def __init__(self, width: int, modes: int, activation: str | type[nn.Module] = "gelu", padding: int = 0) -> None:
         super().__init__()
-        self.spectral = SpectralConv1d(width, width, modes)
+        self.spectral = SpectralConv1d(width, width, modes, padding=padding)
         self.local = nn.Conv1d(width, width, kernel_size=3, padding=1)
         self.norm = nn.GroupNorm(1, width)
         self.activation = resolve_activation(activation)()
@@ -145,12 +154,17 @@ class IFNO(InvertibleOperatorBase):
         tau: float = 1.0,
         activation: str | type[nn.Module] = "gelu",
         use_sorted_branch: bool = False,
+        design_param: str = "full15",
+        num_res: int = 3,
+        gate: str = "softplus",
+        gate_scale: float = 2.0,
+        readout: str = "pooled",
+        readout_bins: int = 16,
+        spectral_padding: int = 0,
     ) -> None:
         super().__init__()
-        if design_dim % 5 != 0:
-            raise ValueError("design_dim must be num_res*5 ([m,k,f_t,x,y] per resonator).")
-        self.design_dim = int(design_dim)
-        self.num_res = self.design_dim // 5
+        # full15 ([m,k,f_t,x,y]) or bounded12 ([m,f_t,x,y], k derived) designs
+        self._init_design(design_dim, design_param, num_res)
         self.n_freq = int(n_freq)
         self.width = int(width)
 
@@ -173,7 +187,7 @@ class IFNO(InvertibleOperatorBase):
 
         # ---- Shared invertible coupling blocks, gated by an FNO Fourier layer ----
         self.blocks = InvertibleCouplingStack(
-            lambda: FourierLayer1d(self.width, modes, activation=activation), num_blocks, tau=tau
+            lambda: FourierLayer1d(self.width, modes, activation=activation, padding=spectral_padding), num_blocks, tau=tau, gate=gate, gate_scale=gate_scale
         )
 
         # ---- Output projections ----
@@ -182,7 +196,7 @@ class IFNO(InvertibleOperatorBase):
             nn.Linear(2 * self.width, 2 * self.width), activation_cls(), nn.Linear(2 * self.width, 1)
         )  # Q: per-point (v1,v2) -> ERP scalar
         self.project_qp = MLP(
-            [4 * self.width, vae_hidden, self.design_dim], activation=nn.SiLU
+            [self._init_readout(readout, readout_bins), vae_hidden, self.design_dim], activation=nn.SiLU
         )  # Q': pooled (v1,v2) over frequency -> flat design
 
         # ---- beta-VAE over the design space (Sec 3.2) ----

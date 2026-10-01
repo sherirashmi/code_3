@@ -198,11 +198,31 @@ the paper's eq. 11 exactly. All values can be changed from `main.py`.
 | iDCO | 81,491 | width=24, num_blocks=4, branch_dim=56, trunk_dim=28, query_dim=32, z_dim=6, vae_hidden=64, τ=1, silu |
 | iGNO | 59,272 | width=24, num_blocks=4, depth=3, frequency_dim=28, modal_harmonics=4, dropout=0.1, z_dim=6, vae_hidden=64, τ=1, silu |
 
+**Configurations** (asked in `main.py`; non-default choices are part of the
+model name): *Standard* (paper-style, the existing checkpoints) or
+*Recommended* = all of
+
+| Option | Suffix | What it does |
+|---|---|---|
+| bounded 12-D design | `_b12` | predict `[m, f_t, x, y]`, logit-bounded; `k` derived and the z-scored configuration rebuilt before the forward lift |
+| bounded gate | `_bg` | `S = exp(c·tanh(a·L))`, `a = 0` at init -> every block starts as the identity, scale in `[e^-c, e^c]` (paper: `softplus(L)`, 0.69 at init, unbounded) |
+| binned readout | `_bin` | design readout gets 16 ordered frequency bins besides mean/max pooling |
+| FFT padding | `_pad` | iFNO only: zero-pad the non-periodic frequency axis by 8 points before the FFT |
+| cycle + alignment | `_cyc` | `0.1·MSE(x̂(ŷ(x)), x) + 0.1·‖P'(y) − F(P(x))‖²/‖F(P(x))‖²` in stages 1 and 3 |
+| stage-2 on estimates | `_s2e` | VAE pretrained on stage-1 inverse estimates (its stage-3 input) instead of true designs |
+
+Only the coupling stack is exactly invertible (between latent tensors);
+lifts and readouts are learned and lossy, so these are bidirectional models
+with an invertible core, without an exact density over designs. Every
+stage-1/3 epoch logs the core's round-trip error, latent-norm growth, gate
+range and forward/inverse latent misalignment (also stored in the
+checkpoint history).
+
 Inverse evaluation: 8 samples per target are projected onto physically
-consistent designs (k = m(2πf_t)², bounds clipped), one is selected with the
-model's own forward direction (no solver, no ground truth), and that design
-is scored with the actual coupled solver. Point-estimate and oracle
-best-of-N scores are reported alongside.
+consistent designs (k = m(2πf_t)², bounds clipped), and scored with the actual coupled solver under: a random sample; the
+sample selected with the model's own forward direction (target-informed,
+no solver); the point estimate; and the oracle best-of-N by solver. Predicted
+resonators are sorted by f_t before parameter recovery.
 
 ### Inverse models (`erp_inverse_operators/`)
 

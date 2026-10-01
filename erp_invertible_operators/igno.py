@@ -139,12 +139,16 @@ class IGNO(InvertibleOperatorBase):
         vae_hidden: int = 64,
         tau: float = 1.0,
         activation: str | type[nn.Module] = "silu",
+        design_param: str = "full15",
+        num_res: int = 3,
+        gate: str = "softplus",
+        gate_scale: float = 2.0,
+        readout: str = "pooled",
+        readout_bins: int = 16,
     ) -> None:
         super().__init__()
-        if design_dim % 5 != 0:
-            raise ValueError("design_dim must be num_res*5 ([m,k,f_t,x,y] per resonator).")
-        self.design_dim = int(design_dim)
-        self.num_res = self.design_dim // 5
+        # full15 ([m,k,f_t,x,y]) or bounded12 ([m,f_t,x,y], k derived) designs
+        self._init_design(design_dim, design_param, num_res)
         self.n_freq = int(n_freq)
         self.width = int(width)
         self.modal_harmonics = int(modal_harmonics)
@@ -176,7 +180,7 @@ class IGNO(InvertibleOperatorBase):
 
         # ---- Shared invertible coupling blocks, gated by GNO's own layer ----
         self.blocks = InvertibleCouplingStack(
-            lambda: GNOGateLayer1d(self.width, activation=activation), num_blocks, tau=tau
+            lambda: GNOGateLayer1d(self.width, activation=activation), num_blocks, tau=tau, gate=gate, gate_scale=gate_scale
         )
 
         # ---- Output projections ----
@@ -184,7 +188,7 @@ class IGNO(InvertibleOperatorBase):
             nn.Linear(2 * self.width, 2 * self.width), activation_cls(), nn.Linear(2 * self.width, 1)
         )  # Q: per-point (v1,v2) -> ERP scalar
         self.project_qp = MLP(
-            [4 * self.width, vae_hidden, self.design_dim], activation=nn.SiLU
+            [self._init_readout(readout, readout_bins), vae_hidden, self.design_dim], activation=nn.SiLU
         )  # Q': pooled (v1,v2) over frequency -> flat design
 
         # ---- beta-VAE over the design space (Sec 3.2) ----

@@ -1053,6 +1053,35 @@ def _print_invertible_menu() -> None:
     print("=" * 56)
 
 
+def _prompt_invertible_options(invertible) -> dict:
+    """Configuration of the invertible operators (see erp_invertible_operators/train.py)."""
+    print("\nInvertible-operator configuration")
+    print("1. Standard     (paper-style: 15-D design, softplus gate, pooled readout)  [existing models]")
+    print("2. Recommended  (bounded 12-D design, identity-init bounded gate, binned readout,")
+    print("                 iFNO FFT padding, cycle+alignment terms 0.1, stage-2 on stage-1 estimates)")
+    print("3. Custom       (choose each option)")
+    choice = _prompt_choice("Select configuration: ", {"1": None, "2": None, "3": None})
+    if choice == "1":
+        return {}
+    if choice == "2":
+        return dict(invertible.RECOMMENDED_OPTIONS)
+    opts = {}
+    if _prompt_yes_no("Bounded 12-D design [m, f_t, x, y] with k derived (suffix _b12)?", default=True):
+        opts["design_param"] = "bounded12"
+    if _prompt_yes_no("Identity-initialised bounded gate exp(c tanh(a L)) (suffix _bg)?", default=True):
+        opts["gate"] = "bounded"
+    if _prompt_yes_no("Ordered frequency bins in the design readout (suffix _bin)?", default=True):
+        opts["readout"] = "binned"
+    if _prompt_yes_no("Zero-padded FFT in iFNO's spectral layer (suffix _pad, iFNO only)?", default=True):
+        opts["spectral_padding"] = _prompt_int("Padding (frequency points)", default=8, minimum=1)
+    if _prompt_yes_no("Design-cycle + latent-alignment loss terms (suffix _cyc)?", default=True):
+        opts["cycle_weight"] = _prompt_float("Cycle weight", default=0.1, minimum=0.0)
+        opts["align_weight"] = _prompt_float("Alignment weight", default=0.1, minimum=0.0)
+    if _prompt_yes_no("Stage-2 VAE pretraining on stage-1 inverse estimates (suffix _s2e)?", default=True):
+        opts["stage2_source"] = "estimates"
+    return opts
+
+
 def main_invertible_operators():
     """Invertible-operator family (Long et al., arXiv:2402.11722): train with
     the 3-stage schedule, or re-evaluate saved checkpoints."""
@@ -1070,6 +1099,8 @@ def main_invertible_operators():
     use_sorted_branch = _prompt_encoder_variant(
         [INVERTIBLE_OPERATORS[k]["short"] for k in keys if INVERTIBLE_OPERATORS[k].get("supports_sorted_branch")]
     )
+    options = _prompt_invertible_options(invertible)
+    print("Model name(s): " + ", ".join(invertible.variant(k, use_sorted_branch, options)[0] for k in keys))
     tag, dataset_file = _prompt_dataset("100k")
     num_inverse_examples = _prompt_int("Held-out targets for the solver-scored inverse evaluation", default=100, minimum=1)
     num_inverse_samples = _prompt_int("Posterior samples per target", default=8, minimum=1)
@@ -1077,7 +1108,7 @@ def main_invertible_operators():
     if evaluate_only:
         return invertible.main(
             keys=tuple(keys), evaluate_only=True, dataset_file=dataset_file, seed=SEED,
-            use_sorted_branch=use_sorted_branch,
+            use_sorted_branch=use_sorted_branch, options=options,
             num_inverse_examples=num_inverse_examples, num_inverse_samples=num_inverse_samples,
         )
 
@@ -1103,6 +1134,7 @@ def main_invertible_operators():
         stage3_epochs=stage3,
         stage3_inverse_weight=inverse_weight,
         use_sorted_branch=use_sorted_branch,
+        options=options,
         num_inverse_examples=num_inverse_examples,
         num_inverse_samples=num_inverse_samples,
     )

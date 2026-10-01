@@ -2,7 +2,8 @@
 "Invertible Fourier Neural Operators for Tackling Both Forward and Inverse
 Problems", arXiv:2402.11722, eq 2/3), factored out of the original iFNO
 port so any architecture's own per-point layer can be dropped in as the
-gate function and get exact, closed-form bidirectionality for free.
+gate function and get an exactly invertible latent core for free (the
+lifts/readouts around it are not invertible, see common.py).
 
 The paper's own instantiation always uses an FNO Fourier layer as the gate
 function L. Nothing about the coupling update itself requires that -- eq
@@ -49,13 +50,27 @@ class InvertibleCouplingBlock(nn.Module):
     for stable float32 training here.
     """
 
-    def __init__(self, gate_net: nn.Module, tau: float = 1.0) -> None:
+    def __init__(self, gate_net: nn.Module, tau: float = 1.0, gate: str = "softplus", gate_scale: float = 2.0) -> None:
         super().__init__()
+        if gate not in ("softplus", "bounded"):
+            raise ValueError("gate must be 'softplus' or 'bounded'.")
         self.gate_net = gate_net
         self.tau = float(tau)
         self.eps = 1e-6
+        self.gate = gate
+        if gate == "bounded":
+            # S(x) = exp(c * tanh(a * L(x))) with a learnable gain a = 0 at
+            # init: every block starts as the exact identity (S = 1) and its
+            # per-step scale stays in [exp(-c), exp(c)].
+            self.gate_scale = float(gate_scale)
+            self.gate_gain = nn.Parameter(torch.zeros(1))
 
     def _gate(self, x: torch.Tensor) -> torch.Tensor:
+        if self.gate == "bounded":
+            return torch.exp(self.gate_scale * torch.tanh(self.gate_gain * self.gate_net(x)))
+        # Paper gate: positive but unbounded above, and softplus(0) = 0.69,
+        # so a freshly initialised block shrinks its input rather than
+        # starting at the identity.
         return F.softplus(self.gate_net(x), beta=self.tau) + self.eps
 
     def forward(self, v1: torch.Tensor, v2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -72,15 +87,27 @@ class InvertibleCouplingBlock(nn.Module):
 class InvertibleCouplingStack(nn.Module):
     """K stacked InvertibleCouplingBlocks -- forward runs blocks 1..K in
     order, inverse runs the SAME blocks (same weights) K..1 using each
-    block's own closed-form inverse. This is what makes "one architecture,
-    both directions" literal rather than a loose description, for whatever
-    gate-net family the caller builds each block from.
+    block's own closed-form inverse. The STACK is an exact bijection between
+    its latent tensors; the surrounding lifts and readouts of the full
+    models are learned and lossy, so a full model is bidirectional with an
+    invertible core, not an exact design<->spectrum bijection (see
+    erp_invertible_operators/common.py).
     """
 
-    def __init__(self, gate_net_factory: Callable[[], nn.Module], num_blocks: int, tau: float = 1.0) -> None:
+    def __init__(
+        self,
+        gate_net_factory: Callable[[], nn.Module],
+        num_blocks: int,
+        tau: float = 1.0,
+        gate: str = "softplus",
+        gate_scale: float = 2.0,
+    ) -> None:
         super().__init__()
         self.blocks = nn.ModuleList(
-            [InvertibleCouplingBlock(gate_net_factory(), tau=tau) for _ in range(num_blocks)]
+            [
+                InvertibleCouplingBlock(gate_net_factory(), tau=tau, gate=gate, gate_scale=gate_scale)
+                for _ in range(num_blocks)
+            ]
         )
 
     def forward(self, v1: torch.Tensor, v2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
