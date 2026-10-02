@@ -681,6 +681,18 @@ def main_all_models():
         )
     lbfgs_epochs = _prompt_lbfgs_epochs()
 
+    # Restarting after an interruption: offer to keep already-finished models.
+    finished = [
+        name for name in (_variant(spec, forward_options)[0] for spec in operator_specs)
+        if forward_model_path(name, tag).exists()
+    ]
+    skip_existing = False
+    if finished:
+        print(f"\nAlready trained on '{tag}': {', '.join(finished)}")
+        skip_existing = _prompt_yes_no(
+            "Skip these (evaluate their saved checkpoints instead of retraining)", default=True
+        )
+
     return train_all_models(
         operator_specs=operator_specs,
         num_configurations=num_configurations,
@@ -691,6 +703,7 @@ def main_all_models():
         lbfgs_epochs=lbfgs_epochs,
         epochs_override=epochs_override,
         forward_options=forward_options,
+        skip_existing=skip_existing,
     )
 
 
