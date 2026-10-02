@@ -3,70 +3,70 @@
 Example 1
 ==========================================================================================
 
---- Diffusion_b12 (solver spectrum-consistency (-MSE, uses the TARGET -- oracle; NOT a probability)) ---
-sample 1: score=-32.1276  relative_rank_share=100.0%  recon_MSE=32.1276 <-- best
-  res1: m=0.675kg k=65,760N/m f_t=49.7Hz x=1.159m y=0.170m
-  res2: m=0.229kg k=86,550N/m f_t=97.9Hz x=0.394m y=0.128m
-sample 2: score=-86.5119  relative_rank_share=  0.0%  recon_MSE=86.5119
-  res1: m=0.419kg k=37,451N/m f_t=47.6Hz x=0.590m y=0.338m
-  res2: m=0.345kg k=123,125N/m f_t=95.1Hz x=1.267m y=0.163m
-sample 3: score=-69.6206  relative_rank_share=  0.0%  recon_MSE=69.6206
-  res1: m=0.816kg k=85,896N/m f_t=51.6Hz x=1.245m y=0.278m
-  res2: m=0.284kg k=118,318N/m f_t=102.7Hz x=0.428m y=0.247m
-sample 4: score=-59.4294  relative_rank_share=  0.0%  recon_MSE=59.4294
-  res1: m=0.823kg k=92,216N/m f_t=53.3Hz x=1.224m y=0.205m
-  res2: m=0.274kg k=114,012N/m f_t=102.6Hz x=0.534m y=0.109m
-sample 5: score=-105.4878  relative_rank_share=  0.0%  recon_MSE=105.4878
-  res1: m=0.339kg k=27,035N/m f_t=45.0Hz x=1.018m y=0.177m
-  res2: m=0.485kg k=142,117N/m f_t=86.1Hz x=0.501m y=0.282m
-sample 6: score=-62.6504  relative_rank_share=  0.0%  recon_MSE=62.6504
-  res1: m=0.857kg k=76,914N/m f_t=47.7Hz x=1.168m y=0.359m
-  res2: m=0.267kg k=94,484N/m f_t=94.6Hz x=0.445m y=0.327m
+--- MDN_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=+2.0439  relative_rank_share= 14.5%  recon_MSE=80.3585
+  res1: m=0.476kg k=55,911N/m f_t=54.5Hz x=0.570m y=0.345m
+  res2: m=0.398kg k=190,036N/m f_t=110.0Hz x=0.962m y=0.351m
+sample 2: score=-2.0594  relative_rank_share=  0.2%  recon_MSE=61.2961
+  res1: m=0.442kg k=46,054N/m f_t=51.4Hz x=0.294m y=0.282m
+  res2: m=0.206kg k=97,409N/m f_t=109.4Hz x=0.240m y=0.182m
+sample 3: score=-2.7825  relative_rank_share=  0.1%  recon_MSE=59.8485
+  res1: m=0.587kg k=62,868N/m f_t=52.1Hz x=1.062m y=0.436m
+  res2: m=0.254kg k=93,472N/m f_t=96.5Hz x=0.218m y=0.175m
+sample 4: score=+1.6337  relative_rank_share=  9.6%  recon_MSE=50.8672
+  res1: m=0.351kg k=37,156N/m f_t=51.8Hz x=1.130m y=0.129m
+  res2: m=0.273kg k=99,940N/m f_t=96.3Hz x=0.344m y=0.351m
+sample 5: score=+3.6711  relative_rank_share= 73.9%  recon_MSE=66.3168 <-- best
+  res1: m=0.843kg k=89,942N/m f_t=52.0Hz x=0.899m y=0.131m
+  res2: m=0.419kg k=166,779N/m f_t=100.4Hz x=0.612m y=0.350m
+sample 6: score=-0.1941  relative_rank_share=  1.5%  recon_MSE=66.4796
+  res1: m=0.208kg k=23,209N/m f_t=53.2Hz x=0.388m y=0.222m
+  res2: m=0.227kg k=115,433N/m f_t=113.5Hz x=0.299m y=0.250m
 
 ==========================================================================================
 Example 2
 ==========================================================================================
 
---- Diffusion_b12 (solver spectrum-consistency (-MSE, uses the TARGET -- oracle; NOT a probability)) ---
-sample 1: score=-20.2084  relative_rank_share=  0.4%  recon_MSE=20.2084
-  res1: m=0.324kg k=96,345N/m f_t=86.8Hz x=0.125m y=0.166m
-  res2: m=0.547kg k=219,868N/m f_t=100.9Hz x=0.123m y=0.175m
-sample 2: score=-32.5830  relative_rank_share=  0.0%  recon_MSE=32.5830
-  res1: m=0.369kg k=92,679N/m f_t=79.8Hz x=0.181m y=0.183m
-  res2: m=0.546kg k=320,602N/m f_t=121.9Hz x=0.457m y=0.455m
-sample 3: score=-24.1442  relative_rank_share=  0.0%  recon_MSE=24.1442
-  res1: m=0.547kg k=152,492N/m f_t=84.0Hz x=0.111m y=0.332m
-  res2: m=0.362kg k=142,022N/m f_t=99.7Hz x=0.332m y=0.371m
-sample 4: score=-30.0883  relative_rank_share=  0.0%  recon_MSE=30.0883
-  res1: m=0.341kg k=93,120N/m f_t=83.1Hz x=0.285m y=0.330m
-  res2: m=0.726kg k=345,813N/m f_t=109.9Hz x=1.337m y=0.452m
-sample 5: score=-14.5700  relative_rank_share= 99.6%  recon_MSE=14.5700 <-- best
-  res1: m=0.507kg k=146,943N/m f_t=85.7Hz x=0.191m y=0.346m
-  res2: m=0.376kg k=179,387N/m f_t=110.0Hz x=0.081m y=0.083m
-sample 6: score=-23.7286  relative_rank_share=  0.0%  recon_MSE=23.7286
-  res1: m=0.398kg k=105,929N/m f_t=82.2Hz x=0.169m y=0.308m
-  res2: m=0.380kg k=194,789N/m f_t=113.9Hz x=0.063m y=0.110m
+--- MDN_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=+0.1236  relative_rank_share=  0.1%  recon_MSE=27.4380
+  res1: m=0.382kg k=109,147N/m f_t=85.1Hz x=0.199m y=0.048m
+  res2: m=0.523kg k=175,264N/m f_t=92.1Hz x=0.203m y=0.178m
+sample 2: score=+2.0837  relative_rank_share=  1.0%  recon_MSE=21.5997
+  res1: m=0.569kg k=150,395N/m f_t=81.8Hz x=0.230m y=0.136m
+  res2: m=0.740kg k=344,353N/m f_t=108.6Hz x=0.196m y=0.050m
+sample 3: score=-2.2888  relative_rank_share=  0.0%  recon_MSE=48.9577
+  res1: m=0.296kg k=75,625N/m f_t=80.4Hz x=0.914m y=0.039m
+  res2: m=0.391kg k=129,781N/m f_t=91.7Hz x=0.248m y=0.398m
+sample 4: score=-2.0921  relative_rank_share=  0.0%  recon_MSE=41.4308
+  res1: m=0.431kg k=108,830N/m f_t=79.9Hz x=0.451m y=0.081m
+  res2: m=0.485kg k=178,332N/m f_t=96.5Hz x=0.093m y=0.132m
+sample 5: score=-1.5612  relative_rank_share=  0.0%  recon_MSE=61.8311
+  res1: m=0.509kg k=129,028N/m f_t=80.2Hz x=1.252m y=0.379m
+  res2: m=0.603kg k=216,191N/m f_t=95.3Hz x=0.204m y=0.357m
+sample 6: score=+6.6893  relative_rank_share= 98.8%  recon_MSE=50.2360 <-- best
+  res1: m=0.574kg k=154,697N/m f_t=82.7Hz x=0.193m y=0.303m
+  res2: m=0.914kg k=501,337N/m f_t=117.8Hz x=0.069m y=0.050m
 
 ==========================================================================================
 Example 3
 ==========================================================================================
 
---- Diffusion_b12 (solver spectrum-consistency (-MSE, uses the TARGET -- oracle; NOT a probability)) ---
-sample 1: score=-11.7923  relative_rank_share=  7.1%  recon_MSE=11.7923
-  res1: m=0.123kg k=2,905N/m f_t=24.5Hz x=1.071m y=0.289m
-  res2: m=0.900kg k=26,845N/m f_t=27.5Hz x=0.619m y=0.176m
-sample 2: score=-10.6023  relative_rank_share= 23.4%  recon_MSE=10.6023
-  res1: m=0.395kg k=10,853N/m f_t=26.4Hz x=0.635m y=0.299m
-  res2: m=0.211kg k=9,650N/m f_t=34.0Hz x=0.906m y=0.189m
-sample 3: score=-16.3506  relative_rank_share=  0.1%  recon_MSE=16.3506
-  res1: m=0.342kg k=7,324N/m f_t=23.3Hz x=0.642m y=0.291m
-  res2: m=0.497kg k=22,333N/m f_t=33.7Hz x=1.133m y=0.307m
-sample 4: score=-11.1551  relative_rank_share= 13.4%  recon_MSE=11.1551
-  res1: m=0.342kg k=8,778N/m f_t=25.5Hz x=0.926m y=0.336m
-  res2: m=0.475kg k=17,755N/m f_t=30.8Hz x=0.688m y=0.269m
-sample 5: score=-9.7306  relative_rank_share= 55.9%  recon_MSE=9.7306 <-- best
-  res1: m=0.640kg k=16,096N/m f_t=25.2Hz x=0.874m y=0.248m
-  res2: m=0.191kg k=8,141N/m f_t=32.8Hz x=0.205m y=0.114m
-sample 6: score=-16.0031  relative_rank_share=  0.1%  recon_MSE=16.0031
-  res1: m=0.365kg k=8,439N/m f_t=24.2Hz x=0.708m y=0.349m
-  res2: m=0.141kg k=5,631N/m f_t=31.9Hz x=0.681m y=0.172m
+--- MDN_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=-0.6077  relative_rank_share=  0.0%  recon_MSE=13.6998
+  res1: m=0.347kg k=9,531N/m f_t=26.4Hz x=0.904m y=0.256m
+  res2: m=0.103kg k=3,759N/m f_t=30.5Hz x=0.093m y=0.326m
+sample 2: score=+6.1414  relative_rank_share=  2.3%  recon_MSE=10.9664
+  res1: m=0.400kg k=9,527N/m f_t=24.6Hz x=0.689m y=0.132m
+  res2: m=0.265kg k=10,850N/m f_t=32.2Hz x=0.878m y=0.250m
+sample 3: score=+8.3261  relative_rank_share= 20.2%  recon_MSE=12.2477
+  res1: m=0.823kg k=21,690N/m f_t=25.8Hz x=1.007m y=0.272m
+  res2: m=0.235kg k=7,833N/m f_t=29.1Hz x=0.688m y=0.250m
+sample 4: score=+8.8342  relative_rank_share= 33.7%  recon_MSE=11.4523
+  res1: m=0.375kg k=9,968N/m f_t=26.0Hz x=0.931m y=0.232m
+  res2: m=0.332kg k=10,753N/m f_t=28.7Hz x=0.759m y=0.250m
+sample 5: score=+8.8762  relative_rank_share= 35.1%  recon_MSE=11.5983 <-- best
+  res1: m=0.252kg k=6,196N/m f_t=25.0Hz x=0.437m y=0.317m
+  res2: m=0.423kg k=14,150N/m f_t=29.1Hz x=0.747m y=0.250m
+sample 6: score=+7.4831  relative_rank_share=  8.7%  recon_MSE=12.7681
+  res1: m=0.334kg k=9,018N/m f_t=26.1Hz x=1.035m y=0.379m
+  res2: m=0.231kg k=8,412N/m f_t=30.4Hz x=0.741m y=0.250m
