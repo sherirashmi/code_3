@@ -54,7 +54,7 @@ from erp_invertible_operators.common import InvertibleOperatorBase
 from erp_invertible_operators.registry import INVERTIBLE_OPERATORS
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data, sort_resonators_by_ft
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
+from erp_inverse_operators.registry import NUM_RES as DEFAULT_NUM_RES
 from utils.erp_dataset import (
     DATASETS,
     apply_model_modal_resolution,
@@ -295,7 +295,7 @@ def evaluate_forward(model: InvertibleOperatorBase, tag: str, dataset, loaders, 
         metrics={
             "predictions": pred,
             "targets": true,
-            "configurations": denormalize_design(configs_used, NUM_RES, norm, consistent=False),
+            "configurations": denormalize_design(configs_used, int(norm['num_res']), norm, consistent=False),
         },
         frequency_values=np.asarray(dataset.frequency_values),
         plot_dir=out_dir,
@@ -341,13 +341,13 @@ def evaluate_inverse(
     num_plot = min(num_plot, n)
     freq_hz = np.asarray(dataset.frequency_values)
     true_erp = denormalize_erp_array(test_spectrum, norm)  # (n, F) dB
-    true_design = denormalize_design(test_design.reshape(n, -1).numpy(), NUM_RES, norm, consistent=False)  # (n, R, 5)
+    true_design = denormalize_design(test_design.reshape(n, -1).numpy(), int(norm['num_res']), norm, consistent=False)  # (n, R, 5)
 
     with torch.no_grad():
         samples = model.sample(test_spectrum.to(device), num_samples=num_samples).cpu()  # (n, S, D)
         point = model.infer_point_estimate(test_spectrum.to(device)).cpu()  # (n, D)
-    physical = denormalize_design(samples.numpy(), NUM_RES, norm)  # (n, S, R, 5), physically consistent
-    point_physical = denormalize_design(point.numpy(), NUM_RES, norm)  # (n, R, 5)
+    physical = denormalize_design(samples.numpy(), int(norm['num_res']), norm)  # (n, S, R, 5), physically consistent
+    point_physical = denormalize_design(point.numpy(), int(norm['num_res']), norm)  # (n, R, 5)
 
     # Selection with the model's OWN forward direction: re-normalise the
     # (physically consistent) designs and pick the sample whose predicted
@@ -356,13 +356,13 @@ def evaluate_inverse(
     # invertible model, distinct from the solver-based oracle below.
     with torch.no_grad():
         renorm = torch.from_numpy(normalize_configuration_array(physical, norm)).to(device)
-        own = model.predict_spectrum(renorm.reshape(n * num_samples, NUM_RES, 5)).squeeze(-1)
+        own = model.predict_spectrum(renorm.reshape(n * num_samples, int(norm['num_res']), 5)).squeeze(-1)
         own = own.reshape(n, num_samples, -1).cpu()
     own_mse = ((own - test_spectrum[:, None, :]) ** 2).mean(dim=-1).numpy()  # (n, S)
     selected = own_mse.argmin(axis=1)
 
     with ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT) as pool:
-        solved = solve_configs(pool, physical.reshape(n * num_samples, NUM_RES, 5), freq_hz).reshape(n, num_samples, -1)
+        solved = solve_configs(pool, physical.reshape(n * num_samples, int(norm['num_res']), 5), freq_hz).reshape(n, num_samples, -1)
         solved_point = solve_configs(pool, point_physical, freq_hz)  # (n, F)
     solver_mse = ((solved - true_erp[:, None, :]) ** 2).mean(axis=-1)  # (n, S)
     oracle = solver_mse.argmin(axis=1)
@@ -503,7 +503,9 @@ def variant(key: str, use_sorted_branch: bool = False, options: dict | None = No
 def _design_dim_of(model_config: dict) -> int:
     from erp_inverse_operators.design_space import design_dim
 
-    return design_dim(model_config.get("design_param", "full15"), NUM_RES)
+    # num_res is stored in model_config by train_one (any resonator count);
+    # checkpoints from before that default to 3.
+    return design_dim(model_config.get("design_param", "full15"), int(model_config.get("num_res", DEFAULT_NUM_RES)))
 
 
 def _load_checkpoint(key: str, dataset_tag: str, use_sorted_branch: bool = False, options: dict | None = None):
@@ -557,6 +559,7 @@ def train_one(
     dataset, loaders = _data
     norm = dataset.norm_params
     out_dir = invertible_plot_dir(dataset_tag, tag)
+    model_config = {**model_config, "num_res": int(dataset.num_res)}  # resonators per configuration
 
     model: InvertibleOperatorBase = spec["build"](design_dim=_design_dim_of(model_config), **model_config).to(device)
     model.set_design_normalization(norm)
