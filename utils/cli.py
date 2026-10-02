@@ -968,6 +968,18 @@ def main_all_inverse_models():
     batch_size = _prompt_int("Batch size (target spectra per batch)", default=64, minimum=1)
     epochs = _prompt_optional_int("Epochs for every selected model (overrides each one's own default)")
 
+    # Restarting after an interruption: offer to keep already-finished models.
+    finished = [
+        name for name in (_inverse_name(k, spectrum_encoder, design_param) for k in keys)
+        if inverse_model_path(name, tag).exists()
+    ]
+    skip_existing = False
+    if finished:
+        print(f"\nAlready trained on '{tag}': {', '.join(finished)}")
+        skip_existing = _prompt_yes_no(
+            "Skip these (reuse their saved checkpoints instead of retraining)", default=True
+        )
+
     from erp_inverse_operators.train_all import main as train_all_inverse
 
     print(f"\nTraining {len(keys)} inverse model(s); per-model loss curves -> "
@@ -981,6 +993,7 @@ def main_all_inverse_models():
         seed=SEED,
         spectrum_encoder=spectrum_encoder,
         design_param=design_param,
+        skip_existing=skip_existing,
     )
     names = [_inverse_name(k, spectrum_encoder, design_param) for k in keys]
     return _run_inverse_evaluations(names, tag, dataset_file, num_configurations, ask=True)

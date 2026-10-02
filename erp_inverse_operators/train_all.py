@@ -144,12 +144,17 @@ def validation_loss(model, loader, loss_fn) -> float:
     return total / n if n else float("nan")
 
 
-def train_one(model, loaders, loss_fn, epochs, lr, name):
+def train_one(model, loaders, loss_fn, epochs, lr, name, resume_path=None, save_every: int = 5):
     """Adam + cosine LR schedule, grad-clip 5, best-validation checkpointing.
 
     Non-finite batch losses are skipped (with a warning) rather than
     poisoning the weights; if a whole epoch is non-finite training stops
     early and the best weights so far are kept.
+
+    ``resume_path``: every ``save_every`` epochs the full training state is
+    saved there (plus ``<stem>_progress.csv/.png``), and an existing file is
+    resumed from -- the same interruption-safe scheme as the forward
+    operators' ``train_operator``.
     """
     model = model.to(device)
     trainable = [p for p in model.parameters() if p.requires_grad]
@@ -158,7 +163,48 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
     history = {"train": [], "val": []}
     best_val = float("inf")
     best_state = None
-    for epoch in range(epochs):
+    start_epoch = 0
+
+    resume_file = Path(resume_path) if resume_path is not None else None
+    if resume_file is not None and resume_file.exists():
+        state = torch.load(resume_file, map_location=device, weights_only=False)
+        if int(state.get("epochs", -1)) == int(epochs):
+            model.load_state_dict(state["model"])
+            optimizer.load_state_dict(state["optimizer"])
+            scheduler.load_state_dict(state["scheduler"])
+            history = {k: list(v) for k, v in state["history"].items()}
+            best_val = float(state["best_val"])
+            best_state = state["best_state"]
+            start_epoch = int(state["epoch"])
+            print(f"[{name}] resuming from {resume_file} at epoch {start_epoch + 1}/{epochs}")
+        else:
+            print(f"[{name}] ignoring {resume_file}: saved for a different number of epochs.")
+
+    def save_progress(epoch_done: int) -> None:
+        resume_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = resume_file.with_name(resume_file.name + ".tmp")
+        torch.save(
+            {
+                "epoch": epoch_done, "epochs": int(epochs), "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(),
+                "history": history, "best_val": best_val, "best_state": best_state,
+            },
+            tmp,
+        )
+        tmp.replace(resume_file)
+        stem = resume_file.name.split(".")[0]
+        rows = "\n".join(f"{i + 1},{t:.8e},{v:.8e}" for i, (t, v) in enumerate(zip(history["train"], history["val"])))
+        (resume_file.parent / f"{stem}_progress.csv").write_text("epoch,train_loss,val_loss\n" + rows + "\n")
+        try:
+            plot_loss_curves(
+                history["train"], history["val"], title=f"{name} training loss (epoch {epoch_done}/{epochs})",
+                ylabel="Loss (model-specific NLL / MSE)", log_y=True,
+                save_path=resume_file.parent / f"{stem}_progress.png", show=False,
+            )
+        except Exception as exc:  # a plotting problem must never stop training
+            print(f"(progress plot skipped: {exc})")
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         total, n, skipped = 0.0, 0, 0
         for spectrum, design in loaders["train"]:
@@ -190,6 +236,8 @@ def train_one(model, loaders, loss_fn, epochs, lr, name):
             best_val = val_loss
             best_state = copy.deepcopy(model.state_dict())
         print(f"[{name}] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
+        if resume_file is not None and ((epoch + 1) % max(int(save_every), 1) == 0 or epoch + 1 == epochs):
+            save_progress(epoch + 1)
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -237,7 +285,12 @@ def _train_and_save(
     print("\n" + "#" * 70 + f"\nTraining {spec['name']} ({short}) on dataset '{tag}'\n" + "#" * 70)
     model = spec["build"](design_param=design_param, spectrum_encoder=spectrum_encoder, dataset_tag=tag)
     _warm_start_if_mdn(model, loaders)
-    history = train_one(model, loaders, _bound_loss_fn(spec, norm), epochs=epochs, lr=spec["lr"], name=short)
+    checkpoint_path = inverse_model_path(short, tag)
+    resume_path = checkpoint_path.with_suffix(".resume.pt")  # mid-training state, every 5 epochs
+    history = train_one(
+        model, loaders, _bound_loss_fn(spec, norm), epochs=epochs, lr=spec["lr"], name=short,
+        resume_path=resume_path,
+    )
 
     extra = dict(_padinn_checkpoint_extra(model, loaders) or {})
     extra.update(
@@ -256,7 +309,8 @@ def _train_and_save(
             },
         }
     )
-    save_checkpoint(model, norm, inverse_model_path(short, tag), extra=extra)
+    save_checkpoint(model, norm, checkpoint_path, extra=extra)
+    resume_path.unlink(missing_ok=True)  # final checkpoint written
     plot_loss_curves(
         history["train"], history["val"],
         title=f"{short}: training history ({tag})",
@@ -304,6 +358,7 @@ def main(
     seed: int = 727,
     spectrum_encoder: str = "pooled",
     design_param: str = "full15",
+    skip_existing: bool = False,
 ):
     """Train every (or the selected) inverse model on ONE shared dataset/split,
     save each one's checkpoint + loss curve, the all-models loss figure and
@@ -321,6 +376,17 @@ def main(
     for key in keys:
         spec = INVERSE_MODELS[key]
         model_epochs = int(epochs) if epochs is not None else int(spec["epochs"])
+        name = resolve_variant(key, spectrum_encoder, design_param)[0]
+        if skip_existing and inverse_model_path(name, tag).exists():
+            # Restart after an interruption: reuse the finished checkpoint.
+            from erp_inverse_operators.evaluate import load_inverse_model
+
+            print(f"{inverse_model_path(name, tag)} already exists -- loading it instead of retraining.")
+            model = load_inverse_model(name, tag)[0]
+            saved = torch.load(inverse_model_path(name, tag), map_location="cpu", weights_only=False)
+            models[name] = (model,)
+            histories[name] = saved.get("history") or {"train": [], "val": []}
+            continue
         model, history = _train_and_save(
             key, dataset, loaders, epochs=model_epochs, batch_size=batch_size,
             dataset_file=dataset_file, num_configurations=num_configurations, seed=seed,
