@@ -929,8 +929,18 @@ def train_operator(
     save_plots: bool = True,
     operator_name: str = "operator",
     plots_dir: str | Path | None = None,
+    resume_path: str | Path | None = None,
+    save_every: int = 5,
 ) -> tuple[nn.Module, dict[str, list[float]]]:
     """Train a common-API neural operator and retain best-validation weights.
+
+    ``resume_path`` (optional) makes long runs survive interruptions: every
+    ``save_every`` epochs the complete training state (weights, optimizer,
+    LR schedule, loss history, best-validation weights) is written there,
+    together with ``<resume_path stem>_progress.csv`` and ``_progress.png``
+    (loss so far). If the file already exists when training starts, training
+    continues from the saved epoch instead of epoch 1. The file is removed
+    by the caller once the final checkpoint has been saved.
 
     ``lbfgs_epochs`` (default 0, disabled) appends a full-batch L-BFGS
     fine-tuning phase after the ordinary AdamW+cosine-schedule loop -- the
@@ -963,8 +973,59 @@ def train_operator(
     history = {"train": [], "val": []}
     best_val = math.inf
     best_state = None
+    start_epoch = 0
 
-    for epoch in range(epochs):
+    resume_file = Path(resume_path) if resume_path is not None else None
+    if resume_file is not None and resume_file.exists():
+        state = torch.load(resume_file, map_location=device, weights_only=False)
+        if int(state.get("epochs", -1)) == int(epochs):
+            model.load_state_dict(state["model"])
+            optimizer.load_state_dict(state["optimizer"])
+            scheduler.load_state_dict(state["scheduler"])
+            history = {k: list(v) for k, v in state["history"].items()}
+            best_val = float(state["best_val"])
+            best_state = state["best_state"]
+            start_epoch = int(state["epoch"])
+            print(f"Resuming {operator_name} from {resume_file} at epoch {start_epoch + 1}/{epochs}")
+        else:
+            print(f"Ignoring {resume_file}: it was saved for a run with a different number of epochs.")
+
+    def save_progress(epoch_done: int) -> None:
+        resume_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = resume_file.with_name(resume_file.name + ".tmp")
+        torch.save(
+            {
+                "epoch": epoch_done,
+                "epochs": int(epochs),
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "history": history,
+                "best_val": best_val,
+                "best_state": best_state,
+            },
+            tmp,
+        )
+        tmp.replace(resume_file)  # atomic: an interruption never leaves a half-written file
+        stem = resume_file.name.split(".")[0]
+        rows = "\n".join(
+            f"{i + 1},{t:.8e},{v:.8e}" for i, (t, v) in enumerate(zip(history["train"], history["val"]))
+        )
+        (resume_file.parent / f"{stem}_progress.csv").write_text("epoch,train_loss,val_loss\n" + rows + "\n")
+        try:
+            plot_loss_curves(
+                history["train"],
+                history["val"],
+                title=f"{operator_name} training loss (epoch {epoch_done}/{epochs})",
+                ylabel="Normalized loss",
+                log_y=True,
+                save_path=resume_file.parent / f"{stem}_progress.png",
+                show=False,
+            )
+        except Exception as exc:  # a plotting problem must never stop training
+            print(f"(progress plot skipped: {exc})")
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         train_sum = 0.0
         train_count = 0
@@ -1017,6 +1078,8 @@ def train_operator(
             f"epoch {epoch + 1:4d}/{epochs} | "
             f"train={train_loss:.6e} | val={val_loss:.6e}"
         )
+        if resume_file is not None and ((epoch + 1) % max(int(save_every), 1) == 0 or epoch + 1 == epochs):
+            save_progress(epoch + 1)
 
     if lbfgs_epochs > 0:
         lbfgs_optimizer = torch.optim.LBFGS(
@@ -1534,6 +1597,9 @@ def run_operator_experiment(
         checkpoint_file = forward_model_path(operator_name, dataset_tag_for(dataset_file))
 
     if action == "train":
+        # <checkpoint>.resume.pt: mid-training state, saved every 5 epochs
+        # (see train_operator); an interrupted run continues from it.
+        resume_path = Path(checkpoint_file).with_suffix(".resume.pt")
         dataset, loaders = prepare_operator_data(
             num_configurations=num_configurations,
             batch_size=batch_size,
@@ -1563,6 +1629,7 @@ def run_operator_experiment(
             save_plots=save_plots,
             operator_name=operator_name,
             plots_dir=plots_dir,
+            resume_path=resume_path,
         )
         save_operator_checkpoint(
             model,
@@ -1589,6 +1656,7 @@ def run_operator_experiment(
             },
             history=history,
         )
+        resume_path.unlink(missing_ok=True)  # final checkpoint written; progress state no longer needed
 
         result: dict[str, object] = {
             "action": action,

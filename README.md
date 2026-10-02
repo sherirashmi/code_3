@@ -204,6 +204,14 @@ import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))
 !python main.py                      # answer the prompts in the input box
 ```
 
+**Interruption-safe runs:** `python cloud_train.py --out <persistent folder> --models DNO,GNO,STO --physical`
+links `erp_forward_operators/models` and `plots` into the persistent folder
+(Google Drive on Colab, `/kaggle/working/...` on Kaggle). Every 5 epochs each
+model's full state is saved as `<model>.resume.pt` plus
+`<model>_progress.csv/.png`. Re-running the same command after a disconnect
+skips finished models and continues the interrupted one from its last save.
+`python cloud_train.py --help` lists all options.
+
 Colab sessions end after ~12 h or when idle, and their disk is wiped:
 copy results out when a run finishes, e.g. mount Drive
 (`from google.colab import drive; drive.mount('/content/drive')`) and

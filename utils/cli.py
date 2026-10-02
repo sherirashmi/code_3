@@ -516,8 +516,14 @@ def train_all_models(
     epochs_override: int | None = None,
     use_sorted_branch: bool = False,
     forward_options: dict[str, object] | None = None,
+    skip_existing: bool = False,
 ) -> dict[str, object]:
     """Train and evaluate the given operators sequentially (default: all).
+
+    ``skip_existing=True`` (for restarting an interrupted run): a model
+    whose final checkpoint already exists is evaluated from it instead of
+    retrained. A model interrupted mid-training continues from its
+    ``.resume.pt`` state either way.
 
     ``use_sorted_branch=True`` trains the set-encoder architectures with the
     extra f_t-sorted resonator branch, saved as ``<MODEL>_sorted``;
@@ -571,23 +577,41 @@ def train_all_models(
         print("#" * 76)
 
         try:
-            result = spec["runner"](
-                action="train",
-                num_configurations=num_configurations,
-                batch_size=batch_size,
-                epochs=epochs,
-                learning_rate=learning_rate,
-                lbfgs_epochs=lbfgs_epochs,
-                dataset_file=dataset_file,
-                regenerate_dataset=regenerate_this_model,
-                seed=seed,
-                plot=False,
-                save_plots=False,           # saved explicitly below
-                num_evaluation_plots=5,
-                evaluate_after_training=True,
-                checkpoint_file=forward_model_path(name, tag),
-                model_config_overrides=overrides,
-            )
+            checkpoint = forward_model_path(name, tag)
+            if skip_existing and checkpoint.exists():
+                print(f"{checkpoint} already exists -- evaluating it instead of retraining.")
+                result = spec["runner"](
+                    action="evaluate",
+                    batch_size=batch_size,
+                    dataset_file=dataset_file,
+                    seed=seed,
+                    plot=False,
+                    save_plots=False,
+                    num_evaluation_plots=5,
+                    checkpoint_file=checkpoint,
+                )
+                history = result.get("history") or {}
+                if not history.get("train"):
+                    history = {"train": [float("nan")], "val": [float("nan")]}
+                result["history"] = history
+            else:
+                result = spec["runner"](
+                    action="train",
+                    num_configurations=num_configurations,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    learning_rate=learning_rate,
+                    lbfgs_epochs=lbfgs_epochs,
+                    dataset_file=dataset_file,
+                    regenerate_dataset=regenerate_this_model,
+                    seed=seed,
+                    plot=False,
+                    save_plots=False,           # saved explicitly below
+                    num_evaluation_plots=5,
+                    evaluate_after_training=True,
+                    checkpoint_file=forward_model_path(name, tag),
+                    model_config_overrides=overrides,
+                )
             history, metrics = result["history"], result["metrics"]
             save_operator_experiment_plots(
                 name,
