@@ -2,12 +2,15 @@
 
 Usage (one notebook cell, after cloning the repo)::
 
-    !python cloud_train.py --out /content/drive/MyDrive/thesis_runs \
-        --models DNO,GNO,STO --physical
+    # repo cloned onto Google Drive / into /kaggle/working: outputs stay in it
+    !python cloud_train.py --models DNO,GNO,STO --physical
+
+    # repo on temporary disk: link outputs to a persistent folder instead
+    !python cloud_train.py --out /content/drive/MyDrive/thesis_runs --models DNO,GNO,STO --physical
 
 What it does:
 
-1. Moves ``erp_forward_operators/models`` and ``.../plots`` into ``--out``
+1. With ``--out``: moves ``erp_forward_operators/models`` and ``.../plots`` into ``--out``
    (a Google Drive folder on Colab, ``/kaggle/working/...`` on Kaggle) and
    leaves symlinks in their place, so EVERY checkpoint, progress file and
    plot is written straight to persistent storage. Files already in
@@ -64,7 +67,11 @@ def link_outputs(out: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", required=True, help="persistent folder for models + plots")
+    parser.add_argument(
+        "--out", default=None,
+        help="persistent folder for models + plots; omit when the repo itself is on persistent "
+             "storage (Google Drive / /kaggle/working) -- outputs then stay inside the repo",
+    )
     parser.add_argument("--dataset", default="100k", help="10k | 100k | 200k_18modes (default 100k)")
     parser.add_argument("--models", default="DNO,GNO,STO", help="comma-separated: DON,DNO,FNO,DCO,GNO,STO,SIREN,WNO,NN,LNO")
     parser.add_argument("--physical", action="store_true", help="physical feature scaling (_phys)")
@@ -76,7 +83,10 @@ def main() -> None:
     parser.add_argument("--configurations", type=int, default=None, help="default: whole dataset")
     args = parser.parse_args()
 
-    link_outputs(Path(args.out))
+    if args.out:
+        link_outputs(Path(args.out))
+    else:
+        print(f"Saving models and plots inside the repository: {ROOT / 'erp_forward_operators'}")
 
     import torch
     from erp_forward_operators import diagnose
