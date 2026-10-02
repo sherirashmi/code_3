@@ -3,70 +3,70 @@
 Example 1
 ==========================================================================================
 
---- BasisFlow_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
-sample 1: score=+7.7998  relative_rank_share=  0.0%  recon_MSE=38.6590
-  res1: m=0.696kg k=61,860N/m f_t=47.4Hz x=0.628m y=0.450m
-  res2: m=0.575kg k=284,336N/m f_t=111.9Hz x=1.288m y=0.050m
-sample 2: score=+52.9489  relative_rank_share=100.0%  recon_MSE=56.1993 <-- best
-  res1: m=0.954kg k=200,684N/m f_t=73.0Hz x=1.400m y=0.183m
-  res2: m=1.000kg k=7,637N/m f_t=13.9Hz x=0.000m y=0.221m
-sample 3: score=+25.0668  relative_rank_share=  0.0%  recon_MSE=47.0736
-  res1: m=1.000kg k=60,886N/m f_t=39.3Hz x=1.219m y=0.260m
-  res2: m=0.127kg k=3,775N/m f_t=27.4Hz x=0.025m y=0.254m
-sample 4: score=+4.6490  relative_rank_share=  0.0%  recon_MSE=128.6616
-  res1: m=0.392kg k=39,661N/m f_t=50.6Hz x=0.941m y=0.350m
-  res2: m=0.797kg k=219,637N/m f_t=83.5Hz x=0.950m y=0.350m
-sample 5: score=+34.6854  relative_rank_share=  0.0%  recon_MSE=135.7529
-  res1: m=0.944kg k=142,312N/m f_t=61.8Hz x=0.908m y=0.165m
-  res2: m=1.000kg k=21,902N/m f_t=23.6Hz x=0.000m y=0.339m
-sample 6: score=+19.6213  relative_rank_share=  0.0%  recon_MSE=106.5825
-  res1: m=0.655kg k=105,636N/m f_t=63.9Hz x=0.983m y=0.155m
-  res2: m=1.000kg k=255,563N/m f_t=80.5Hz x=1.393m y=0.064m
+--- cVAE_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=-8.1473  relative_rank_share= 86.7%  recon_MSE=95.5924 <-- best
+  res1: m=0.281kg k=20,521N/m f_t=43.0Hz x=0.128m y=0.395m
+  res2: m=0.674kg k=132,481N/m f_t=70.6Hz x=1.243m y=0.299m
+sample 2: score=-11.5983  relative_rank_share=  2.7%  recon_MSE=118.6151
+  res1: m=0.962kg k=93,664N/m f_t=49.7Hz x=0.538m y=0.303m
+  res2: m=0.644kg k=150,022N/m f_t=76.8Hz x=0.078m y=0.215m
+sample 3: score=-13.2411  relative_rank_share=  0.5%  recon_MSE=145.3239
+  res1: m=0.877kg k=188,038N/m f_t=73.7Hz x=0.221m y=0.155m
+  res2: m=0.983kg k=241,607N/m f_t=78.9Hz x=0.872m y=0.385m
+sample 4: score=-11.9176  relative_rank_share=  2.0%  recon_MSE=55.3259
+  res1: m=0.363kg k=2,269N/m f_t=12.6Hz x=0.284m y=0.043m
+  res2: m=0.146kg k=22,722N/m f_t=62.7Hz x=0.303m y=0.474m
+sample 5: score=-11.9137  relative_rank_share=  2.0%  recon_MSE=122.3080
+  res1: m=0.475kg k=60,320N/m f_t=56.7Hz x=0.064m y=0.214m
+  res2: m=0.709kg k=438,735N/m f_t=125.2Hz x=0.453m y=0.218m
+sample 6: score=-10.8177  relative_rank_share=  6.0%  recon_MSE=54.6932
+  res1: m=0.235kg k=45,175N/m f_t=69.8Hz x=0.595m y=0.374m
+  res2: m=0.186kg k=85,086N/m f_t=107.6Hz x=0.280m y=0.147m
 
 ==========================================================================================
 Example 2
 ==========================================================================================
 
---- BasisFlow_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
-sample 1: score=+10.8918  relative_rank_share= 56.1%  recon_MSE=59.2634 <-- best
-  res1: m=0.292kg k=86,197N/m f_t=86.5Hz x=0.404m y=0.343m
-  res2: m=0.997kg k=589,933N/m f_t=122.4Hz x=0.412m y=0.050m
-sample 2: score=+9.9922  relative_rank_share= 22.8%  recon_MSE=52.2963
-  res1: m=0.801kg k=233,378N/m f_t=85.9Hz x=0.327m y=0.050m
-  res2: m=0.290kg k=121,293N/m f_t=103.0Hz x=0.443m y=0.350m
-sample 3: score=+9.2436  relative_rank_share= 10.8%  recon_MSE=64.6822
-  res1: m=0.310kg k=95,065N/m f_t=88.1Hz x=0.092m y=0.149m
-  res2: m=0.960kg k=368,903N/m f_t=98.7Hz x=1.384m y=0.146m
-sample 4: score=+7.6403  relative_rank_share=  2.2%  recon_MSE=66.9993
-  res1: m=0.635kg k=196,035N/m f_t=88.4Hz x=0.450m y=0.303m
-  res2: m=0.211kg k=132,351N/m f_t=126.1Hz x=0.797m y=0.450m
-sample 5: score=+6.5181  relative_rank_share=  0.7%  recon_MSE=74.6059
-  res1: m=0.925kg k=276,161N/m f_t=87.0Hz x=0.573m y=0.050m
-  res2: m=0.249kg k=177,814N/m f_t=134.4Hz x=0.758m y=0.450m
-sample 6: score=+8.8662  relative_rank_share=  7.4%  recon_MSE=76.2693
-  res1: m=0.380kg k=96,720N/m f_t=80.3Hz x=0.642m y=0.450m
-  res2: m=0.845kg k=562,818N/m f_t=129.9Hz x=1.396m y=0.385m
+--- cVAE_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=-8.9508  relative_rank_share= 84.9%  recon_MSE=112.4717 <-- best
+  res1: m=0.230kg k=38,150N/m f_t=64.9Hz x=0.216m y=0.162m
+  res2: m=0.835kg k=608,692N/m f_t=135.9Hz x=0.774m y=0.353m
+sample 2: score=-13.2863  relative_rank_share=  1.1%  recon_MSE=81.5201
+  res1: m=0.891kg k=132,342N/m f_t=61.3Hz x=0.028m y=0.061m
+  res2: m=0.245kg k=136,705N/m f_t=118.8Hz x=1.118m y=0.018m
+sample 3: score=-13.7343  relative_rank_share=  0.7%  recon_MSE=80.2398
+  res1: m=0.253kg k=136,117N/m f_t=116.7Hz x=0.709m y=0.327m
+  res2: m=0.226kg k=138,418N/m f_t=124.7Hz x=1.149m y=0.441m
+sample 4: score=-11.6270  relative_rank_share=  5.8%  recon_MSE=85.1163
+  res1: m=0.336kg k=18,764N/m f_t=37.6Hz x=0.096m y=0.127m
+  res2: m=0.162kg k=130,169N/m f_t=142.6Hz x=0.139m y=0.405m
+sample 5: score=-12.1782  relative_rank_share=  3.4%  recon_MSE=67.0743
+  res1: m=0.873kg k=289,670N/m f_t=91.7Hz x=1.342m y=0.390m
+  res2: m=0.324kg k=249,366N/m f_t=139.6Hz x=0.317m y=0.483m
+sample 6: score=-11.9939  relative_rank_share=  4.0%  recon_MSE=94.2284
+  res1: m=0.191kg k=21,219N/m f_t=53.0Hz x=0.779m y=0.178m
+  res2: m=0.390kg k=143,585N/m f_t=96.6Hz x=0.221m y=0.071m
 
 ==========================================================================================
 Example 3
 ==========================================================================================
 
---- BasisFlow_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
-sample 1: score=+53.9915  relative_rank_share=100.0%  recon_MSE=24.5752 <-- best
-  res1: m=0.971kg k=145,921N/m f_t=61.7Hz x=1.400m y=0.213m
-  res2: m=1.000kg k=7,011N/m f_t=13.3Hz x=0.000m y=0.247m
-sample 2: score=+18.1135  relative_rank_share=  0.0%  recon_MSE=51.5617
-  res1: m=1.000kg k=19,337N/m f_t=22.1Hz x=0.100m y=0.450m
-  res2: m=0.411kg k=53,986N/m f_t=57.7Hz x=0.409m y=0.250m
-sample 3: score=+10.6964  relative_rank_share=  0.0%  recon_MSE=16.2514
-  res1: m=0.369kg k=9,171N/m f_t=25.1Hz x=1.150m y=0.346m
-  res2: m=0.997kg k=66,571N/m f_t=41.1Hz x=0.027m y=0.152m
-sample 4: score=+8.3019  relative_rank_share=  0.0%  recon_MSE=13.3794
-  res1: m=0.507kg k=14,673N/m f_t=27.1Hz x=1.018m y=0.150m
-  res2: m=0.475kg k=35,612N/m f_t=43.6Hz x=1.376m y=0.149m
-sample 5: score=+7.7425  relative_rank_share=  0.0%  recon_MSE=8.7328
-  res1: m=0.123kg k=2,799N/m f_t=24.0Hz x=1.205m y=0.337m
-  res2: m=0.796kg k=27,059N/m f_t=29.3Hz x=0.437m y=0.325m
-sample 6: score=+13.3703  relative_rank_share=  0.0%  recon_MSE=19.8667
-  res1: m=0.239kg k=5,690N/m f_t=24.6Hz x=0.609m y=0.343m
-  res2: m=0.986kg k=53,022N/m f_t=36.9Hz x=0.059m y=0.150m
+--- cVAE_b12 (log p(design|spectrum); % = softmax over these samples (relative ranking, not calibrated)) ---
+sample 1: score=-12.2320  relative_rank_share=  8.1%  recon_MSE=150.5533
+  res1: m=0.272kg k=65,439N/m f_t=78.0Hz x=0.962m y=0.190m
+  res2: m=0.960kg k=860,868N/m f_t=150.7Hz x=1.010m y=0.220m
+sample 2: score=-11.5061  relative_rank_share= 16.8%  recon_MSE=46.9342
+  res1: m=0.452kg k=13,113N/m f_t=27.1Hz x=0.404m y=0.358m
+  res2: m=0.911kg k=525,505N/m f_t=120.9Hz x=0.059m y=0.427m
+sample 3: score=-11.5344  relative_rank_share= 16.3%  recon_MSE=141.3710
+  res1: m=0.215kg k=10,116N/m f_t=34.5Hz x=0.597m y=0.476m
+  res2: m=0.391kg k=272,340N/m f_t=132.8Hz x=0.837m y=0.325m
+sample 4: score=-11.3072  relative_rank_share= 20.5%  recon_MSE=33.2379
+  res1: m=0.178kg k=2,086N/m f_t=17.2Hz x=0.431m y=0.311m
+  res2: m=0.885kg k=168,482N/m f_t=69.5Hz x=1.335m y=0.331m
+sample 5: score=-10.8990  relative_rank_share= 30.8%  recon_MSE=11.7709 <-- best
+  res1: m=0.146kg k=3,291N/m f_t=23.9Hz x=1.260m y=0.336m
+  res2: m=0.498kg k=15,682N/m f_t=28.2Hz x=0.542m y=0.349m
+sample 6: score=-12.3286  relative_rank_share=  7.4%  recon_MSE=118.4350
+  res1: m=0.312kg k=45,981N/m f_t=61.1Hz x=0.671m y=0.219m
+  res2: m=0.353kg k=349,259N/m f_t=158.2Hz x=0.588m y=0.239m
