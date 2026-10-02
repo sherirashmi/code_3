@@ -63,6 +63,7 @@ import utils.physics as _physics
 from utils.physics import (
     Lx,
     Ly,
+    edge_margin,
     freqs,
     m_max,
     m_min,
@@ -115,6 +116,14 @@ DATASETS: dict[str, dict[str, object]] = {
         "num_configurations": 200_000,
         "modal_resolution": (6, 3),
     },
+}
+DATASETS["100k_2res_grid_18modes"] = {
+    "label": "100k configurations, 2 resonators on a 14x5 position grid, 18 plate modes (6x3)",
+    "files": [f"datasets/dataset_erp_100k_2res_grid14x5_18modes_part{i}.pth" for i in range(1, 5)],
+    "num_configurations": 100_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+    "position_grid": (14, 5),
 }
 DEFAULT_DATASET_TAG = "10k"
 
@@ -363,6 +372,44 @@ def configuration_to_resonators(
 # ==================================================
 
 
+def grid_positions(nx: int, ny: int) -> np.ndarray:
+    """``(nx*ny, 2)`` equidistant plate points [x, y], inside the edge margin.
+
+    14 x 5 on the 1.4 m x 0.5 m plate gives x = 0.05, 0.15, ..., 1.35 m and
+    y = 0.05, 0.15, ..., 0.45 m (0.1 m spacing, cell centres of a 14 x 5
+    tiling). Cell index = ix * ny + iy.
+    """
+    xs = np.linspace(edge_margin, Lx - edge_margin, int(nx))
+    ys = np.linspace(edge_margin, Ly - edge_margin, int(ny))
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")
+    return np.stack([gx.ravel(), gy.ravel()], axis=1)
+
+
+def balanced_grid_cells(num_samples: int, num_res: int, nx: int, ny: int, seed: int = 727) -> np.ndarray:
+    """``(num_samples, num_res)`` grid-cell indices: distinct cells within a
+    configuration, every unordered cell combination used (as near as
+    possible) equally often, resonator order randomised.
+
+    The grid analogue of LHS's stratification: with 2 resonators on 70
+    cells, the 2,415 cell pairs each appear 41-42 times in 100k samples.
+    """
+    import itertools
+    import math
+
+    rng = np.random.default_rng(seed)
+    num_cells = int(nx) * int(ny)
+    if num_res > num_cells:
+        raise ValueError(f"{num_res} resonators do not fit on {num_cells} distinct grid cells.")
+    if math.comb(num_cells, num_res) <= 2_000_000:
+        combos = np.array(list(itertools.combinations(range(num_cells), num_res)), dtype=np.int64)
+        reps = -(-num_samples // len(combos))
+        order = np.concatenate([rng.permutation(len(combos)) for _ in range(reps)])[:num_samples]
+        cells = combos[order]
+    else:  # too many combinations to enumerate: uniform distinct draws
+        cells = np.stack([rng.choice(num_cells, size=num_res, replace=False) for _ in range(num_samples)])
+    return rng.permuted(cells, axis=1)
+
+
 class ERPDataset(Dataset):
     """Shared configuration-frequency ERP dataset.
 
@@ -380,8 +427,12 @@ class ERPDataset(Dataset):
         num_samples: int = 100,
         num_res: int = default_num_res,
         seed: int = 727,
+        position_grid: tuple[int, int] | None = None,
     ) -> None:
         super().__init__()
+        # (nx, ny): resonators only on an nx x ny grid of equidistant plate
+        # points (see grid_positions); None = continuous LHS positions.
+        self.position_grid = tuple(int(v) for v in position_grid) if position_grid else None
         if num_samples <= 0:
             raise ValueError("num_samples must be positive.")
         if num_res <= 0:
@@ -428,13 +479,29 @@ class ERPDataset(Dataset):
         save: bool = True,
         filename: str | None = None,
         verbose: bool = True,
+        grid_cells: np.ndarray | None = None,
     ) -> dict[str, object]:
-        """Generate ERP spectra for ``self.num_samples`` resonator configurations."""
+        """Generate ERP spectra for ``self.num_samples`` resonator configurations.
+
+        ``grid_cells`` (grid datasets only): precomputed ``(num_samples,
+        num_res)`` cell indices, so a dataset generated in shards keeps the
+        cell-combination balance of the whole dataset.
+        """
         samples = lhs_sampling(
             self.num_samples,
             bounds=resonator_bounds(self.num_res),
             seed=self.seed,
         )
+        if self.position_grid is not None:
+            # m and f_t stay LHS; x, y are replaced by balanced grid cells.
+            cells = (
+                np.asarray(grid_cells, dtype=np.int64) if grid_cells is not None
+                else balanced_grid_cells(self.num_samples, self.num_res, *self.position_grid, seed=self.seed)
+            )
+            points = grid_positions(*self.position_grid)
+            quads = samples.reshape(self.num_samples, self.num_res, 4)
+            quads[..., 0:2] = points[cells]
+            samples = quads.reshape(self.num_samples, self.num_res * 4)
 
         n_freqs = self.frequency_values.size
         configuration_features = np.empty(
@@ -448,7 +515,12 @@ class ERPDataset(Dataset):
                 f"Generating ERP dataset: {self.num_samples} configurations, "
                 f"{n_freqs} frequencies/configuration"
             )
-            print("Sampled variables : x, y, f_t, m  (independent LHS)")
+            if self.position_grid is None:
+                print("Sampled variables : x, y, f_t, m  (independent LHS)")
+            else:
+                nx, ny = self.position_grid
+                print(f"Sampled variables : f_t, m (LHS); x, y on a {nx} x {ny} grid "
+                      "(distinct cells, every cell combination equally often)")
             print("Stored features   : [m, k, f_t, x, y]")
             print(f"m range            : [{m_min}, {m_max}] kg")
             print("Derived stiffness  : k = m * (2*pi*f_t)^2")
@@ -503,6 +575,7 @@ class ERPDataset(Dataset):
             "plate_geometry": {"Lx": float(Lx), "Ly": float(Ly)},
             "modal_resolution": [int(_physics.Nx), int(_physics.Ny)],
             "resonator_mass_bounds": {"m_min": float(m_min), "m_max": float(m_max)},
+            "position_grid": list(self.position_grid) if self.position_grid else None,
         }
 
     def load(self, filename: str) -> "ERPDataset":
@@ -520,6 +593,8 @@ class ERPDataset(Dataset):
 
         self.num_samples = int(payload["num_samples"])
         self.num_res = int(payload["num_res"])
+        grid = payload.get("position_grid")
+        self.position_grid = tuple(int(v) for v in grid) if grid else None
         self.seed = int(payload.get("seed", self.seed))
         self.frequency_values = np.asarray(
             payload["frequency_values"], dtype=np.float32
@@ -591,6 +666,8 @@ class ERPDataset(Dataset):
                 raise ValueError(f"{filename} has different frequency_values than {filenames[0]}.")
 
         self.num_res = num_res
+        grid = first.get("position_grid")
+        self.position_grid = tuple(int(v) for v in grid) if grid else None
         self.seed = int(first.get("seed", self.seed))
         self.frequency_values = frequency_values
         self.configuration_features = np.concatenate(

@@ -828,7 +828,7 @@ def main_forward():
     print("1. Enter a new configuration manually")
     print("2. Use the first configuration from the saved test split")
     prediction_choice = _prompt_choice("Select prediction input: ", {"1": None, "2": None})
-    configuration = _prompt_configuration(default_num_res) if prediction_choice == "1" else None
+    configuration = _prompt_configuration(int(DATASETS[tag].get("num_res", default_num_res))) if prediction_choice == "1" else None
     show_plot = _prompt_yes_no("Also display the saved solver vs neural-operator ERP spectrum", default=False)
 
     # The dataset load inside the runner switches the solver to that
@@ -942,8 +942,8 @@ def _prompt_inverse_variant() -> tuple[str, str]:
     print("2. Positional  (keeps frequency position: positional channel + ordered frequency bins)  -> saved as <MODEL>_pos")
     spectrum_encoder = "positional" if _prompt_choice("Select spectrum encoder: ", {"1": None, "2": None}) == "2" else "pooled"
     print("\nDesign parameterisation")
-    print("1. Full 15-D   [m, k, f_t, x, y] per resonator, z-scored  [standard, all existing models]")
-    print("2. Bounded 12-D [m, f_t, x, y], logit-bounded, k = m(2 pi f_t)^2 derived (exact densities, no clipping)")
+    print("1. Full      [m, k, f_t, x, y] per resonator (5 x num_res), z-scored  [standard, all existing models]")
+    print("2. Bounded   [m, f_t, x, y] per resonator (4 x num_res), logit-bounded, k = m(2 pi f_t)^2 derived (exact densities, no clipping)")
     print("               -> saved as <MODEL>_b12")
     design_param = "bounded12" if _prompt_choice("Select design parameterisation: ", {"1": None, "2": None}) == "2" else "full15"
     return spectrum_encoder, design_param
@@ -1066,7 +1066,7 @@ def main_inverse():
           "ERP spectrum becomes the target to invert)")
     print("2. Use the first spectrum from the saved test split")
     target_choice = _prompt_choice("Select target input: ", {"1": None, "2": None})
-    configuration = _prompt_configuration(default_num_res) if target_choice == "1" else None
+    configuration = _prompt_configuration(int(DATASETS[tag].get("num_res", default_num_res))) if target_choice == "1" else None
     num_samples = _prompt_int("Number of candidate designs to sample", default=6, minimum=1)
 
     from erp_inverse_operators.predict import predict_one, print_report

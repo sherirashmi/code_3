@@ -1,7 +1,7 @@
 """Design parameterisations for the inverse models.
 
-Two ways to represent one 3-resonator design as the flat vector a model
-predicts / scores:
+Two ways to represent one design (``num_res`` resonators) as the flat
+vector a model predicts / scores (sizes below are for 3 resonators):
 
 ``full15`` (legacy)
     ``[m, k, f_t, x, y]`` per resonator, each z-scored -> 15 numbers. ``k``
@@ -36,7 +36,7 @@ from typing import Mapping
 import numpy as np
 import torch
 
-from utils.physics import Lx, Ly, edge_margin, fmax, fmin, m_max, m_min
+from utils.physics import Lx, Ly, fmax, fmin, m_max, m_min
 
 FULL15 = "full15"
 BOUNDED12 = "bounded12"
@@ -46,8 +46,11 @@ DESIGN_PARAMS = (FULL15, BOUNDED12)
 BOUNDED_FIELDS = (
     ("m", 0, m_min, m_max),
     ("f_t", 2, fmin, fmax),
-    ("x", 3, edge_margin, Lx - edge_margin),
-    ("y", 4, edge_margin, Ly - edge_margin),
+    # Positions are bounded by the plate itself, not the 5 cm sampling margin:
+    # grid datasets put resonators exactly on the margin (x = 0.05, 1.35 m),
+    # which would sit on the logit's singularity with margin bounds.
+    ("x", 3, 0.0, Lx),
+    ("y", 4, 0.0, Ly),
 )
 _EPS = 1e-6
 

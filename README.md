@@ -73,6 +73,26 @@ mathtext is used (same look, no TeX needed). Force with `THESIS_USETEX=1/0`.
 Matplotlib's LaTeX mode needs `type1cm.sty` (Ubuntu/Debian:
 `texlive-latex-extra`, plus `dvipng` and `cm-super`).
 
+## Dataset: 2 resonators on a 14 x 5 position grid (`100k_2res_grid_18modes`)
+
+`datasets/generate_grid_2res_18modes.py` (about 10 min on 4 cores) creates
+100,000 configurations with:
+
+* 2 resonators per configuration;
+* positions only on a 14 x 5 equidistant grid: x = 0.05, 0.15, ..., 1.35 m and
+  y = 0.05, 0.15, ..., 0.45 m (0.1 m spacing). The two resonators are always on
+  different cells, each of the 70*69/2 = 2,415 cell pairs is used 41-42 times,
+  and the resonator order is random;
+* m in [0.1, 1.0] kg and f_t in [10, 160] Hz by Latin hypercube, with
+  k = m(2 pi f_t)^2 derived;
+* 6 x 3 = 18 plate modes (set automatically when the dataset is selected).
+
+It is stored as 4 shards of 25,000 configurations and appears as dataset 4 in
+every `main.py` menu. Forward and inverse models read the number of
+resonators from the data. For the inverse models, choose design
+parameterisation 2 (Bounded): 4 numbers per resonator, [m, f_t, x, y], so 8
+for this dataset (saved with the `_b12` suffix).
+
 ## Resonator encoder: set vs. set + f_t-sorted branch
 
 Training (and evaluate/predict) in `main.py` asks which resonator encoder to use:
