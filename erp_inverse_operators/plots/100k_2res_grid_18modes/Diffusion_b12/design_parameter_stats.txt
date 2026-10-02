@@ -1,0 +1,23 @@
+Design-parameter recovery (500 held-out targets x 2 resonators = 1000 points per model/parameter)
+Caveat: the inverse problem is non-unique -- see this file's module docstring.
+==========================================================================================
+
+--- mass $m$ (kg) ---
+Model                 MAE  Pearson r
+Diffusion_b12         0.1729     0.5754
+
+--- stiffness $k$ (N/m) ---
+Model                 MAE  Pearson r
+Diffusion_b12      8.015e+04     0.7781
+
+--- tuning frequency $f_t$ (Hz) ---
+Model                 MAE  Pearson r
+Diffusion_b12           9.53     0.9314
+
+--- position $x$ (m) ---
+Model                 MAE  Pearson r
+Diffusion_b12         0.2737     0.4323
+
+--- position $y$ (m) ---
+Model                 MAE  Pearson r
+Diffusion_b12         0.1419     0.0350
