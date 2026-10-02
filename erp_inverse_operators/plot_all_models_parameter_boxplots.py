@@ -25,7 +25,6 @@ import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.evaluate import MODEL_BUILDERS, load_inverse_model
-from erp_inverse_operators.registry import NUM_RES
 from erp_inverse_operators.surrogate_inverse import _CONFIG_FIELDS, _DESIGN_PHYSICAL_BOUNDS
 from utils.support import device
 
@@ -56,7 +55,7 @@ test_spectrum = torch.cat(test_spectrum, dim=0)[:NUM_TEST_EXAMPLES]
 test_design = torch.cat(test_design, dim=0)[:NUM_TEST_EXAMPLES]
 n = test_spectrum.shape[0]
 
-true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm, consistent=False)  # (n, num_res, 5)
+true_physical = denormalize_design(test_design.numpy().reshape(n, -1), int(norm['num_res']), norm, consistent=False)  # (n, num_res, 5)
 
 names = list(MODEL_BUILDERS)
 predictions = {}
@@ -68,7 +67,7 @@ for name in names:
         result = model.sample(test_spectrum.to(device), num_samples=1)
     flat = result[0] if isinstance(result, tuple) else result
     flat = flat[:, 0, :].cpu()  # (n, D) -- single sample per target
-    predictions[name] = denormalize_design(flat.numpy(), NUM_RES, norm)  # (n, num_res, 5)
+    predictions[name] = denormalize_design(flat.numpy(), int(norm['num_res']), norm)  # (n, num_res, 5)
 
 fig, axes = plt.subplots(
     len(_CONFIG_FIELDS), len(names), figsize=(3.6 * len(names), 3.6 * len(_CONFIG_FIELDS)), squeeze=False
@@ -114,7 +113,7 @@ for row, field in enumerate(_CONFIG_FIELDS):
         ax.grid(alpha=0.3)
 
 fig.suptitle(
-    f"Predicted-value spread per true-value bin, all 7 models ({n} test targets x {NUM_RES} "
+    f"Predicted-value spread per true-value bin, all 7 models ({n} test targets x {int(norm['num_res'])} "
     f"resonators, {NUM_BINS} bins across each field's complete physical range, 1 sample/target, "
     "dashed = predicted=true)",
     fontsize=13,

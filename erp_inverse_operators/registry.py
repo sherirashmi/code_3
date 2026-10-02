@@ -18,6 +18,9 @@ from erp_inverse_operators.padding_inn import PadINN
 from erp_inverse_operators.common import POOLED, POSITIONAL
 from erp_inverse_operators.design_space import BOUNDED12, FULL15, design_dim
 
+# Default resonators per configuration. Every model is built for the number
+# of resonators of its training dataset (``num_res`` argument of each
+# builder); this is only the fallback for checkpoints that predate it.
 NUM_RES = 3
 DESIGN_DIM = NUM_RES * 5  # legacy full15 design size
 
@@ -59,7 +62,9 @@ def _surrogate_loss(model, spectrum, design, epoch, *, norm_params):
     return model.training_loss(spectrum, design, own_norm_params=norm_params, surrogate_weight=1.0)
 
 
-def _build_surrogate(design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None):
+def _build_surrogate(
+    design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None, num_res: int = NUM_RES
+):
     from erp_inverse_operators.surrogate_inverse import (
         DEFAULT_SURROGATE_CHECKPOINTS,
         SurrogateInverse,
@@ -68,16 +73,24 @@ def _build_surrogate(design_param: str = FULL15, spectrum_encoder: str = POOLED,
 
     checkpoints = surrogate_checkpoints_for(dataset_tag) if dataset_tag else DEFAULT_SURROGATE_CHECKPOINTS
     return SurrogateInverse(
-        design_dim=design_dim(design_param, NUM_RES), surrogate_checkpoints=checkpoints,
-        spectrum_encoder=spectrum_encoder, num_res=NUM_RES,
+        design_dim=design_dim(design_param, num_res), surrogate_checkpoints=checkpoints,
+        spectrum_encoder=spectrum_encoder, num_res=num_res,
     )
 
 
 def _builder(cls, *, uses_spectrum_encoder: bool = True, **fixed):
-    """build(design_param="full15", spectrum_encoder="pooled", dataset_tag=None)."""
+    """build(design_param="full15", spectrum_encoder="pooled", dataset_tag=None, num_res=3).
 
-    def build(design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None):
-        kwargs = dict(fixed, design_dim=design_dim(design_param, NUM_RES))
+    ``num_res`` (resonators per configuration) sets the design size:
+    5 * num_res (full15) or 4 * num_res (bounded12). Training passes the
+    dataset's own value; loading passes the checkpoint's.
+    """
+
+    def build(
+        design_param: str = FULL15, spectrum_encoder: str = POOLED, dataset_tag: str | None = None,
+        num_res: int = NUM_RES,
+    ):
+        kwargs = dict(fixed, design_dim=design_dim(design_param, int(num_res)))
         if uses_spectrum_encoder:
             kwargs["spectrum_encoder"] = spectrum_encoder
         return cls(**kwargs)

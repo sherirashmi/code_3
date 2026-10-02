@@ -660,7 +660,7 @@ def prepare_operator_data(
     dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
-    num_res: int = default_num_res,
+    num_res: int | None = None,  # None: whatever the dataset file holds
     seed: int = 727,
     preprocessing_state: Mapping[str, object] | None = None,
     num_workers: int = 0,

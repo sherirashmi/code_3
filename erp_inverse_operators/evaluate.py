@@ -77,7 +77,7 @@ from erp_inverse_operators.common import (
     sort_resonators_by_ft,
 )
 from erp_inverse_operators.design_space import bounded_log_abs_det
-from erp_inverse_operators.registry import DESIGN_DIM, INVERSE_MODELS, NUM_RES, parse_variant
+from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, parse_variant
 from utils.erp_dataset import (
     DATASETS,
     apply_model_modal_resolution,
@@ -122,6 +122,7 @@ def load_inverse_model(name: str, dataset_tag: str = "100k"):
     model = MODEL_BUILDERS[base](
         design_param=variant.get("design_param", design_param),
         spectrum_encoder=variant.get("spectrum_encoder", spectrum_encoder),
+        num_res=int(checkpoint.get("num_res", checkpoint["norm_params"].get("num_res", NUM_RES))),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
@@ -223,11 +224,11 @@ def score_samples(model, spectrum: torch.Tensor, flat_samples: torch.Tensor, nor
     """
     n, s_, d = flat_samples.shape
     flat_np = flat_samples.detach().cpu().numpy()
-    physical = denormalize_design(flat_np, NUM_RES, norm)  # (n, S, R, 5), consistent
-    if design_param_of(flat_np, NUM_RES) == BOUNDED12:
+    physical = denormalize_design(flat_np, int(norm['num_res']), norm)  # (n, S, R, 5), consistent
+    if design_param_of(flat_np, int(norm['num_res'])) == BOUNDED12:
         log_p = density_log_prob(model, spectrum, flat_samples)
         if log_p is not None:
-            log_p = log_p + bounded_log_abs_det(flat_samples.double(), NUM_RES, norm).to(log_p.dtype)
+            log_p = log_p + bounded_log_abs_det(flat_samples.double(), int(norm['num_res']), norm).to(log_p.dtype)
     else:
         projected = normalize_design_physical(physical, norm, FULL15).reshape(n, s_, -1)
         log_p = density_log_prob(model, spectrum, torch.from_numpy(projected).to(spectrum.device))
@@ -332,7 +333,7 @@ def main(
             flat_samples = (result[0] if isinstance(result, tuple) else result).to(device)
             physical, log_p = score_samples(model, spectrum_dev, flat_samples, norm)
 
-            solved = solve_configs(pool, physical.reshape(n * num_samples, NUM_RES, 5), freq_hz).reshape(n, num_samples, -1)
+            solved = solve_configs(pool, physical.reshape(n * num_samples, int(norm['num_res']), 5), freq_hz).reshape(n, num_samples, -1)
             solver_mse = ((solved - true_erp_db[:, None, :]) ** 2).mean(axis=-1)
             picks = selection_indices(name, log_p, solver_mse)
 

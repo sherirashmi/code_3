@@ -50,7 +50,6 @@ from utils.plotting import save_figure
 from utils.support import device
 from concurrent.futures import ProcessPoolExecutor
 
-NUM_RES = 3
 PARAMS = [
     ("m", 0, r"mass $m$ (kg)"),
     ("k", 1, r"stiffness $k$ (N/m)"),
@@ -112,7 +111,7 @@ def main(
         if true_physical is None:
             # Canonical (ascending f_t) true designs, identical for every
             # design parameterisation (same split, exact decode).
-            true_physical = denormalize_design(test_design.reshape(n, -1).numpy(), NUM_RES, norm, consistent=False)
+            true_physical = denormalize_design(test_design.reshape(n, -1).numpy(), int(norm['num_res']), norm, consistent=False)
 
         print(f"Evaluating {name} design-parameter recovery ...")
         model, model_norm = load_inverse_model(name, dataset_tag)
@@ -137,8 +136,8 @@ def main(
 
     stats = {name: {} for name in names}
     lines = [
-        f"Design-parameter recovery ({n} held-out targets x {NUM_RES} resonators = "
-        f"{n * NUM_RES} points per model/parameter)",
+        f"Design-parameter recovery ({n} held-out targets x {int(norm['num_res'])} resonators = "
+        f"{n * int(norm['num_res'])} points per model/parameter)",
         "Caveat: the inverse problem is non-unique -- see this file's module docstring.",
         "=" * 90,
     ]

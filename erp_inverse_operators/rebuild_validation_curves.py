@@ -20,7 +20,6 @@ import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_inverse_model, solve_configs
-from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import denormalize_erp_array
 from utils.support import device
 
@@ -74,7 +73,7 @@ def main():
             flat_samples = (result[0][0] if has_log_prob else result[0]).cpu()
             log_probs = (result[1][0].cpu() if has_log_prob else None)
 
-            physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
+            physical = denormalize_design(flat_samples.numpy(), int(norm['num_res']), norm)
             predicted_erp = solve_configs(solver_pool, physical, freq_hz)
             recon_mse = ((predicted_erp - true_erp[row][None, :]) ** 2).mean(axis=1)
             best_idx = int(log_probs.numpy().argmax()) if has_log_prob else int(recon_mse.argmin())

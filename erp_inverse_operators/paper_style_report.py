@@ -68,7 +68,6 @@ from matplotlib.patches import Ellipse
 
 from erp_inverse_operators.common import denormalize_design, flatten_configuration, prepare_inverse_data
 from erp_inverse_operators.evaluate import MODEL_BUILDERS, SPAWN_CONTEXT, load_inverse_model, solve_configs
-from erp_inverse_operators.registry import NUM_RES
 from utils.erp_dataset import configuration_to_resonators, denormalize_configuration_array, denormalize_erp_array
 from utils.solver import compute_erp_spectrum
 from utils.support import device
@@ -77,8 +76,6 @@ from utils.paths import inverse_plot_dir
 from utils.plotting import save_figure
 
 OUT_DIR = inverse_plot_dir("100k")  # these report scripts use the 100k-trained models
-F_T_IDX = [i * 5 + 2 for i in range(NUM_RES)]  # flat-design index of each resonator's f_t
-MASS_IDX = [i * 5 + 0 for i in range(NUM_RES)]  # flat-design index of each resonator's mass
 
 WELL_SEPARATED_HZ = 10.0
 NEAR_DEGENERATE_HZ = 3.0
@@ -116,14 +113,14 @@ def _best_of_n_physical(model_name, test_spectrum, norm, freq_hz, num_samples, p
     if has_log_prob:
         best_idx = result[1].cpu().numpy().argmax(axis=-1)
     else:
-        physical_all = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
-        flat_physical = physical_all.reshape(n * num_samples, NUM_RES, 5)
+        physical_all = denormalize_design(flat_samples.numpy(), int(norm['num_res']), norm)
+        flat_physical = physical_all.reshape(n * num_samples, int(norm['num_res']), 5)
         solved = solve_configs(pool, flat_physical, freq_hz).reshape(n, num_samples, -1)
         true_erp_db = denormalize_erp_array(test_spectrum.numpy(), norm)
         recon_mse = ((solved - true_erp_db[:, None, :]) ** 2).mean(axis=-1)
         best_idx = recon_mse.argmin(axis=-1)
 
-    physical = denormalize_design(flat_samples.numpy(), NUM_RES, norm)
+    physical = denormalize_design(flat_samples.numpy(), int(norm['num_res']), norm)
     return physical[np.arange(n), best_idx]
 
 
@@ -313,7 +310,7 @@ def single_example_posterior(
         with torch.no_grad():
             result = model.sample(test_spectrum.to(device), num_samples=num_samples)
         flat_samples = (result[0] if isinstance(result, tuple) else result)[0].cpu().numpy()  # (S, 15)
-        physical = denormalize_design(flat_samples, NUM_RES, norm)  # (S, num_res, 5)
+        physical = denormalize_design(flat_samples, int(norm['num_res']), norm)  # (S, num_res, 5)
         samples_2d = np.stack([physical[:, 0, 2], physical[:, 1, 2]], axis=1)
 
         ax = axes[idx // n_cols][idx % n_cols]
@@ -390,8 +387,8 @@ def noise_robustness_check(
             noisy_result = model.sample(noisy_norm_spectrum.to(device), num_samples=num_samples)
         clean_flat = (clean_result[0] if isinstance(clean_result, tuple) else clean_result)[0].cpu().numpy()
         noisy_flat = (noisy_result[0] if isinstance(noisy_result, tuple) else noisy_result)[0].cpu().numpy()
-        clean_physical = denormalize_design(clean_flat, NUM_RES, norm)
-        noisy_physical = denormalize_design(noisy_flat, NUM_RES, norm)
+        clean_physical = denormalize_design(clean_flat, int(norm['num_res']), norm)
+        noisy_physical = denormalize_design(noisy_flat, int(norm['num_res']), norm)
         clean_2d = np.stack([clean_physical[:, 0, 2], clean_physical[:, 1, 2]], axis=1)
         noisy_2d = np.stack([noisy_physical[:, 0, 2], noisy_physical[:, 1, 2]], axis=1)
 

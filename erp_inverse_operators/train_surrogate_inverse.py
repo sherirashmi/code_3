@@ -33,7 +33,6 @@ import torch
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data, save_checkpoint
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
-from erp_inverse_operators.registry import DESIGN_DIM, NUM_RES
 from erp_inverse_operators.surrogate_inverse import (
     _CONFIG_FIELDS,
     _DESIGN_PHYSICAL_BOUNDS,
@@ -73,7 +72,8 @@ def main(
     )
     norm_params = dataset.norm_params
 
-    model = SurrogateInverse(design_dim=DESIGN_DIM, surrogate_checkpoints=surrogate_checkpoints)
+    num_res = int(norm_params['num_res'])
+    model = SurrogateInverse(design_dim=5 * num_res, surrogate_checkpoints=surrogate_checkpoints, num_res=num_res)
     print(f"SurrogateInverse params (excl. frozen surrogate ensemble): "
           f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,} "
           f"({model.num_surrogates} surrogate(s), deterministic point estimate)")
@@ -132,7 +132,7 @@ def _evaluate(model, dataset, loaders, norm_params, out_dir, num_examples: int =
 
     with torch.no_grad():
         predicted = model.sample(test_spectrum.to(device), num_samples=1)[:, 0, :].cpu()  # (num_examples, D)
-    physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)
+    physical = denormalize_design(predicted.numpy(), int(norm_params['num_res']), norm_params)
 
     solver_pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT)
     fig, axes = plt.subplots(1, num_examples, figsize=(4.8 * num_examples, 4.2))
@@ -188,8 +188,8 @@ def _plot_parameter_recovery(model, loaders, norm_params, out_dir, num_bins: int
 
     with torch.no_grad():
         predicted = model.sample(test_spectrum.to(device), num_samples=1)[:, 0, :].cpu()  # (n, D)
-    predicted_physical = denormalize_design(predicted.numpy(), NUM_RES, norm_params)  # (n, num_res, 5)
-    true_physical = denormalize_design(test_design.numpy().reshape(n, -1), NUM_RES, norm_params, consistent=False)
+    predicted_physical = denormalize_design(predicted.numpy(), int(norm_params['num_res']), norm_params)  # (n, num_res, 5)
+    true_physical = denormalize_design(test_design.numpy().reshape(n, -1), int(norm_params['num_res']), norm_params, consistent=False)
 
     fig, axes = plt.subplots(1, len(_CONFIG_FIELDS), figsize=(4.6 * len(_CONFIG_FIELDS), 4.6))
     for col, field in enumerate(_CONFIG_FIELDS):
@@ -233,7 +233,7 @@ def _plot_parameter_recovery(model, loaders, norm_params, out_dir, num_bins: int
 
     fig.suptitle(
         f"SurrogateInverse parameter recovery: predicted value spread per true-value bin "
-        f"({n} test targets x {NUM_RES} resonators = {n * NUM_RES} points/field, {num_bins} bins across each field's full generation range)",
+        f"({n} test targets x {int(norm_params['num_res'])} resonators = {n * int(norm_params['num_res'])} points/field, {num_bins} bins across each field's full generation range)",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.92])

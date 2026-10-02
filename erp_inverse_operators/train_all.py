@@ -58,7 +58,7 @@ from erp_inverse_operators.common import prepare_inverse_data, save_checkpoint, 
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, score_samples, solve_configs
 from erp_inverse_operators.mdn import MDN
 from erp_inverse_operators.padding_inn import PadINN
-from erp_inverse_operators.registry import INVERSE_MODELS, NUM_RES, DESIGN_DIM, variant_name
+from erp_inverse_operators.registry import INVERSE_MODELS, variant_name
 from utils.support import device, seed_everything
 
 
@@ -283,7 +283,9 @@ def _train_and_save(
     norm = dataset.norm_params
 
     print("\n" + "#" * 70 + f"\nTraining {spec['name']} ({short}) on dataset '{tag}'\n" + "#" * 70)
-    model = spec["build"](design_param=design_param, spectrum_encoder=spectrum_encoder, dataset_tag=tag)
+    model = spec["build"](
+        design_param=design_param, spectrum_encoder=spectrum_encoder, dataset_tag=tag, num_res=dataset.num_res
+    )
     _warm_start_if_mdn(model, loaders)
     checkpoint_path = inverse_model_path(short, tag)
     resume_path = checkpoint_path.with_suffix(".resume.pt")  # mid-training state, every 5 epochs
@@ -296,6 +298,7 @@ def _train_and_save(
     extra.update(
         {
             "model_short": short,
+            "num_res": int(dataset.num_res),
             "variant": {"spectrum_encoder": spectrum_encoder, "design_param": design_param},
             "history": history,
             "dataset_file": list(dataset_file) if isinstance(dataset_file, (list, tuple)) else dataset_file,

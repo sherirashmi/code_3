@@ -985,7 +985,7 @@ def prepare_erp_dataset(
     num_samples: int = 100,
     *,
     batch_size: int = 64,
-    num_res: int = default_num_res,
+    num_res: int | None = None,
     dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
@@ -1008,7 +1008,9 @@ def prepare_erp_dataset(
     batch_size:
         Number of configuration-frequency pairs per mini-batch.
     num_res:
-        Number of resonators per configuration.
+        Number of resonators per configuration. ``None`` (default) accepts
+        whatever the loaded file contains (and generates the project
+        default, 3, when creating a new file); an integer is enforced.
     dataset_file:
         Shared raw ERP dataset file. Pass a list/tuple of filenames instead
         of one string to load a dataset stored as multiple same-schema
@@ -1043,10 +1045,10 @@ def prepare_erp_dataset(
             raise ValueError("regenerate_dataset is not supported with a sharded dataset_file.")
         if verbose:
             print(f"Loading sharded raw ERP dataset ({len(dataset_file)} files): {list(dataset_file)}")
-        dataset = ERPDataset(num_samples=max(num_samples, 3), num_res=num_res, seed=seed)
+        dataset = ERPDataset(num_samples=max(num_samples, 3), num_res=num_res if num_res is not None else default_num_res, seed=seed)
         dataset.load_shards(list(dataset_file))
 
-        if dataset.num_res != int(num_res):
+        if num_res is not None and dataset.num_res != int(num_res):
             raise ValueError(
                 f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                 "was requested. Use a matching dataset file or regenerate it."
@@ -1071,19 +1073,19 @@ def prepare_erp_dataset(
 
             dataset = ERPDataset(
                 num_samples=n_generate,
-                num_res=num_res,
+                num_res=num_res if num_res is not None else default_num_res,
                 seed=seed,
             )
             dataset.generate(save=True, filename=dataset_file, verbose=verbose)
         else:
             dataset = ERPDataset(
                 num_samples=max(num_samples, 3),
-                num_res=num_res,
+                num_res=num_res if num_res is not None else default_num_res,
                 seed=seed,
             )
             dataset.load(dataset_file)
 
-            if dataset.num_res != int(num_res):
+            if num_res is not None and dataset.num_res != int(num_res):
                 raise ValueError(
                     f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                     "was requested. Use a matching dataset file or regenerate it."

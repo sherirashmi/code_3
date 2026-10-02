@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 
 from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
 from erp_inverse_operators.evaluate import SPAWN_CONTEXT, load_inverse_model, solve_configs
-from erp_inverse_operators.registry import NUM_RES, parse_variant
+from erp_inverse_operators.registry import parse_variant
 from erp_inverse_operators.train_all import format_configuration
 from utils.erp_dataset import (
     configuration_to_resonators,
@@ -82,7 +82,7 @@ def predict_one(
             target_erp_db = denormalize_erp_array(spectrum[:1].numpy(), norm)[0]
             # Exact decode for either design parameterisation (full15/bounded12).
             true_configuration = denormalize_design(
-                design[:1].reshape(1, -1).numpy(), NUM_RES, norm, consistent=False
+                design[:1].reshape(1, -1).numpy(), int(norm['num_res']), norm, consistent=False
             )[0]
             break
 
