@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, M_RES, OUT_DIR, TUNING_COLOR, configuration_row,
-                        style_axes)
+                        position_text, style_axes)
 from utils.erp_dataset import configuration_to_resonators
 from utils.solver import compute_erp_spectrum
 
@@ -21,7 +21,7 @@ freqs_fine = np.arange(10.0, 160.0 + 1e-9, 0.25)
 erp = compute_erp_spectrum(resonators, frequencies=freqs_fine)
 print(f"Computed {freqs_fine.size} points, ERP range [{erp.min():.2f}, {erp.max():.2f}] dB")
 
-fig, ax = plt.subplots(figsize=(9.5, 5.4))
+fig, ax = plt.subplots(figsize=(9.5, 5.8))
 style_axes(ax)
 ax.set_xlim(freqs_fine.min(), freqs_fine.max())
 pad = 0.08 * (erp.max() - erp.min())
@@ -39,10 +39,10 @@ sweep_line = ax.axvline(freqs_fine[0], color="#e08a1e", lw=1, alpha=0.6)
 ax.legend(loc="upper left", fontsize=9)
 
 fig.suptitle(f"ERP of a plate with three resonators (mass {M_RES:g} kg each)", y=0.985, fontsize=13)
-details = "   ".join(f"Resonator {i + 1}: tuning frequency {ft:.0f} Hz, position ({x:.2f} m, {y:.2f} m)"
-                     for i, (ft, x, y) in enumerate(RESONATORS))
-fig.text(0.5, 0.915, details, ha="center", fontsize=8.5, color="#3d3c39")
-fig.subplots_adjust(top=0.84, left=0.11, right=0.97, bottom=0.12)
+for i, (ft, x, y) in enumerate(RESONATORS):
+    fig.text(0.2 + 0.3 * i, 0.855, f"Resonator {i + 1}\ntuning frequency {ft:.0f} Hz\n{position_text(x, y)}",
+             ha="center", va="center", fontsize=9, color="#3d3c39", linespacing=1.4)
+fig.subplots_adjust(top=0.77, left=0.11, right=0.97, bottom=0.12)
 
 
 def update(i):
