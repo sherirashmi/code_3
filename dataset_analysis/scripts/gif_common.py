@@ -40,7 +40,7 @@ M_RES = 0.5
 
 FREQ_LABEL = "Frequency (Hz)"
 ERP_LABEL = "Equivalent radiated power, ERP (dB)"
-DB_RANGE = 30.0  # dynamic range of the displacement heatmap in dB
+DISPLACEMENT_LABEL = r"Displacement magnitude ($\mu$m)"  # solver force amplitude is 1 N
 
 ERP_COLOR = "#2a78d6"
 TUNING_COLOR = "#c2412c"
@@ -62,25 +62,26 @@ def style_axes(ax):
         ax.spines[side].set_visible(False)
 
 
-def displacement_db(field: np.ndarray, reference: float) -> np.ndarray:
-    """Displacement magnitude in dB relative to ``reference``, floored at -DB_RANGE."""
-    ratio = np.maximum(np.abs(field) / reference, 10 ** (-DB_RANGE / 20.0))
-    return 20.0 * np.log10(ratio)
+def displacement_um(field: np.ndarray) -> np.ndarray:
+    """Displacement magnitude in micrometres (the solver is driven by a 1 N point force)."""
+    return np.abs(field) * 1.0e6
 
 
 class PlateHeatmap:
-    """Plate displacement heatmap drawn to scale (equal aspect) with a dB colour scale,
-    contour lines, the plate outline and the force / resonator positions."""
+    """Plate displacement magnitude (micrometres, linear scale) drawn to scale (equal aspect),
+    with contour lines at 25, 50 and 75 % of the frame maximum, the plate outline and the
+    force / resonator positions. The colour range follows the largest value of each frame, so
+    the colour bar always shows real displacement values."""
 
-    LEVELS = (-24.0, -18.0, -12.0, -6.0)
+    LEVEL_FRACTIONS = (0.25, 0.5, 0.75)
 
-    def __init__(self, ax, cax, first_field_db: np.ndarray, force_label="Excitation force",
+    def __init__(self, ax, cax, first_field_um: np.ndarray, force_label="Excitation force",
                  resonator_label="Resonator"):
         self.ax = ax
         extent = [0.0, Lx, 0.0, Ly]
         self.extent = extent
-        self.im = ax.imshow(first_field_db, extent=extent, origin="lower", aspect="equal",
-                            cmap="magma", vmin=-DB_RANGE, vmax=0.0, interpolation="bicubic")
+        self.im = ax.imshow(first_field_um, extent=extent, origin="lower", aspect="equal",
+                            cmap="magma", vmin=0.0, vmax=float(first_field_um.max()), interpolation="bicubic")
         ax.add_patch(Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.2))
         ax.plot([xf], [yf], marker="*", color="#35d0ff", ms=15, mec="black", mew=0.9, ls="",
                 label=force_label, zorder=6)
@@ -94,22 +95,27 @@ class PlateHeatmap:
         ax.set_ylabel("Position $y$ (m)")
         ax.tick_params(direction="out")
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.34), ncol=2, frameon=False)
-        cbar = ax.figure.colorbar(self.im, cax=cax, orientation="horizontal")
-        cbar.set_label("Displacement magnitude (dB relative to the maximum of each frame)")
-        cbar.set_ticks(np.arange(-DB_RANGE, 1, 10))
+        self.cbar = ax.figure.colorbar(self.im, cax=cax, orientation="horizontal")
+        self.cbar.set_label(DISPLACEMENT_LABEL)
         self._contours = None
-        self.update(first_field_db, [])
+        self.maximum = 0.0
+        self.update(first_field_um, [])
 
-    def update(self, field_db: np.ndarray, resonator_xy):
-        self.im.set_data(field_db)
+    def update(self, field_um: np.ndarray, resonator_xy):
+        self.maximum = float(field_um.max())
+        self.im.set_data(field_um)
+        self.im.set_clim(0.0, self.maximum)
         if self._contours is not None:
             self._contours.remove()
         self._contours = self.ax.contour(
-            np.linspace(0, Lx, field_db.shape[1]), np.linspace(0, Ly, field_db.shape[0]),
-            field_db, levels=self.LEVELS, colors="white", linewidths=0.6, alpha=0.55)
+            np.linspace(0, Lx, field_um.shape[1]), np.linspace(0, Ly, field_um.shape[0]), field_um,
+            levels=[f * self.maximum for f in self.LEVEL_FRACTIONS], colors="white", linewidths=0.6, alpha=0.55)
         xs = [p[0] for p in resonator_xy]
         ys = [p[1] for p in resonator_xy]
         self.res_marker.set_data(xs, ys)
+
+    def largest_value_text(self) -> str:
+        return rf"largest displacement {self.maximum:.3g} $\mu$m"
 
 
 def make_two_panel_figure(width=14.0, height=5.2):

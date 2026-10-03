@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, M_RES, MODE_COLOR, OUT_DIR, TUNING_COLOR,
-                        PlateHeatmap, configuration_row, displacement_db, finish, make_two_panel_figure)
+                        PlateHeatmap, configuration_row, displacement_um, finish, make_two_panel_figure)
 from utils.erp_dataset import configuration_to_resonators
 from utils.physics import Lx, Ly, X_grid, freqs, omega_n
 from utils.solver import compute_displacement, compute_erp_spectrum
@@ -38,7 +38,7 @@ for i, y in enumerate(y_values):
     fields[i] = field
 print(f"Computed {n} frames in {time.time() - t0:.1f}s")
 
-fields_db = np.array([displacement_db(f, f.max()) for f in fields])
+fields_um = np.array([displacement_um(f) for f in fields])
 erp_min, erp_max = spectra.min(), spectra.max()
 pad = 0.08 * (erp_max - erp_min)
 
@@ -55,7 +55,7 @@ ax_erp.axvline(TUNING_FREQUENCY, color=TUNING_COLOR, ls="--", lw=1.4, alpha=0.8,
 ax_erp.legend(loc="upper left", fontsize=9)
 erp_title = ax_erp.set_title("")
 
-heat = PlateHeatmap(ax_field, cax, fields_db[0])
+heat = PlateHeatmap(ax_field, cax, fields_um[0])
 ax_field.axvline(X_FIXED, color="white", lw=1.0, ls=":", alpha=0.8)
 field_title = ax_field.set_title("")
 finish(fig, f"Moving one resonator across the plate width along the maximum-displacement line: "
@@ -66,8 +66,9 @@ def update(i):
     y = y_values[i]
     erp_line.set_data(freqs, spectra[i])
     erp_title.set_text(f"ERP spectrum, resonator at position ({X_FIXED:.2f} m, {y:.2f} m)")
-    heat.update(fields_db[i], [(X_FIXED, y)])
-    field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz (dotted line: maximum-displacement line)")
+    heat.update(fields_um[i], [(X_FIXED, y)])
+    field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz ({heat.largest_value_text()})\n"
+                         "dotted line: maximum-displacement line")
     return erp_line,
 
 

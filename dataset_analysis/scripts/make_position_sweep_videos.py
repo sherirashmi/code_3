@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, M_RES, MODE_COLOR, OUT_DIR, TUNING_COLOR,
-                        PlateHeatmap, configuration_row, displacement_db, finish, make_two_panel_figure)
+                        PlateHeatmap, configuration_row, displacement_um, finish, make_two_panel_figure)
 from utils.erp_dataset import configuration_to_resonators
 from utils.physics import Lx, Ly, freqs, omega_n
 from utils.solver import compute_displacement, compute_erp_spectrum
@@ -34,7 +34,7 @@ def build_sweep(sweep_axis, fixed_value, sweep_values, out_path):
         fields[i] = field
     print(f"[{sweep_axis}-sweep] computed {n} frames in {time.time() - t0:.1f}s")
 
-    fields_db = np.array([displacement_db(f, f.max()) for f in fields])  # each frame relative to its own maximum
+    fields_um = np.array([displacement_um(f) for f in fields])
     erp_min, erp_max = spectra.min(), spectra.max()
     pad = 0.08 * (erp_max - erp_min)
 
@@ -52,7 +52,7 @@ def build_sweep(sweep_axis, fixed_value, sweep_values, out_path):
     ax_erp.legend(loc="upper left", fontsize=9)
     erp_title = ax_erp.set_title("")
 
-    heat = PlateHeatmap(ax_field, cax, fields_db[0])
+    heat = PlateHeatmap(ax_field, cax, fields_um[0])
     field_title = ax_field.set_title("")
 
     swept = "length" if sweep_axis == "x" else "width"
@@ -65,8 +65,8 @@ def build_sweep(sweep_axis, fixed_value, sweep_values, out_path):
         x, y = positions[i]
         erp_line.set_data(freqs, spectra[i])
         erp_title.set_text(f"ERP spectrum, resonator at position ({x:.2f} m, {y:.2f} m)")
-        heat.update(fields_db[i], [(x, y)])
-        field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz")
+        heat.update(fields_um[i], [(x, y)])
+        field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz ({heat.largest_value_text()})")
         return erp_line,
 
     fps = 15
