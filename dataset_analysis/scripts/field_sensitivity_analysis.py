@@ -34,7 +34,7 @@ from utils.erp_dataset import ERPDataset
 from utils.physics import Lx, Ly, edge_margin, fmax, fmin, freqs, m_max, m_min
 from utils.solver import compute_erp_spectrum
 
-OUT_PATH = "dataset_analysis/plots/field_sensitivity.png"
+OUT_PATH = "dataset_analysis/100k/plots/field_sensitivity.png"
 
 rng = np.random.default_rng(0)
 

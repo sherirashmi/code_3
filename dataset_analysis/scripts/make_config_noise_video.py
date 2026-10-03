@@ -28,7 +28,7 @@ from utils.physics import Lx, Ly, edge_margin, fmax, fmin, freqs, m_max, m_min
 from utils.solver import compute_erp_spectrum
 from utils.plotting import _draw_plate_layout, _mark_resonator_tuning_lines
 
-OUT_PATH = "dataset_analysis/videos/erp_config_noise_sensitivity.mp4"
+OUT_PATH = "dataset_analysis/solver_demos/videos/erp_config_noise_sensitivity.mp4"
 
 rng = np.random.default_rng(42)
 

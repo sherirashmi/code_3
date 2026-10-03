@@ -27,7 +27,8 @@ from utils.erp_dataset import DATASETS, ERPDataset
 from utils.plot_style import save_figure
 
 TAG = sys.argv[1] if len(sys.argv) > 1 else "100k_2res_fixed_m0.2_ft72_18modes"
-OUT_DIR = ROOT / "dataset_analysis" / "plots"
+PLOT_DIR = ROOT / "dataset_analysis" / TAG / "plots"
+STATS_DIR = ROOT / "dataset_analysis" / TAG / "stats"
 BOX_STEP_HZ = 5.0
 
 BLUE = "#2a78d6"
@@ -103,9 +104,10 @@ def main():
             f"{number} resonators with varying mass, tuning frequency and position")
     fig.suptitle(f"ERP at each frequency over {n:,} configurations: {what}", fontsize=13)
     fig.tight_layout()
-    save_figure(fig, OUT_DIR / f"erp_frequency_boxplot_{TAG}.png")
+    STATS_DIR.mkdir(parents=True, exist_ok=True)
+    save_figure(fig, PLOT_DIR / "erp_frequency_boxplot.png")
 
-    csv_path = OUT_DIR / f"erp_frequency_boxplot_{TAG}.csv"
+    csv_path = STATS_DIR / "erp_frequency_boxplot.csv"
     rows = np.column_stack([freq, vmin, lo_whisk, q1, med, q3, hi_whisk, vmax])
     np.savetxt(csv_path, rows, delimiter=",", fmt="%.4f", comments="",
                header="frequency_hz,min_db,lower_whisker_db,q1_db,median_db,q3_db,upper_whisker_db,max_db")

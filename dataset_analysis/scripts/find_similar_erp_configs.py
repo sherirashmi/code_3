@@ -47,8 +47,8 @@ from utils.erp_dataset import ERPDataset
 from utils.physics import Lx, Ly, xf, yf
 from erp_inverse_operators.common import canonicalize_by_ft
 
-PAIRS_OUT = "dataset_analysis/plots/similar_erp_pairs.png"
-CLUSTERS_OUT = "dataset_analysis/plots/similar_erp_clusters.png"
+PAIRS_OUT = "dataset_analysis/100k/plots/similar_erp_pairs.png"
+CLUSTERS_OUT = "dataset_analysis/100k/plots/similar_erp_clusters.png"
 
 MSE_EDGE_THRESHOLD = 0.5  # dB^2, "near-identical" edge for building clusters
 N_TOP_PAIRS = 5

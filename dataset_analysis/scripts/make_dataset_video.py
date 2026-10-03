@@ -7,8 +7,8 @@ import time
 import matplotlib.animation as animation
 import numpy as np
 
-from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, MODE_COLOR, OUT_DIR, PlateHeatmap,
-                        displacement_db, finish, make_two_panel_figure)
+from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, MODE_COLOR, PlateHeatmap,
+                        displacement_db, finish, make_two_panel_figure, video_dir)
 from utils.erp_dataset import configuration_to_resonators
 from utils.physics import omega_n
 from utils.solver import compute_displacement
@@ -69,6 +69,6 @@ def update(i):
 
 fps = 6
 anim = animation.FuncAnimation(fig, update, frames=N_SHOW, blit=False, interval=1000 / fps)
-out_path = OUT_DIR / "erp_dataset_configs.gif"
+out_path = video_dir("10k") / "erp_dataset_configs.gif"
 anim.save(out_path, writer=animation.PillowWriter(fps=fps), dpi=GIF_DPI)
 print("Saved:", out_path)

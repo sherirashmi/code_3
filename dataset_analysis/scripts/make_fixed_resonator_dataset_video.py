@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 
-from gif_common import ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, MODE_COLOR, OUT_DIR, TUNING_COLOR, style_axes
+from gif_common import ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, MODE_COLOR, TUNING_COLOR, style_axes, video_dir
 import utils.physics as physics
 from utils.erp_dataset import DATASETS
 from utils.physics import Lx, Ly, edge_margin, xf, yf
@@ -135,10 +135,10 @@ def update(i):
 
 if "--preview" in sys.argv:  # one still frame for checking the layout
     update(0)
-    fig.savefig(OUT_DIR / f"preview_{TAG}.png", dpi=GIF_DPI)
+    fig.savefig(video_dir(TAG) / f"preview_{TAG}.png", dpi=GIF_DPI)
     sys.exit()
 
 anim = animation.FuncAnimation(fig, update, frames=N_SHOW, blit=False, interval=1000 / FPS)
-out_path = OUT_DIR / ("erp_dataset_2res_fixed_m0.2_ft72.gif" if fixed is not None else f"erp_dataset_{TAG}.gif")
+out_path = video_dir(TAG) / "erp_dataset_configs.gif"
 anim.save(out_path, writer=animation.PillowWriter(fps=FPS), dpi=GIF_DPI)
 print("Saved:", out_path)

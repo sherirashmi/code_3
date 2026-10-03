@@ -31,7 +31,7 @@ DATASET_100K = [
     "datasets/dataset_erp_ft_100k_part1.pth",
     "datasets/dataset_erp_ft_100k_part2.pth",
 ]
-OUT_DIR = Path("dataset_analysis/plots")
+OUT_DIR = Path("dataset_analysis/100k/plots")
 
 FIELDS = ["m", "k", "f_t", "x", "y"]
 UNITS = {"m": "kg", "k": "N/m", "f_t": "Hz", "x": "m", "y": "m"}

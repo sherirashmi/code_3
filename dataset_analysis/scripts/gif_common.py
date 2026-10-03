@@ -22,7 +22,16 @@ from matplotlib.patches import Rectangle
 import utils.plot_style  # noqa: F401  (applies the thesis LaTeX / Computer Modern look)
 from utils.physics import Lx, Ly, xf, yf
 
-OUT_DIR = ROOT / "dataset_analysis" / "videos"
+
+
+def video_dir(group: str) -> Path:
+    """dataset_analysis/<group>/videos, where <group> is a dataset tag or ``solver_demos``."""
+    path = ROOT / "dataset_analysis" / group / "videos"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+OUT_DIR = video_dir("solver_demos")  # demonstrations of the plate solver (no dataset)
 GIF_DPI = 100
 
 # One fixed resonator mass for the single-resonator sweeps; stiffness follows from
