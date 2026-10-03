@@ -46,6 +46,7 @@ from .design_space import sort_by_x
 from .evaluate import RES_COLORS, _draw_plate
 
 NO_FIT_DB = 3.0  # best band error above this: no block reproduces the ERP well
+AMBIGUOUS_DB = 0.5  # another block within this of the best: the ERP does not single out one f_t
 CANDIDATE_COLORS = ("#eb6834", "#2a78d6", "#1f9e74", "#9467bd", "#8c564b")
 
 
@@ -115,6 +116,11 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
     if best_err > NO_FIT_DB:
         lines += [f"WARNING: best ERP error {best_err:.2f} dB > {NO_FIT_DB:g} dB -- no block reproduces this ERP well "
                   "(f_t between the blocks, a different mass, or different physics).", ""]
+    others = np.delete(best_per_block, candidates[0][1])
+    close = [f"{f:g} Hz" for f, e in zip(np.delete(bank.block_ft, candidates[0][1]), others) if e - best_err < AMBIGUOUS_DB]
+    if best_err <= NO_FIT_DB and close:
+        lines += [f"NOTE: ambiguous -- block(s) {', '.join(close)} fit within {AMBIGUOUS_DB:g} dB of the best, so the ERP "
+                  "does not single out one f_t (e.g. resonators where the plate barely moves have almost no effect).", ""]
     if true_design is not None:
         lines.append("True configuration: f_t = {:g} Hz; ".format(true_design[0, 2]) + "; ".join(
             f"R{r + 1} ({true_design[r, 3]:.3f}, {true_design[r, 4]:.3f}) m" for r in range(len(true_design))))
@@ -174,6 +180,8 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
     title = f"Model bank: designs for the given ERP (best: $f_t$ = {bank.block_ft[win]:g} Hz, error {best_err:.2f} dB)"
     if best_err > NO_FIT_DB:
         title += " -- no block fits well"
+    elif close:
+        title += " -- ambiguous: " + ", ".join(close) + " fit almost as well"
     fig.suptitle(title, fontsize=13)
     save_figure(fig, out_dir / f"{name}.png")
     return candidates

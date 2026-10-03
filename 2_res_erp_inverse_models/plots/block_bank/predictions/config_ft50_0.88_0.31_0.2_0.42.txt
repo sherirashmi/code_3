@@ -1,0 +1,9 @@
+Model bank prediction (7 blocks, f_t = 40, 50, 60, 70, 80, 90, 100 Hz, m = 0.2 kg; 32 samples per block, solver-checked)
+
+True configuration: f_t = 50 Hz; R1 (0.200, 0.420) m; R2 (0.880, 0.310) m
+
+1. f_t = 50 Hz, m = 0.2 kg, k = 19,739 N/m; R1 (0.214, 0.425) m; R2 (0.884, 0.309) m | ERP error (40-120 Hz) 0.26 dB | position error 1.5, 0.4 cm (to y-mirror: 34.5, 11.9 cm)
+2. f_t = 50 Hz, m = 0.2 kg, k = 19,739 N/m; R1 (0.173, 0.403) m; R2 (0.881, 0.309) m | ERP error (40-120 Hz) 0.43 dB | position error 3.2, 0.2 cm (to y-mirror: 32.4, 11.9 cm)
+3. f_t = 50 Hz, m = 0.2 kg, k = 19,739 N/m; R1 (0.222, 0.072) m; R2 (0.888, 0.307) m | ERP error (40-120 Hz) 0.56 dB | position error 34.8, 0.8 cm (to y-mirror: 2.3, 11.7 cm)
+
+Best ERP error of every block: 40 Hz: 8.12 dB, 50 Hz: 0.26 dB, 60 Hz: 10.95 dB, 70 Hz: 11.77 dB, 80 Hz: 13.32 dB, 90 Hz: 13.85 dB, 100 Hz: 15.60 dB
