@@ -70,7 +70,7 @@ def main():
     # (a) every frequency point as bands
     ax_a.fill_between(freq, vmin, vmax, color=BLUE, alpha=0.10, lw=0, label="Minimum to maximum")
     ax_a.fill_between(freq, lo_whisk, hi_whisk, color=BLUE, alpha=0.22, lw=0, label=r"Whiskers ($1.5\times$IQR)")
-    ax_a.fill_between(freq, q1, q3, color=BLUE, alpha=0.45, lw=0, label="Interquartile range (25th--75th percentile)")
+    ax_a.fill_between(freq, q1, q3, color=BLUE, alpha=0.45, lw=0, label="Interquartile range (25th to 75th percentile)")
     ax_a.plot(freq, med, color="black", lw=1.6, label="Median")
     ax_a.set_title(f"(a) ERP distribution at each of the {freq.size} frequency points")
     ax_a.legend(loc="lower right", fontsize=9, ncol=2)
@@ -93,10 +93,14 @@ def main():
 
     ymin, ymax = vmin.min(), vmax.max()
     pad = 0.04 * (ymax - ymin)
-    ax_a.set_ylim(ymin - pad, ymax + pad)
-    ax_b.set_ylim(ymin - pad, ymax + pad)
+    # Leave room under the data for the legends when the spread is large (varying resonators).
+    low_pad = pad if fixed is not None else 0.2 * (ymax - ymin)
+    ax_a.set_ylim(ymin - low_pad, ymax + pad)
+    ax_b.set_ylim(ymin - low_pad, ymax + pad)
+    number = {1: "one", 2: "two", 3: "three", 4: "four"}.get(int(dataset.num_res), str(dataset.num_res))
     what = (f"two identical resonators ($m = {fixed[0]:g}$ kg, $f_t = {fixed[1]:.0f}$ Hz), only the positions varied"
-            if fixed is not None else spec.get("label", TAG))
+            if fixed is not None else
+            f"{number} resonators with varying mass, tuning frequency and position")
     fig.suptitle(f"ERP at each frequency over {n:,} configurations: {what}", fontsize=13)
     fig.tight_layout()
     save_figure(fig, OUT_DIR / f"erp_frequency_boxplot_{TAG}.png")
