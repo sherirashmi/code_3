@@ -135,24 +135,26 @@ DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
     "fixed_resonator": (0.2, 72.0),
 }
 # Block datasets for the position-only model bank (2_res_erp_inverse_models/block_bank.py):
-# 10k configurations each, 2 identical resonators (m = 0.2 kg, one f_t per block), LHS x, y.
+# 10k configurations each, num_res identical resonators (m = 0.2 kg, one f_t per block), LHS x, y.
 FIXED_BLOCK_FREQUENCIES = (40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0)
+FIXED_BLOCK_NUM_RES = (2, 3)
 
 
-def fixed_block_tag(f_t: float, m: float = 0.2) -> str:
-    return f"10k_2res_fixed_m{m:g}_ft{f_t:g}_18modes"
+def fixed_block_tag(f_t: float, m: float = 0.2, num_res: int = 2) -> str:
+    return f"10k_{int(num_res)}res_fixed_m{m:g}_ft{f_t:g}_18modes"
 
 
-for _ft in FIXED_BLOCK_FREQUENCIES:
-    DATASETS[fixed_block_tag(_ft)] = {
-        "label": f"10k configurations, 2 identical resonators (m = 0.2 kg, f_t = {_ft:g} Hz), continuous LHS x, y, "
-                 "18 plate modes (6x3)",
-        "files": [f"datasets/dataset_erp_10k_2res_fixed_m0p2_ft{_ft:g}_18modes.pth"],
-        "num_configurations": 10_000,
-        "modal_resolution": (6, 3),
-        "num_res": 2,
-        "fixed_resonator": (0.2, _ft),
-    }
+for _nr in FIXED_BLOCK_NUM_RES:
+    for _ft in FIXED_BLOCK_FREQUENCIES:
+        DATASETS[fixed_block_tag(_ft, num_res=_nr)] = {
+            "label": f"10k configurations, {_nr} identical resonators (m = 0.2 kg, f_t = {_ft:g} Hz), continuous LHS x, y, "
+                     "18 plate modes (6x3)",
+            "files": [f"datasets/dataset_erp_10k_{_nr}res_fixed_m0p2_ft{_ft:g}_18modes.pth"],
+            "num_configurations": 10_000,
+            "modal_resolution": (6, 3),
+            "num_res": _nr,
+            "fixed_resonator": (0.2, _ft),
+        }
 DEFAULT_DATASET_TAG = "10k"
 
 

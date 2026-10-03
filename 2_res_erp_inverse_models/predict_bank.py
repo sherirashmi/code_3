@@ -18,7 +18,8 @@ must match the bank: same plate, excitation force and 2 resonators of 0.2 kg.
 
 Usage (from the repository root)::
 
-    python -m 2_res_erp_inverse_models.predict_bank --config 70 0.40 0.15 1.10 0.35
+    python -m 2_res_erp_inverse_models.predict_bank --config 70 0.40 0.15 1.10 0.35            # 2 resonators
+    python -m 2_res_erp_inverse_models.predict_bank --config 70 0.30 0.15 0.80 0.40 1.15 0.20  # 3 resonators
     python -m 2_res_erp_inverse_models.predict_bank --erp my_erp.csv --top 3
 
 Saves ``plots/block_bank/predictions/<name>.png`` and ``<name>.txt``.
@@ -41,7 +42,7 @@ from erp_inverse_operators.evaluate import SPAWN_CONTEXT, solve_configs
 from utils.physics import Ly, freqs
 from utils.plotting import ERP_LABEL, FREQ_LABEL, save_figure
 
-from .block_bank import OUT_DIR, BlockBank
+from .block_bank import BlockBank, out_dir
 from .design_space import sort_by_x
 from .evaluate import RES_COLORS, _draw_plate
 
@@ -75,9 +76,12 @@ def load_erp(path: str | Path, grid: np.ndarray) -> np.ndarray:
     return np.interp(grid, f, erp, left=np.nan, right=np.nan)
 
 
-def design_from_config(f_t: float, x1: float, y1: float, x2: float, y2: float, m: float = 0.2) -> np.ndarray:
+def design_from_config(f_t: float, *xy: float, m: float = 0.2) -> np.ndarray:
+    """``f_t, x1, y1, x2, y2, ...`` -> (num_res, 5) design, resonators sorted by x."""
+    if len(xy) < 2 or len(xy) % 2:
+        raise ValueError("Give F_T followed by an x, y pair per resonator.")
     k = m * (2 * np.pi * f_t) ** 2
-    return sort_by_x(np.array([[m, k, f_t, x1, y1], [m, k, f_t, x2, y2]], dtype=np.float64))
+    return sort_by_x(np.array([[m, k, f_t, x, y] for x, y in zip(xy[0::2], xy[1::2])], dtype=np.float64))
 
 
 def rank_candidates(res: dict, top: int, min_distinct_cm: float = 3.0):
@@ -96,9 +100,12 @@ def rank_candidates(res: dict, top: int, min_distinct_cm: float = 3.0):
     return picked
 
 
-def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, num_samples: int = 32):
+def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, num_samples: int = 32,
+         num_res: int = 2):
     grid = np.asarray(freqs, dtype=np.float64)
-    bank = BlockBank()
+    if true_design is not None:
+        num_res = len(true_design)
+    bank = BlockBank(num_res=num_res)
     with ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT) as pool:
         if erp_db is None:
             erp_db = solve_configs(pool, true_design[None], grid)[0]
@@ -111,7 +118,7 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
     best_per_block = res["best_per_block"][0]
     best_err = candidates[0][2]
 
-    lines = [f"Model bank prediction ({len(bank.tags)} blocks, f_t = {', '.join(f'{f:g}' for f in bank.block_ft)} Hz, "
+    lines = [f"Model bank prediction ({num_res} resonators; {len(bank.tags)} blocks, f_t = {', '.join(f'{f:g}' for f in bank.block_ft)} Hz, "
              f"m = 0.2 kg; {num_samples} samples per block, solver-checked)", ""]
     if best_err > NO_FIT_DB:
         lines += [f"WARNING: best ERP error {best_err:.2f} dB > {NO_FIT_DB:g} dB -- no block reproduces this ERP well "
@@ -138,9 +145,9 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
                      f"ERP error (40-120 Hz) {err:.2f} dB{extra}")
     lines += ["", "Best ERP error of every block: " + ", ".join(f"{f:g} Hz: {e:.2f} dB" for f, e in zip(bank.block_ft, best_per_block))]
     text = "\n".join(lines)
-    out_dir = OUT_DIR / "predictions"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"{name}.txt").write_text(text + "\n")
+    pred_dir = out_dir(num_res) / "predictions"
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    (pred_dir / f"{name}.txt").write_text(text + "\n")
     print(text)
 
     # ---- figure -------------------------------------------------------------------------------
@@ -183,7 +190,7 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
     elif close:
         title += " -- ambiguous: " + ", ".join(close) + " fit almost as well"
     fig.suptitle(title, fontsize=13)
-    save_figure(fig, out_dir / f"{name}.png")
+    save_figure(fig, pred_dir / f"{name}.png")
     return candidates
 
 
@@ -191,16 +198,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--erp", help="ERP file (.csv or .npy), see above")
-    group.add_argument("--config", nargs=5, type=float, metavar=("F_T", "X1", "Y1", "X2", "Y2"),
-                       help="compute the ERP of this configuration with the solver first")
+    group.add_argument("--config", nargs="+", type=float, metavar="F_T X1 Y1 X2 Y2 ...",
+                       help="F_T then x, y of every resonator; its ERP is computed with the solver first "
+                            "(the number of pairs selects the 2- or 3-resonator bank)")
+    parser.add_argument("--num-res", type=int, default=2, help="resonators per configuration for --erp (default 2)")
     parser.add_argument("--top", type=int, default=3, help="number of designs to return (default 3)")
     parser.add_argument("--samples", type=int, default=32, help="samples per block (default 32)")
     parser.add_argument("--name", default=None, help="output file name (default from the input)")
     args = parser.parse_args()
     if args.config:
         design = design_from_config(*args.config)
-        name = args.name or "config_ft{:g}_{:g}_{:g}_{:g}_{:g}".format(*args.config)
+        name = args.name or "config_ft" + "_".join(f"{v:g}" for v in args.config)
         main(true_design=design, name=name, top=args.top, num_samples=args.samples)
     else:
         erp = load_erp(args.erp, np.asarray(freqs, dtype=np.float64))
-        main(erp_db=erp, name=args.name or Path(args.erp).stem, top=args.top, num_samples=args.samples)
+        main(erp_db=erp, name=args.name or Path(args.erp).stem, top=args.top, num_samples=args.samples,
+             num_res=args.num_res)

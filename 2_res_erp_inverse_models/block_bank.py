@@ -50,15 +50,22 @@ from .design_space import sort_by_x
 from .evaluate import RES_COLORS, _draw_plate, load_model, sample_designs
 
 MODEL = "Flow"
-OUT_DIR = PACKAGE_ROOT / "plots" / "block_bank"
+OUT_DIR = PACKAGE_ROOT / "plots" / "block_bank"  # 2 resonators; see out_dir()
+
+
+def out_dir(num_res: int = 2):
+    """plots/block_bank (2 resonators) or plots/block_bank_<N>res."""
+    return OUT_DIR if int(num_res) == 2 else PACKAGE_ROOT / "plots" / f"block_bank_{int(num_res)}res"
 BETWEEN_BLOCKS_FT = (45.0, 75.0)
 
 
 class BlockBank:
     """All trained blocks; ``predict`` sends target ERPs through every block."""
 
-    def __init__(self, frequencies=FIXED_BLOCK_FREQUENCIES, model: str = MODEL):
-        self.tags = [fixed_block_tag(f) for f in frequencies if model_path(model, fixed_block_tag(f)).exists()]
+    def __init__(self, frequencies=FIXED_BLOCK_FREQUENCIES, model: str = MODEL, num_res: int = 2):
+        self.num_res = int(num_res)
+        tags = [fixed_block_tag(f, num_res=self.num_res) for f in frequencies]
+        self.tags = [t for t in tags if model_path(model, t).exists()]
         if not self.tags:
             raise FileNotFoundError("No trained blocks found -- run train_all for each block dataset first.")
         select_dataset_modal_resolution(self.tags[0])
@@ -103,13 +110,13 @@ def _test_targets(tags, per_block: int):
     return np.concatenate(designs), np.concatenate(erps), np.concatenate(labels), np.asarray(dataset.frequency_values, dtype=np.float64)
 
 
-def _between_block_targets(pool, frequency_values, num: int = 40, mass: float = 0.2):
+def _between_block_targets(pool, frequency_values, num: int = 40, mass: float = 0.2, num_res: int = 2):
     from utils.physics import resonator_bounds
 
     out = {}
     for f_t in BETWEEN_BLOCKS_FT:
-        raw = lhs_sampling(num, bounds=resonator_bounds(2), seed=int(f_t)).reshape(num, 2, 4)
-        designs = np.zeros((num, 2, 5))
+        raw = lhs_sampling(num, bounds=resonator_bounds(num_res), seed=int(f_t)).reshape(num, num_res, 4)
+        designs = np.zeros((num, num_res, 5))
         designs[..., 0], designs[..., 2] = mass, f_t
         designs[..., 1] = mass * (2 * np.pi * f_t) ** 2
         designs[..., 3:5] = raw[..., 0:2]
@@ -122,8 +129,9 @@ def _distance_cm(pred, true):
     return 100 * np.hypot(pred[..., 3] - true[..., 3], pred[..., 4] - true[..., 4])
 
 
-def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3) -> None:
-    bank = BlockBank()
+def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3, num_res: int = 2) -> None:
+    bank = BlockBank(num_res=num_res)
+    OUT_DIR = out_dir(num_res)
     B = len(bank.tags)
     designs, erps, labels, freq = _test_targets(bank.tags, per_block)
     n = len(labels)
@@ -133,7 +141,7 @@ def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3) -> 
 
     with ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT) as pool:
         res = bank.predict(erps, freq, pool, num_samples)
-        between = _between_block_targets(pool, freq)
+        between = _between_block_targets(pool, freq, num_res=num_res)
         between_res = {f: bank.predict(e, freq, pool, num_samples) for f, (_, e) in between.items()}
 
     choice, best = res["choice"], res["best_per_block"]
@@ -149,7 +157,7 @@ def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3) -> 
     dist_mirror_ok = np.minimum(dist_chosen, _distance_cm(chosen, mirror))
 
     lines = [
-        f"Model bank: {B} blocks ({MODEL} per block; m = 0.2 kg; f_t = {', '.join(f'{f:g}' for f in bank.block_ft)} Hz)",
+        f"Model bank: {B} blocks ({MODEL} per block; {num_res} resonators, m = 0.2 kg; f_t = {', '.join(f'{f:g}' for f in bank.block_ft)} Hz)",
         f"{n} test targets ({per_block} from the TEST split of every block), {num_samples} samples per block,",
         "every candidate design checked with the solver; the lowest 40-120 Hz ERP error wins.", "",
         f"Correct block chosen: {correct.mean() * 100:.1f} % ({correct.sum()} / {n})",
@@ -207,7 +215,7 @@ def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3) -> 
         ax.set_yticks(range(B), labels_hz)
         ax.set_xlabel("Candidate / chosen block, $f_t$ (Hz)")
         ax.set_ylabel("True block of the target, $f_t$ (Hz)")
-    fig.suptitle(f"Model bank of {B} blocks: block selection by solver on {n} test targets", fontsize=13)
+    fig.suptitle(f"Model bank of {B} blocks ({num_res} resonators): block selection by solver on {n} test targets", fontsize=13)
     fig.tight_layout()
     save_figure(fig, OUT_DIR / "block_selection.png")
 
@@ -272,4 +280,6 @@ def main(per_block: int = 100, num_samples: int = 16, num_examples: int = 3) -> 
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(num_res=int(sys.argv[1]) if len(sys.argv) > 1 else 2)
