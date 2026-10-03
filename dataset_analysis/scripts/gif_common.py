@@ -40,7 +40,7 @@ M_RES = 0.5
 
 FREQ_LABEL = "Frequency (Hz)"
 ERP_LABEL = "Equivalent radiated power, ERP (dB)"
-DISPLACEMENT_LABEL = r"Displacement magnitude ($\mu$m)"  # solver force amplitude is 1 N
+DISPLACEMENT_LABEL = r"Displacement magnitude ($\mu$m), same colour scale in every frame"  # 1 N force
 
 ERP_COLOR = "#2a78d6"
 TUNING_COLOR = "#c2412c"
@@ -67,21 +67,31 @@ def displacement_um(field: np.ndarray) -> np.ndarray:
     return np.abs(field) * 1.0e6
 
 
+def shared_vmax(fields_um, percentile: float = 95.0) -> float:
+    """One colour-scale maximum (micrometres) for a whole GIF: the given percentile of the
+    per-frame maxima, rounded up to two significant figures. Frames above it are capped."""
+    peak = float(np.percentile([float(np.max(f)) for f in fields_um], percentile))
+    magnitude = 10.0 ** np.floor(np.log10(peak))
+    return float(np.ceil(peak / magnitude * 10.0) / 10.0 * magnitude)
+
+
 class PlateHeatmap:
     """Plate displacement magnitude (micrometres, linear scale) drawn to scale (equal aspect),
-    with contour lines at 25, 50 and 75 % of the frame maximum, the plate outline and the
-    force / resonator positions. The colour range follows the largest value of each frame, so
-    the colour bar always shows real displacement values."""
+    with contour lines at 25, 50 and 75 % of the colour-scale maximum, the plate outline and the
+    force / resonator positions. The colour scale is fixed for the whole GIF (``vmax``), so one
+    colour always means the same displacement; values above it are capped (arrow on the colour
+    bar) and the panel title still gives each frame's true largest value."""
 
     LEVEL_FRACTIONS = (0.25, 0.5, 0.75)
 
-    def __init__(self, ax, cax, first_field_um: np.ndarray, force_label="Excitation force",
+    def __init__(self, ax, cax, first_field_um: np.ndarray, vmax: float, force_label="Excitation force",
                  resonator_label="Resonator"):
         self.ax = ax
+        self.vmax = float(vmax)
         extent = [0.0, Lx, 0.0, Ly]
         self.extent = extent
         self.im = ax.imshow(first_field_um, extent=extent, origin="lower", aspect="equal",
-                            cmap="magma", vmin=0.0, vmax=float(first_field_um.max()), interpolation="bicubic")
+                            cmap="magma", vmin=0.0, vmax=self.vmax, interpolation="bicubic")
         ax.add_patch(Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.2))
         ax.plot([xf], [yf], marker="*", color="#35d0ff", ms=15, mec="black", mew=0.9, ls="",
                 label=force_label, zorder=6)
@@ -95,7 +105,7 @@ class PlateHeatmap:
         ax.set_ylabel("Position $y$ (m)")
         ax.tick_params(direction="out")
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.34), ncol=2, frameon=False)
-        self.cbar = ax.figure.colorbar(self.im, cax=cax, orientation="horizontal")
+        self.cbar = ax.figure.colorbar(self.im, cax=cax, orientation="horizontal", extend="max")
         self.cbar.set_label(DISPLACEMENT_LABEL)
         self._contours = None
         self.maximum = 0.0
@@ -104,12 +114,11 @@ class PlateHeatmap:
     def update(self, field_um: np.ndarray, resonator_xy):
         self.maximum = float(field_um.max())
         self.im.set_data(field_um)
-        self.im.set_clim(0.0, self.maximum)
         if self._contours is not None:
             self._contours.remove()
         self._contours = self.ax.contour(
             np.linspace(0, Lx, field_um.shape[1]), np.linspace(0, Ly, field_um.shape[0]), field_um,
-            levels=[f * self.maximum for f in self.LEVEL_FRACTIONS], colors="white", linewidths=0.6, alpha=0.55)
+            levels=[f * self.vmax for f in self.LEVEL_FRACTIONS], colors="white", linewidths=0.6, alpha=0.55)
         xs = [p[0] for p in resonator_xy]
         ys = [p[1] for p in resonator_xy]
         self.res_marker.set_data(xs, ys)

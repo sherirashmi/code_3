@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, M_RES, MODE_COLOR, OUT_DIR, TUNING_COLOR,
-                        PlateHeatmap, configuration_row, displacement_um, finish, make_two_panel_figure)
+                        PlateHeatmap, configuration_row, displacement_um, finish, shared_vmax, make_two_panel_figure)
 from utils.erp_dataset import configuration_to_resonators
 from utils.physics import Lx, Ly, freqs, omega_n
 from utils.solver import compute_displacement, compute_erp_spectrum
@@ -52,7 +52,7 @@ def build_sweep(sweep_axis, fixed_value, sweep_values, out_path):
     ax_erp.legend(loc="upper left", fontsize=9)
     erp_title = ax_erp.set_title("")
 
-    heat = PlateHeatmap(ax_field, cax, fields_um[0])
+    heat = PlateHeatmap(ax_field, cax, fields_um[0], vmax=shared_vmax(fields_um))
     field_title = ax_field.set_title("")
 
     swept = "length" if sweep_axis == "x" else "width"

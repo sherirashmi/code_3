@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 from gif_common import (ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, MODE_COLOR, PlateHeatmap,
-                        displacement_um, finish, make_two_panel_figure, video_dir)
+                        displacement_um, finish, shared_vmax, make_two_panel_figure, video_dir)
 from utils.erp_dataset import configuration_to_resonators
 from utils.physics import omega_n
 from utils.solver import compute_displacement
@@ -49,7 +49,7 @@ for f in plate_modes_in_range:
 ax_erp.legend(loc="upper left", fontsize=9)
 erp_title = ax_erp.set_title("")
 
-heat = PlateHeatmap(ax_field, cax, fields_um[0], resonator_label="Resonators")
+heat = PlateHeatmap(ax_field, cax, fields_um[0], vmax=shared_vmax(fields_um), resonator_label="Resonators")
 field_title = ax_field.set_title("")
 finish(fig, "Example configurations from the dataset (three resonators each)")
 
