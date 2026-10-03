@@ -18,6 +18,24 @@
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
+    "model": "DCO_sorted_phys",
+    "rmse": 2.701545739108106,
+    "rmse_low_band_db": 0.2257626627302077,
+    "rmse_interior_db": 2.7585533168541247,
+    "rmse_high_band_db": 2.987001482223374,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 6.696528821907778,
+    "rmse_off_peaks_db": 2.5368229265177638,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.105857182214291,
+    "rmse_not_close_ft_db": 2.65282130019248,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 2.536079889008375,
+    "rmse_not_near_edge_db": 2.71930945665896,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
     "model": "DNO",
     "rmse": 2.6897494638334143,
     "rmse_low_band_db": 0.24481746487037856,
@@ -33,6 +51,24 @@
     "close_ft_threshold_hz": 2.6107864379882817,
     "rmse_near_edge_db": 2.582948456563497,
     "rmse_not_near_edge_db": 2.701355628063361,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
+    "model": "DNO_sorted_phys",
+    "rmse": 2.921485589337393,
+    "rmse_low_band_db": 0.3015910915178945,
+    "rmse_interior_db": 2.9890604717736693,
+    "rmse_high_band_db": 3.1246267883307315,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 6.783829198692958,
+    "rmse_off_peaks_db": 2.7701219061888986,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.3120952493771108,
+    "rmse_not_close_ft_db": 2.874810253665847,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 2.69829838527442,
+    "rmse_not_near_edge_db": 2.9452403545798833,
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
@@ -54,6 +90,24 @@
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
+    "model": "DON_sorted_phys",
+    "rmse": 6.4276370444241415,
+    "rmse_low_band_db": 0.9683092781790233,
+    "rmse_interior_db": 6.646286759335915,
+    "rmse_high_band_db": 5.481411222302711,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 12.924263560807256,
+    "rmse_off_peaks_db": 6.198799754159962,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 6.453081915685796,
+    "rmse_not_close_ft_db": 6.424803636264918,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 6.050275501426527,
+    "rmse_not_near_edge_db": 6.468207277380781,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
     "model": "FNO",
     "rmse": 3.1103944880279712,
     "rmse_low_band_db": 0.9351684538451523,
@@ -69,6 +123,24 @@
     "close_ft_threshold_hz": 2.6107864379882817,
     "rmse_near_edge_db": 2.948935617632868,
     "rmse_not_near_edge_db": 3.127819948997291,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
+    "model": "FNO_sorted_phys",
+    "rmse": 3.446892961885855,
+    "rmse_low_band_db": 1.7443433189477726,
+    "rmse_interior_db": 3.521674594675185,
+    "rmse_high_band_db": 3.3622170084749987,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 7.95942209189279,
+    "rmse_off_peaks_db": 3.2708003605596474,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.7751545900034165,
+    "rmse_not_close_ft_db": 3.408468611301112,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 3.1575326555385463,
+    "rmse_not_near_edge_db": 3.477558277739265,
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
@@ -90,6 +162,24 @@
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
+    "model": "GNO_phys",
+    "rmse": 3.8397770640111584,
+    "rmse_low_band_db": 0.44792038053424826,
+    "rmse_interior_db": 3.907669096509833,
+    "rmse_high_band_db": 4.44795131926779,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 6.568684024849195,
+    "rmse_off_peaks_db": 3.753811619529222,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 4.120047657254465,
+    "rmse_not_close_ft_db": 3.80736263328302,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 3.5558919542654306,
+    "rmse_not_near_edge_db": 3.8700346983732543,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
     "model": "LNO",
     "rmse": 2.8572786911964045,
     "rmse_low_band_db": 0.37300911181459256,
@@ -105,6 +195,42 @@
     "close_ft_threshold_hz": 2.6107864379882817,
     "rmse_near_edge_db": 2.710096335084992,
     "rmse_not_near_edge_db": 2.8731668146907885,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
+    "model": "LNO_sorted_phys",
+    "rmse": 3.180075132094234,
+    "rmse_low_band_db": 0.5029086749098434,
+    "rmse_interior_db": 3.2726567414054424,
+    "rmse_high_band_db": 3.0298071357925194,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 7.150024271630202,
+    "rmse_off_peaks_db": 3.0282616433164584,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.552361375034718,
+    "rmse_not_close_ft_db": 3.1359830228066787,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 2.8715697240920233,
+    "rmse_not_near_edge_db": 3.212525215335577,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
+    "model": "NN_perm",
+    "rmse": 8.531590269799546,
+    "rmse_low_band_db": 7.650493465427015,
+    "rmse_interior_db": 8.286277843739155,
+    "rmse_high_band_db": 12.711507793966787,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 15.659149636592373,
+    "rmse_off_peaks_db": 8.296106240589795,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 8.560459264142166,
+    "rmse_not_close_ft_db": 8.528376561596568,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 8.413849548168354,
+    "rmse_not_near_edge_db": 8.544572413600292,
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
@@ -126,6 +252,24 @@
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
+    "model": "SIREN_sorted_phys",
+    "rmse": 3.11722176516255,
+    "rmse_low_band_db": 0.6142221758564465,
+    "rmse_interior_db": 3.186994546491394,
+    "rmse_high_band_db": 3.3331676821006937,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 6.960363930456455,
+    "rmse_off_peaks_db": 2.9710217518113664,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.4392900988419033,
+    "rmse_not_close_ft_db": 3.0793576480916456,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 2.961732496696427,
+    "rmse_not_near_edge_db": 3.1340220648331414,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
     "model": "STO",
     "rmse": 2.9396513507705153,
     "rmse_low_band_db": 0.41568269131052815,
@@ -144,6 +288,24 @@
     "near_edge_threshold_m": 0.055329689383506776
   },
   {
+    "model": "STO_phys",
+    "rmse": 3.8615663307358017,
+    "rmse_low_band_db": 0.5927317891672002,
+    "rmse_interior_db": 3.941059682070173,
+    "rmse_high_band_db": 4.273882707489955,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 7.030541256738631,
+    "rmse_off_peaks_db": 3.757447723128245,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 4.1193773264143285,
+    "rmse_not_close_ft_db": 3.83185001205,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 3.6059489813217334,
+    "rmse_not_near_edge_db": 3.88893118900167,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
     "model": "WNO",
     "rmse": 3.296291498552975,
     "rmse_low_band_db": 1.8753038706785465,
@@ -159,6 +321,24 @@
     "close_ft_threshold_hz": 2.6107864379882817,
     "rmse_near_edge_db": 3.214174355753797,
     "rmse_not_near_edge_db": 3.305289575856772,
+    "near_edge_threshold_m": 0.055329689383506776
+  },
+  {
+    "model": "WNO_sorted_phys",
+    "rmse": 3.4597937629402247,
+    "rmse_low_band_db": 1.9201192641481155,
+    "rmse_interior_db": 3.5103373863166283,
+    "rmse_high_band_db": 3.7267532574541966,
+    "low_band_hz": 17.0,
+    "high_band_hz": 153.0,
+    "rmse_at_peaks_db": 9.053657483789564,
+    "rmse_off_peaks_db": 3.2189184877408055,
+    "peaks_per_spectrum_mean": 6.7623,
+    "rmse_close_ft_db": 3.7290807260616976,
+    "rmse_not_close_ft_db": 3.4285677462772015,
+    "close_ft_threshold_hz": 2.6107864379882817,
+    "rmse_near_edge_db": 3.267610670354256,
+    "rmse_not_near_edge_db": 3.480492536756876,
     "near_edge_threshold_m": 0.055329689383506776
   }
 ]
