@@ -60,6 +60,11 @@ CUSTOM_CONFIGURATIONS = [
 ]
 
 
+def display_name(name: str) -> str:
+    """Architecture name only (``DCO_sorted_phys`` -> ``DCO``) for figures and tables."""
+    return name.split("_")[0]
+
+
 def build_configuration(rows) -> np.ndarray:
     return np.asarray([[m, m * (2 * np.pi * f) ** 2, f, x, y] for m, f, x, y in rows], dtype=np.float32)
 
@@ -131,7 +136,7 @@ def main(configurations=CUSTOM_CONFIGURATIONS, models=MODELS) -> None:
         lines.append(f"Configuration {i + 1}: {title}" + (f"  [extrapolation: {'; '.join(notes)}]" if notes else ""))
         for r, (m, k, f_t, x, y) in enumerate(design):
             lines.append(f"  R{r + 1}: m={m:.2f} kg  k={k:,.0f} N/m  f_t={f_t:.0f} Hz  (x, y)=({x:.2f}, {y:.2f}) m")
-        lines += [f"  {n:<16} RMSE {v:6.2f} dB" for n, v in sorted(rmse.items(), key=lambda kv: kv[1])]
+        lines += [f"  {display_name(n):<10} RMSE {v:6.2f} dB" for n, v in sorted(rmse.items(), key=lambda kv: kv[1])]
         lines.append("")
 
         fig = plt.figure(figsize=(15, 9.2))
@@ -144,7 +149,7 @@ def main(configurations=CUSTOM_CONFIGURATIONS, models=MODELS) -> None:
         ax.plot(frequency_values, truth[i], color="black", lw=2.2, zorder=4, label="True ERP (solver)")
         for name, color in zip(SHOWN, LINE_COLORS):
             ax.plot(frequency_values, predictions[name][i], color=color, lw=1.4, zorder=3,
-                    label=f"{name.replace('_', ' ')} (RMSE {rmse[name]:.2f} dB)")
+                    label=f"{display_name(name)} (RMSE {rmse[name]:.2f} dB)")
         ax.set_xlim(frequency_values.min(), frequency_values.max())
         ax.set_xlabel(FREQ_LABEL)
         ax.set_ylabel(ERP_LABEL)
@@ -155,7 +160,7 @@ def main(configurations=CUSTOM_CONFIGURATIONS, models=MODELS) -> None:
         draw_plate(fig.add_subplot(gs[1, 0]), design)
         ax_bar = fig.add_subplot(gs[1, 1])
         order = sorted(rmse, key=rmse.get)
-        ax_bar.barh([n.replace("_", " ") for n in order][::-1], [rmse[n] for n in order][::-1], color="#2a78d6")
+        ax_bar.barh([display_name(n) for n in order][::-1], [rmse[n] for n in order][::-1], color="#2a78d6")
         for y_pos, n in enumerate(order[::-1]):
             ax_bar.text(rmse[n], y_pos, f" {rmse[n]:.2f}", va="center", fontsize=8)
         ax_bar.set_xlabel("RMSE vs solver (dB)")

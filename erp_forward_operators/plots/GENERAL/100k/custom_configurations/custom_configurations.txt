@@ -4,55 +4,55 @@ Configuration 1: Ordinary configuration, not in the dataset
   R1: m=0.40 kg  k=31,978 N/m  f_t=45 Hz  (x, y)=(0.30, 0.12) m
   R2: m=0.70 kg  k=249,405 N/m  f_t=95 Hz  (x, y)=(1.10, 0.38) m
   R3: m=0.25 kg  k=166,796 N/m  f_t=130 Hz  (x, y)=(0.65, 0.25) m
-  DNO              RMSE   1.85 dB
-  DCO_sorted_phys  RMSE   1.96 dB
-  SIREN            RMSE   2.04 dB
-  LNO              RMSE   2.43 dB
-  STO              RMSE   2.63 dB
-  WNO              RMSE   2.67 dB
-  FNO              RMSE   3.12 dB
-  GNO_phys         RMSE   3.65 dB
-  DON              RMSE   5.95 dB
+  DNO        RMSE   1.85 dB
+  DCO        RMSE   1.96 dB
+  SIREN      RMSE   2.04 dB
+  LNO        RMSE   2.43 dB
+  STO        RMSE   2.63 dB
+  WNO        RMSE   2.67 dB
+  FNO        RMSE   3.12 dB
+  GNO        RMSE   3.65 dB
+  DON        RMSE   5.95 dB
 
 Configuration 2: All three resonators tuned to the same frequency (72 Hz)
   R1: m=0.30 kg  k=61,397 N/m  f_t=72 Hz  (x, y)=(0.30, 0.20) m
   R2: m=0.50 kg  k=102,328 N/m  f_t=72 Hz  (x, y)=(0.80, 0.35) m
   R3: m=0.70 kg  k=143,259 N/m  f_t=72 Hz  (x, y)=(1.20, 0.10) m
-  DCO_sorted_phys  RMSE   2.42 dB
-  DNO              RMSE   2.78 dB
-  WNO              RMSE   3.03 dB
-  SIREN            RMSE   3.19 dB
-  LNO              RMSE   3.59 dB
-  FNO              RMSE   4.15 dB
-  STO              RMSE   4.18 dB
-  GNO_phys         RMSE   5.65 dB
-  DON              RMSE   5.96 dB
+  DCO        RMSE   2.42 dB
+  DNO        RMSE   2.78 dB
+  WNO        RMSE   3.03 dB
+  SIREN      RMSE   3.19 dB
+  LNO        RMSE   3.59 dB
+  FNO        RMSE   4.15 dB
+  STO        RMSE   4.18 dB
+  GNO        RMSE   5.65 dB
+  DON        RMSE   5.96 dB
 
 Configuration 3: Two resonators almost touching, next to the excitation force
   R1: m=0.50 kg  k=71,061 N/m  f_t=60 Hz  (x, y)=(0.85, 0.30) m
   R2: m=0.50 kg  k=159,888 N/m  f_t=90 Hz  (x, y)=(0.88, 0.32) m
   R3: m=0.30 kg  k=170,547 N/m  f_t=120 Hz  (x, y)=(0.20, 0.40) m
-  STO              RMSE   3.01 dB
-  DNO              RMSE   3.05 dB
-  LNO              RMSE   3.20 dB
-  SIREN            RMSE   3.40 dB
-  WNO              RMSE   3.42 dB
-  DCO_sorted_phys  RMSE   3.77 dB
-  FNO              RMSE   4.04 dB
-  GNO_phys         RMSE   4.52 dB
-  DON              RMSE   5.85 dB
+  STO        RMSE   3.01 dB
+  DNO        RMSE   3.05 dB
+  LNO        RMSE   3.20 dB
+  SIREN      RMSE   3.40 dB
+  WNO        RMSE   3.42 dB
+  DCO        RMSE   3.77 dB
+  FNO        RMSE   4.04 dB
+  GNO        RMSE   4.52 dB
+  DON        RMSE   5.85 dB
 
 Configuration 4: Outside the training ranges ($m = 1.5$ kg, $f_t = 5$ and $175$ Hz, corners)  [extrapolation: $f_t$ outside 10--160 Hz; inside the 5 cm edge margin; m outside 0.1--1 kg]
   R1: m=1.50 kg  k=94,748 N/m  f_t=40 Hz  (x, y)=(0.02, 0.03) m
   R2: m=0.30 kg  k=296 N/m  f_t=5 Hz  (x, y)=(1.38, 0.47) m
   R3: m=0.60 kg  k=725,416 N/m  f_t=175 Hz  (x, y)=(0.70, 0.25) m
-  LNO              RMSE   2.17 dB
-  DCO_sorted_phys  RMSE   2.78 dB
-  STO              RMSE   2.79 dB
-  WNO              RMSE   2.81 dB
-  GNO_phys         RMSE   2.92 dB
-  SIREN            RMSE   3.01 dB
-  FNO              RMSE   3.86 dB
-  DNO              RMSE   4.82 dB
-  DON              RMSE   6.80 dB
+  LNO        RMSE   2.17 dB
+  DCO        RMSE   2.78 dB
+  STO        RMSE   2.79 dB
+  WNO        RMSE   2.81 dB
+  GNO        RMSE   2.92 dB
+  SIREN      RMSE   3.01 dB
+  FNO        RMSE   3.86 dB
+  DNO        RMSE   4.82 dB
+  DON        RMSE   6.80 dB
 
