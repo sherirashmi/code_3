@@ -12,7 +12,7 @@ training loop, solver scoring -- is the same machinery):
 * Input: only the ERP inside ``[F_LOW, F_HIGH] = [40, 120] Hz`` (161 of the 301
   frequency points), where the ERP depends on the positions; below 40 Hz the
   ERP is the same for every configuration and above 120 Hz it hardly varies
-  (see ``dataset_analysis/plots/erp_frequency_boxplot_*``).
+  (see ``dataset_analysis/100k_2res_fixed_m0.2_ft72_18modes/plots/erp_frequency_boxplot.png``).
 
 Models, checkpoints and plots live inside this folder:
 ``models/<dataset>/<model>.pth`` and ``plots/<dataset>/<MODEL>/``.
