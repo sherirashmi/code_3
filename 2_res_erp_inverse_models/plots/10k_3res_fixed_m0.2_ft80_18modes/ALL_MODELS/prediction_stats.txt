@@ -1,0 +1,9 @@
+Position-only inverse models on '10k_3res_fixed_m0.2_ft80_18modes': 500 test targets, 16 samples each, every design scored with the solver.
+Rules: random = first sample; own = highest log p (MDN, Flow); oracle = best of N by solver band error (upper bound).
+======================================================================================================================
+Model      Rule     band RMSE  band MAE  band r  full RMSE  pos. err mean  median  <=10 cm   x MAE   y MAE    x r    y r
+                         (dB)      (dB)               (dB)           (cm)    (cm)             (cm)    (cm)
+----------------------------------------------------------------------------------------------------------------------
+Flow       random        4.98      2.67   0.819       4.16           18.9    14.6      33%    12.0    11.5  0.737  0.147
+Flow       own           4.34      2.25   0.863       3.65           17.3    12.7      40%    10.1    11.4  0.802  0.152
+Flow       oracle        2.45      1.17   0.956       2.36           16.1    11.6      45%     8.5    11.2  0.826  0.118
