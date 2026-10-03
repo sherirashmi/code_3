@@ -46,7 +46,10 @@ from .block_bank import BlockBank, out_dir
 from .design_space import sort_by_x
 from .evaluate import RES_COLORS, _draw_plate
 
-NO_FIT_DB = 3.0  # best band error above this: no block reproduces the ERP well
+# Best band error above this: no block reproduces the ERP well. Set per bank from its test
+# results (correct matches stay below, f_t between the blocks lands above): 2 resonators 3 dB,
+# 3 resonators 4.5 dB (95 % of correct matches below 2.6 dB and 3.7 dB respectively).
+NO_FIT_LIMITS_DB = {2: 3.0, 3: 4.5}
 AMBIGUOUS_DB = 0.5  # another block within this of the best: the ERP does not single out one f_t
 CANDIDATE_COLORS = ("#eb6834", "#2a78d6", "#1f9e74", "#9467bd", "#8c564b")
 
@@ -106,6 +109,7 @@ def main(erp_db=None, true_design=None, name: str = "prediction", top: int = 3, 
     if true_design is not None:
         num_res = len(true_design)
     bank = BlockBank(num_res=num_res)
+    NO_FIT_DB = NO_FIT_LIMITS_DB.get(num_res, 3.0)
     with ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT) as pool:
         if erp_db is None:
             erp_db = solve_configs(pool, true_design[None], grid)[0]

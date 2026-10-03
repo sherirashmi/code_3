@@ -14,7 +14,7 @@ training its model. Per block the figure shows
 
 Saves ``dataset_analysis/<block tag>/plots/split_overview.png``.
 
-Run from the repository root:  python dataset_analysis/scripts/plot_block_splits.py
+Run from the repository root:  python dataset_analysis/scripts/plot_block_splits.py [3]
 """
 import importlib
 import sys
@@ -69,15 +69,15 @@ def draw_plate(ax):
     ax.set_xlabel("$x$ (m)", fontsize=9)
 
 
-def block_figure(f_t: float, rng) -> Path:
-    tag = fixed_block_tag(f_t)
+def block_figure(f_t: float, rng, num_res: int = 2) -> Path:
+    tag = fixed_block_tag(f_t, num_res=num_res)
     dataset, _ = common.prepare_data(tag)
     splits = _split_ids(dataset)
     configs = sort_by_x(_configuration_features(dataset).astype(np.float64))
     erp = np.asarray(dataset.responses, dtype=np.float64)[:, :, 0]
     freq = np.asarray(dataset.frequency_values, dtype=np.float64)
     band = dataset.band_mask
-    pos = configs[..., 3:5].reshape(len(configs), -1)  # [x1, y1, x2, y2]
+    pos = configs[..., 3:5].reshape(len(configs), -1)  # [x1, y1, x2, y2, ...]
     k = float(configs[0, 0, 1])
 
     fig = plt.figure(figsize=(16, 11.5))
@@ -112,21 +112,24 @@ def block_figure(f_t: float, rng) -> Path:
         ids = rng.choice(splits[key], NUM_SHOWN, replace=False)
         for cid in ids:
             c = configs[cid]
-            ax.plot(c[:, 3], c[:, 4], "-", color=color, lw=0.8, alpha=0.6, zorder=2)
+            loop = np.r_[np.arange(num_res), 0] if num_res > 2 else np.arange(num_res)
+            ax.plot(c[loop, 3], c[loop, 4], "-", color=color, lw=0.8, alpha=0.6, zorder=2)
             ax.plot(c[:, 3], c[:, 4], "o", color=color, ms=4.5, mec="black", mew=0.4, zorder=3)
         ax.set_title(f"{label}: {NUM_SHOWN} random configurations", fontsize=10)
         if col == 0:
             ax.set_ylabel("$y$ (m)", fontsize=9)
 
     # ---- configuration-level statistics -----------------------------------------------------------
-    spacing = 100 * np.hypot(configs[:, 0, 3] - configs[:, 1, 3], configs[:, 0, 4] - configs[:, 1, 4])
+    pairs = [(i, j) for i in range(num_res) for j in range(i + 1, num_res)]
+    spacing = 100 * np.min([np.hypot(configs[:, i, 3] - configs[:, j, 3], configs[:, i, 4] - configs[:, j, 4])
+                            for i, j in pairs], axis=0)
     force = 100 * np.hypot(configs[..., 3] - xf, configs[..., 4] - yf).min(axis=1)
     train_pos = pos[splits["train"]]
     nearest = {"train": nearest_train_cm(train_pos, train_pos, exclude_self=True),
                "val": nearest_train_cm(pos[splits["val"]], train_pos),
                "test": nearest_train_cm(pos[splits["test"]], train_pos)}
     panels = (
-        ("Resonator spacing (cm)", {k_: spacing[splits[k_]] for k_, _, _ in SPLITS}),
+        ("Resonator spacing (cm)" if num_res == 2 else "Closest resonator spacing (cm)", {k_: spacing[splits[k_]] for k_, _, _ in SPLITS}),
         ("Excitation force to the nearest resonator (cm)", {k_: force[splits[k_]] for k_, _, _ in SPLITS}),
         ("Distance to the nearest training configuration (cm)", nearest),
     )
@@ -144,17 +147,17 @@ def block_figure(f_t: float, rng) -> Path:
         ax.legend(fontsize=7.8, loc="best")
 
     fig.suptitle(f"Block $f_t = {f_t:g}$ Hz: training, validation and test data "
-                 f"(10,000 configurations, 2 resonators, $m = 0.2$ kg, $k = {k / 1000:.1f}$ kN/m)", fontsize=13, y=0.975)
+                 f"(10,000 configurations, {num_res} resonators, $m = 0.2$ kg, $k = {k / 1000:.1f}$ kN/m)", fontsize=13, y=0.975)
     out = ROOT / "dataset_analysis" / tag / "plots" / "split_overview.png"
     save_figure(fig, out)
     return out
 
 
-def main():
+def main(num_res: int = 2):
     rng = np.random.default_rng(11)
     for f_t in FIXED_BLOCK_FREQUENCIES:
-        block_figure(f_t, rng)
+        block_figure(f_t, rng, num_res)
 
 
 if __name__ == "__main__":
-    main()
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 2)

@@ -10,7 +10,7 @@ stiffness, data split, the block's typical ERP (median and 25-75 % band of its
 configurations) and its test results in the bank, joined to the solver check
 that picks the design.
 
-Run from the repository root:  python -m 2_res_erp_inverse_models.plot_bank_architecture
+Run from the repository root:  python -m 2_res_erp_inverse_models.plot_bank_architecture [3]
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from utils.erp_dataset import DATASETS, FIXED_BLOCK_FREQUENCIES, fixed_block_tag
 from utils.plotting import save_figure
 from utils.support import load_dataset
 
-from .block_bank import OUT_DIR
+from .block_bank import out_dir
 from .evaluate import load_model
 
 BLUE, ORANGE, GREEN, GREY, PURPLE = "#2a78d6", "#eb6834", "#1f9e74", "#6f6f6a", "#8f5bb5"
@@ -52,8 +52,10 @@ def arrow(ax, p, q, color=GREY, text=None, style="-|>", ls="-", text_offset=(0.0
                 va="bottom", fontsize=8, color=color)
 
 
-def flow_architecture(tag: str) -> None:
+def flow_architecture(tag: str, num_res: int = 2) -> None:
     model, norm = load_model("Flow", tag)
+    D = 2 * num_res
+    coords = ", ".join(f"x_{r + 1}, y_{r + 1}" for r in range(num_res))
     enc = sum(p.numel() for p in model.encoder.parameters())
     per_layer = sum(p.numel() for p in model.layers[0].parameters())
     total = sum(p.numel() for p in model.parameters())
@@ -79,7 +81,7 @@ def flow_architecture(tag: str) -> None:
     # ---- invertible path (middle) -------------------------------------------------------------
     y0, h = 0.36, 0.2
     box(ax, 0.01, y0, 0.15, h, "Positions",
-        "$[x_1, y_1, x_2, y_2]$\nresonators ordered by $x$\nlogit-bounded to the plate,\nnormalised $\\to$ 4 numbers",
+        f"$[{coords}]$\nresonators ordered by $x$\nlogit-bounded to the plate,\nnormalised $\\to$ {D} numbers",
         LIGHT["orange"], edge=ORANGE)
     xs = np.linspace(0.205, 0.735, n_layers)
     w = 0.052
@@ -93,15 +95,15 @@ def flow_architecture(tag: str) -> None:
             arrow(ax, (x, y0 + h / 2 - 0.03), (xs[i - 1] + w, y0 + h / 2 - 0.03), color=GREEN)
     arrow(ax, (0.16, y0 + h / 2 + 0.03), (xs[0], y0 + h / 2 + 0.03), color=GREY, text="training", text_offset=(0, 0.008))
     arrow(ax, (xs[0], y0 + h / 2 - 0.03), (0.16, y0 + h / 2 - 0.03), color=GREEN, text="sampling", text_offset=(0, -0.035))
-    box(ax, 0.835, y0, 0.155, h, "Latent $z$", "4 numbers\n$z \\sim \\mathcal{N}(0, I)$\n(standard Gaussian)",
+    box(ax, 0.835, y0, 0.155, h, "Latent $z$", f"{D} numbers\n$z \\sim \\mathcal{{N}}(0, I)$\n(standard Gaussian)",
         LIGHT["green"], edge=GREEN)
     arrow(ax, (xs[-1] + w, y0 + h / 2 + 0.03), (0.835, y0 + h / 2 + 0.03), color=GREY)
     arrow(ax, (0.835, y0 + h / 2 - 0.03), (xs[-1] + w, y0 + h / 2 - 0.03), color=GREEN)
 
     # ---- one coupling layer (detail) ------------------------------------------------------------
     box(ax, 0.20, 0.03, 0.42, 0.25, "Inside one affine coupling layer",
-        "split the 4 numbers by an alternating mask: kept half $u_a$, changed half $u_b$\n"
-        "MLP$([u_a, c])$: 2 + 2 + 96 $\\to$ 96 $\\to$ 96 $\\to$ 8, SiLU $\\Rightarrow$ $\\log s$, $t$\n"
+        f"split the {D} numbers by an alternating mask: kept half $u_a$, changed half $u_b$\n"
+        f"MLP$([u, c])$: {D} + 96 $\\to$ 96 $\\to$ 96 $\\to$ {2 * D}, SiLU $\\Rightarrow$ $\\log s$, $t$\n"
         "$u_b' = u_b \\odot \\exp(\\log s) + t$, with $\\log s = 2 \\tanh(\\cdot)$ (bounded)\n"
         "exactly invertible: $u_b = (u_b' - t) \\odot \\exp(-\\log s)$\n"
         f"{per_layer:,} parameters per layer, {n_layers} layers", LIGHT["purple"], edge=PURPLE, body_size=8.6)
@@ -114,21 +116,21 @@ def flow_architecture(tag: str) -> None:
         f"total {total:,} parameters per block", LIGHT["grey"], body_size=8.6)
     box(ax, 0.01, 0.03, 0.15, 0.25, "Output design",
         f"$m = {float(norm['fixed_m']):.1f}$ kg (fixed)\n$f_t$ = block value\n$k = m (2\\pi f_t)^2$\n"
-        "$x_1, y_1, x_2, y_2$\nfrom the flow", LIGHT["orange"], edge=ORANGE)
+        f"${coords}$\nfrom the flow", LIGHT["orange"], edge=ORANGE)
     arrow(ax, (0.085, y0), (0.085, 0.28), color=GREEN)
-    fig.suptitle("Conditional normalizing flow inside each block of the model bank "
+    fig.suptitle(f"Conditional normalizing flow inside each block of the {num_res}-resonator model bank "
                  "(the same architecture in all 7 blocks, trained separately)", fontsize=13, y=0.985)
-    save_figure(fig, OUT_DIR / "flow_block_architecture.png")
+    save_figure(fig, out_dir(num_res) / "flow_block_architecture.png")
 
 
-def _summary_by_block() -> dict[float, tuple[float, float, float]]:
-    text = (OUT_DIR / "block_bank_summary.txt").read_text()
+def _summary_by_block(num_res: int = 2) -> dict[float, tuple[float, float, float]]:
+    text = (out_dir(num_res) / "block_bank_summary.txt").read_text()
     rows = re.findall(r"f_t =\s+([\d.]+) Hz:\s+([\d.]+) %\s+([\d.]+) dB\s+([\d.]+) cm", text)
     return {float(f): (float(a), float(e), float(d)) for f, a, e, d in rows}
 
 
-def bank_overview() -> None:
-    summary = _summary_by_block()
+def bank_overview(num_res: int = 2) -> None:
+    summary = _summary_by_block(num_res)
     B = len(FIXED_BLOCK_FREQUENCIES)
     fig = plt.figure(figsize=(17, 10))
     ax = fig.add_axes([0, 0, 1, 1])
@@ -154,7 +156,7 @@ def bank_overview() -> None:
         ax.text(x + width / 2, 0.575, "Flow (200k parameters)", ha="center", va="top", fontsize=8.5,
                 bbox=dict(boxstyle="round,pad=0.25", fc=LIGHT["purple"], ec=PURPLE, lw=0.8))
         # typical ERP of the block
-        data = load_dataset(DATASETS[fixed_block_tag(f_t)]["files"][0])
+        data = load_dataset(DATASETS[fixed_block_tag(f_t, num_res=num_res)]["files"][0])
         freq = np.asarray(data["frequency_values"], dtype=np.float64)
         erp = np.asarray(data["responses"], dtype=np.float64)[:, :, 0]
         band = (freq >= 40) & (freq <= 120)
@@ -186,15 +188,17 @@ def bank_overview() -> None:
     ax.text(0.02, 0.045, "Insets: median (line) and 25--75 % range (band) of the ERP over the block's 10,000 configurations; "
             "dashed line: the block's $f_t$. Test results: 100 test targets per block through the whole bank.",
             fontsize=8, color=GREY, va="top")
-    ax.text(0.5, 0.993, "Model bank: one block per tuning frequency (2 identical resonators, $m = 0.2$ kg)",
+    ax.text(0.5, 0.993, f"Model bank: one block per tuning frequency ({num_res} identical resonators, $m = 0.2$ kg)",
             ha="center", va="top", fontsize=14)
-    save_figure(fig, OUT_DIR / "block_bank_overview.png")
+    save_figure(fig, out_dir(num_res) / "block_bank_overview.png")
 
 
-def main() -> None:
-    flow_architecture(fixed_block_tag(70.0))
-    bank_overview()
+def main(num_res: int = 2) -> None:
+    flow_architecture(fixed_block_tag(70.0, num_res=num_res), num_res)
+    bank_overview(num_res)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 2)
