@@ -4,5 +4,6 @@ __pycache__/
 # Mid-training state (resume every 5 epochs) and live loss progress; final checkpoints/plots are committed
 *.resume.pt
 *.resume.pt.tmp
+*.resume.pt.*.tmp
 *_progress.csv
 *_progress.png

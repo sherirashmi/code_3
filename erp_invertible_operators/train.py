@@ -113,12 +113,16 @@ def _run_stage(
     stage: str,
     beta_schedule=None,
     diagnose: bool = False,
+    resume: dict | None = None,
+    save_state=None,
 ):
     """Generic stage loop: Adam + cosine, grad clip, best-val restore.
 
     ``loss_fn(spectrum, flat_design, beta) -> dict`` with a "total" entry.
     ``state_module`` is what gets checkpointed/restored (the VAE alone in
     stage 2, the whole model otherwise).
+    ``save_state(stage_state)`` (optional) is called after every epoch with
+    everything needed to continue the stage; ``resume`` is such a state.
     """
     parameters = list(parameters)
     history = {"train": [], "val": []}
@@ -128,8 +132,15 @@ def _run_stage(
         return history
     optimizer = torch.optim.Adam(parameters, lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
-    best_val, best_state = float("inf"), None
-    for epoch in range(epochs):
+    best_val, best_state, start = float("inf"), None, 0
+    if resume is not None:
+        optimizer.load_state_dict(resume["optimizer"])
+        scheduler.load_state_dict(resume["scheduler"])
+        best_val, best_state = resume["best_val"], resume["best_state"]
+        history = resume["history"]
+        start = int(resume["epoch"])
+        print(f"[{tag} {stage}] resuming after epoch {start}/{epochs} (best val so far {best_val:.4f})")
+    for epoch in range(start, epochs):
         beta = beta_schedule(epoch) if beta_schedule is not None else KL_TARGET_BETA
         model.train()
         total, n, skipped = 0.0, 0, 0
@@ -187,6 +198,11 @@ def _run_stage(
                 f"    core: round-trip err={diag['round_trip_rel_err']:.1e} | latent norm x{diag['latent_norm_ratio']:.2f}"
                 f" | gate [{diag['gate_min']:.2f}, {diag['gate_max']:.2f}] | fwd/inv latent misalignment {diag['latent_alignment']:.2f}"
             )
+        if save_state is not None:
+            save_state({
+                "epoch": epoch + 1, "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(),
+                "best_val": best_val, "best_state": best_state, "history": history,
+            })
 
     if best_state is not None:
         state_module.load_state_dict(best_state)
@@ -194,15 +210,22 @@ def _run_stage(
     return history
 
 
-def train_stage1(model, loaders, epochs: int, tag: str, lr: float = STAGE1_LR, cycle_weight: float = 0.0, align_weight: float = 0.0):
+def _atomic_save(obj, path) -> None:
+    tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")
+    torch.save(obj, tmp)
+    os.replace(tmp, path)
+
+
+def train_stage1(model, loaders, epochs: int, tag: str, lr: float = STAGE1_LR, cycle_weight: float = 0.0,
+                 align_weight: float = 0.0, **resume_kw):
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=_non_vae_parameters(model),
         loss_fn=lambda s, d, _b: model.stage1_loss(s, d, cycle_weight=cycle_weight, align_weight=align_weight),
-        state_module=model, tag=tag, stage="stage1", diagnose=True,
+        state_module=model, tag=tag, stage="stage1", diagnose=True, **resume_kw,
     )
 
 
-def train_stage2(model, loaders, epochs: int, tag: str, lr: float = STAGE2_LR, source: str = "true"):
+def train_stage2(model, loaders, epochs: int, tag: str, lr: float = STAGE2_LR, source: str = "true", **resume_kw):
     """``source="true"`` (paper): VAE on true designs. ``"estimates"``: the
     VAE encoder sees the (frozen) stage-1 inverse point estimates -- the
     input it gets in stage 3 / at inference -- and decodes the true design."""
@@ -217,20 +240,20 @@ def train_stage2(model, loaders, epochs: int, tag: str, lr: float = STAGE2_LR, s
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=model.vae.parameters(),
         loss_fn=loss_fn, state_module=model.vae, tag=tag, stage="stage2",
-        beta_schedule=lambda epoch: KL_TARGET_BETA * min(1.0, epoch / max(KL_WARMUP_EPOCHS, 1)),
+        beta_schedule=lambda epoch: KL_TARGET_BETA * min(1.0, epoch / max(KL_WARMUP_EPOCHS, 1)), **resume_kw,
     )
 
 
 def train_stage3(
     model, loaders, epochs: int, tag: str, lr: float = STAGE3_LR, inverse_weight: float = STAGE3_INVERSE_WEIGHT,
-    cycle_weight: float = 0.0, align_weight: float = 0.0,
+    cycle_weight: float = 0.0, align_weight: float = 0.0, **resume_kw,
 ):
     return _run_stage(
         model, loaders, epochs=epochs, lr=lr, parameters=model.parameters(),
         loss_fn=lambda s, d, b: model.stage3_loss(
             s, d, beta=b, inverse_weight=inverse_weight, cycle_weight=cycle_weight, align_weight=align_weight
         ),
-        state_module=model, tag=tag, stage="stage3", diagnose=True,
+        state_module=model, tag=tag, stage="stage3", diagnose=True, **resume_kw,
     )
 
 
@@ -567,13 +590,40 @@ def train_one(
           f"model options {model_config} | training options {train_opts}")
 
     cw, aw = float(train_opts["cycle_weight"]), float(train_opts["align_weight"])
-    print("\n" + "#" * 70 + f"\n{tag} Stage 1: invertible coupling blocks + P/Q/P'/Q'\n" + "#" * 70)
-    history1 = train_stage1(model, loaders, epochs=stage1_epochs, tag=tag, cycle_weight=cw, align_weight=aw)
-    print("\n" + "#" * 70 + f"\n{tag} Stage 2: beta-VAE pretraining\n" + "#" * 70)
-    history2 = train_stage2(model, loaders, epochs=stage2_epochs, tag=tag, source=train_opts["stage2_source"])
-    print("\n" + "#" * 70 + f"\n{tag} Stage 3: joint fine-tuning\n" + "#" * 70)
-    history3 = train_stage3(model, loaders, epochs=stage3_epochs, tag=tag, inverse_weight=stage3_inverse_weight,
-                            cycle_weight=cw, align_weight=aw)
+    checkpoint_path = invertible_model_path(tag, dataset_tag)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    # Interruption-safe: after every epoch the whole training state goes to
+    # <model>.resume.pt; a rerun continues from there (deleted when done).
+    resume_path = checkpoint_path.with_suffix(".resume.pt")
+    state = {"done": {}, "current": None}
+    if resume_path.exists():
+        state = torch.load(resume_path, map_location=device, weights_only=False)
+        model.load_state_dict(state["model_state_dict"])
+        print(f"Resuming {tag} from {resume_path} (finished stages: {list(state['done']) or 'none'})")
+
+    def run(stage, title, fn, **kw):
+        if stage in state["done"]:
+            print(f"{tag} {stage} already finished -- skipped")
+            return state["done"][stage]
+        print("\n" + "#" * 70 + f"\n{tag} {title}\n" + "#" * 70)
+        current = state["current"]
+        resume = current["state"] if current is not None and current["stage"] == stage else None
+
+        def save_state(stage_state):
+            state["current"] = {"stage": stage, "state": stage_state}
+            _atomic_save({**state, "model_state_dict": model.state_dict()}, resume_path)
+
+        history = fn(model, loaders, tag=tag, resume=resume, save_state=save_state, **kw)
+        state["done"][stage], state["current"] = history, None
+        _atomic_save({**state, "model_state_dict": model.state_dict()}, resume_path)
+        return history
+
+    history1 = run("stage1", "Stage 1: invertible coupling blocks + P/Q/P'/Q'", train_stage1,
+                   epochs=stage1_epochs, cycle_weight=cw, align_weight=aw)
+    history2 = run("stage2", "Stage 2: beta-VAE pretraining", train_stage2,
+                   epochs=stage2_epochs, source=train_opts["stage2_source"])
+    history3 = run("stage3", "Stage 3: joint fine-tuning", train_stage3, epochs=stage3_epochs,
+                   inverse_weight=stage3_inverse_weight, cycle_weight=cw, align_weight=aw)
     histories = {"Stage 1 (invertible blocks)": history1, "Stage 2 ($\\beta$-VAE)": history2,
                  "Stage 3 (joint)": history3}
 
@@ -590,8 +640,6 @@ def train_one(
         "batch_size": batch_size, "num_configurations": num_configurations, "seed": seed,
         "dataset_tag": dataset_tag,
     }
-    checkpoint_path = invertible_model_path(tag, dataset_tag)
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "model_state_dict": model.state_dict(), "norm_params": dict(norm),
@@ -604,6 +652,7 @@ def train_one(
         checkpoint_path,
     )
     print(f"Saved {checkpoint_path}")
+    resume_path.unlink(missing_ok=True)
 
     plot_staged_loss_curves(histories, f"{tag}: training history ({dataset_tag})",
                             save_path=out_dir / "loss_curve.png")
