@@ -125,6 +125,15 @@ DATASETS["100k_2res_grid_18modes"] = {
     "num_res": 2,
     "position_grid": (14, 5),
 }
+DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
+    "label": "100k configurations, 2 identical resonators (m = 0.2 kg, f_t = 72 Hz), continuous LHS x, y, "
+             "18 plate modes (6x3)",
+    "files": [f"datasets/dataset_erp_100k_2res_fixed_m0p2_ft72_18modes_part{i}.pth" for i in range(1, 5)],
+    "num_configurations": 100_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+    "fixed_resonator": (0.2, 72.0),
+}
 DEFAULT_DATASET_TAG = "10k"
 
 
@@ -428,8 +437,12 @@ class ERPDataset(Dataset):
         num_res: int = default_num_res,
         seed: int = 727,
         position_grid: tuple[int, int] | None = None,
+        fixed_resonator: tuple[float, float] | None = None,
     ) -> None:
         super().__init__()
+        # (m, f_t): every resonator gets this mass [kg] and tuning frequency
+        # [Hz] (k derived); only x, y are sampled. None = m, f_t by LHS.
+        self.fixed_resonator = tuple(float(v) for v in fixed_resonator) if fixed_resonator else None
         # (nx, ny): resonators only on an nx x ny grid of equidistant plate
         # points (see grid_positions); None = continuous LHS positions.
         self.position_grid = tuple(int(v) for v in position_grid) if position_grid else None
@@ -480,18 +493,24 @@ class ERPDataset(Dataset):
         filename: str | None = None,
         verbose: bool = True,
         grid_cells: np.ndarray | None = None,
+        samples: np.ndarray | None = None,
     ) -> dict[str, object]:
         """Generate ERP spectra for ``self.num_samples`` resonator configurations.
 
         ``grid_cells`` (grid datasets only): precomputed ``(num_samples,
         num_res)`` cell indices, so a dataset generated in shards keeps the
-        cell-combination balance of the whole dataset.
+        cell-combination balance of the whole dataset. ``samples``: precomputed
+        ``(num_samples, 4*num_res)`` LHS rows ``[x, y, f_t, m]*N`` (one Latin
+        hypercube over all shards), instead of drawing them here.
         """
-        samples = lhs_sampling(
-            self.num_samples,
-            bounds=resonator_bounds(self.num_res),
-            seed=self.seed,
-        )
+        if samples is not None:
+            samples = np.array(samples, dtype=np.float64, copy=True).reshape(self.num_samples, self.num_res * 4)
+        else:
+            samples = lhs_sampling(
+                self.num_samples,
+                bounds=resonator_bounds(self.num_res),
+                seed=self.seed,
+            )
         if self.position_grid is not None:
             # m and f_t stay LHS; x, y are replaced by balanced grid cells.
             cells = (
@@ -501,6 +520,13 @@ class ERPDataset(Dataset):
             points = grid_positions(*self.position_grid)
             quads = samples.reshape(self.num_samples, self.num_res, 4)
             quads[..., 0:2] = points[cells]
+            samples = quads.reshape(self.num_samples, self.num_res * 4)
+        if self.fixed_resonator is not None:
+            # x, y stay LHS (or grid); f_t and m are the same for every resonator.
+            fixed_m, fixed_ft = self.fixed_resonator
+            quads = samples.reshape(self.num_samples, self.num_res, 4)
+            quads[..., 2] = fixed_ft
+            quads[..., 3] = fixed_m
             samples = quads.reshape(self.num_samples, self.num_res * 4)
 
         n_freqs = self.frequency_values.size
@@ -515,7 +541,10 @@ class ERPDataset(Dataset):
                 f"Generating ERP dataset: {self.num_samples} configurations, "
                 f"{n_freqs} frequencies/configuration"
             )
-            if self.position_grid is None:
+            if self.fixed_resonator is not None:
+                print(f"Fixed resonators  : m = {self.fixed_resonator[0]} kg, f_t = {self.fixed_resonator[1]} Hz; "
+                      "x, y sampled")
+            elif self.position_grid is None:
                 print("Sampled variables : x, y, f_t, m  (independent LHS)")
             else:
                 nx, ny = self.position_grid
@@ -576,6 +605,7 @@ class ERPDataset(Dataset):
             "modal_resolution": [int(_physics.Nx), int(_physics.Ny)],
             "resonator_mass_bounds": {"m_min": float(m_min), "m_max": float(m_max)},
             "position_grid": list(self.position_grid) if self.position_grid else None,
+            "fixed_resonator": list(self.fixed_resonator) if self.fixed_resonator else None,
         }
 
     def load(self, filename: str) -> "ERPDataset":
@@ -595,6 +625,8 @@ class ERPDataset(Dataset):
         self.num_res = int(payload["num_res"])
         grid = payload.get("position_grid")
         self.position_grid = tuple(int(v) for v in grid) if grid else None
+        fixed = payload.get("fixed_resonator")
+        self.fixed_resonator = tuple(float(v) for v in fixed) if fixed else None
         self.seed = int(payload.get("seed", self.seed))
         self.frequency_values = np.asarray(
             payload["frequency_values"], dtype=np.float32
