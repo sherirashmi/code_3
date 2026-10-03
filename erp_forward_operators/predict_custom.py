@@ -96,7 +96,7 @@ def out_of_range(row) -> list[str]:
 def draw_plate(ax, configuration):
     ax.add_patch(Rectangle((0, 0), Lx, Ly, facecolor="#f4f4f1", ec="black", lw=1.1, zorder=0))
     ax.add_patch(Rectangle((edge_margin, edge_margin), Lx - 2 * edge_margin, Ly - 2 * edge_margin, fill=False,
-                           ec="#9a9a94", ls="--", lw=0.8, zorder=1, label="Sampled region of the dataset"))
+                           ec="#9a9a94", ls="--", lw=0.8, zorder=1))
     ax.plot([xf], [yf], marker="*", color="#35d0ff", ms=14, mec="black", mew=0.8, ls="", zorder=6, label="Excitation force")
     for r, (m, _, f_t, x, y) in enumerate(configuration):
         ax.plot(x, y, "o", color=RES_COLORS[r % 3], ms=11, mec="black", mew=1.0, ls="", zorder=5,
@@ -159,7 +159,6 @@ def main(configurations=CUSTOM_CONFIGURATIONS, models=MODELS) -> None:
         for y_pos, n in enumerate(order[::-1]):
             ax_bar.text(rmse[n], y_pos, f" {rmse[n]:.2f}", va="center", fontsize=8)
         ax_bar.set_xlabel("RMSE vs solver (dB)")
-        ax_bar.set_title("Error of every forward operator")
         ax_bar.grid(axis="x", alpha=0.3)
         subtitle = f"\n(extrapolation: {'; '.join(notes)})" if notes else ""
         fig.suptitle(f"New configuration {i + 1}: {title}{subtitle}", fontsize=13)
