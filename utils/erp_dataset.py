@@ -134,6 +134,14 @@ DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
     "num_res": 2,
     "fixed_resonator": (0.2, 72.0),
 }
+DATASETS["100k_2res_18modes"] = {
+    "label": "100k configurations, 2 resonators, m, f_t, x, y all by Latin hypercube (k derived), "
+             "18 plate modes (6x3)",
+    "files": [f"datasets/dataset_erp_100k_2res_18modes_part{i}.pth" for i in range(1, 5)],
+    "num_configurations": 100_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+}
 # Block datasets for the position-only model bank (2_res_erp_inverse_models/block_bank.py):
 # 10k configurations each, num_res identical resonators (m = 0.2 kg, one f_t per block), LHS x, y.
 FIXED_BLOCK_FREQUENCIES = (40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0)
