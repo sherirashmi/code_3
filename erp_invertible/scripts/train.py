@@ -76,9 +76,14 @@ from utils.plotting import (
 )
 from utils.support import device, seed_everything
 
-STAGE1_EPOCHS = 20
+# Upper limits; every stage stops early once the validation loss has not
+# improved for EARLY_STOP_PATIENCE epochs (checked from half the budget on,
+# i.e. from epoch 50 in stage 1). With 20/15 epochs, stages 1 and 3 were
+# still improving at their last epoch.
+STAGE1_EPOCHS = 100
 STAGE2_EPOCHS = 25
-STAGE3_EPOCHS = 15
+STAGE3_EPOCHS = 50
+EARLY_STOP_PATIENCE = 10
 STAGE1_LR = 5e-4
 STAGE2_LR = 1e-3
 STAGE3_LR = 3e-4
@@ -139,6 +144,7 @@ def _run_stage(
         best_val, best_state = resume["best_val"], resume["best_state"]
         history = resume["history"]
         start = int(resume["epoch"])
+        scheduler.T_max = epochs  # the epoch budget may have changed since the interrupted run
         print(f"[{tag} {stage}] resuming after epoch {start}/{epochs} (best val so far {best_val:.4f})")
     for epoch in range(start, epochs):
         beta = beta_schedule(epoch) if beta_schedule is not None else KL_TARGET_BETA
@@ -175,7 +181,10 @@ def _run_stage(
             for spectrum, design in loaders["val"]:
                 spectrum = spectrum.to(device, non_blocking=True)
                 flat_design = design.to(device, non_blocking=True).reshape(design.shape[0], -1)
-                loss = loss_fn(spectrum, flat_design, beta)["total"]
+                # validation at the final KL weight: during the warm-up the
+                # train beta is smaller, and comparing epochs at different
+                # betas would always pick the first (beta = 0) epoch
+                loss = loss_fn(spectrum, flat_design, KL_TARGET_BETA)["total"]
                 if torch.isfinite(loss):
                     total += loss.item() * spectrum.shape[0]
                     n += spectrum.shape[0]
@@ -203,6 +212,13 @@ def _run_stage(
                 "epoch": epoch + 1, "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(),
                 "best_val": best_val, "best_state": best_state, "history": history,
             })
+        val = history["val"]
+        if epoch + 1 >= max(20, epochs // 2) and epoch + 1 < epochs and len(val) > EARLY_STOP_PATIENCE \
+                and not min(val[-EARLY_STOP_PATIENCE:]) < min(val[:-EARLY_STOP_PATIENCE]):
+            print(f"[{tag} {stage}] no validation improvement in the last {EARLY_STOP_PATIENCE} epochs -- "
+                  f"stopping at epoch {epoch + 1}/{epochs}")
+            history["stopped_early_at"] = epoch + 1
+            break
 
     if best_state is not None:
         state_module.load_state_dict(best_state)
