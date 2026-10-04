@@ -84,6 +84,12 @@ STAGE1_EPOCHS = 100
 STAGE2_EPOCHS = 25
 STAGE3_EPOCHS = 50
 EARLY_STOP_PATIENCE = 10
+# Every SNAPSHOT_EVERY epochs: a copy of the current model in
+# models/<dataset>/snapshots/<model>/<stage>_epNNN.pth (at the end of each
+# stage also <stage>_best.pth, the restored best-validation weights) and
+# an updated loss plot plots/models/<dataset>/<model>/progress_loss.png.
+# The resume point (<model>.resume.pt) is written after every epoch.
+SNAPSHOT_EVERY = 5
 STAGE1_LR = 5e-4
 STAGE2_LR = 1e-3
 STAGE3_LR = 3e-4
@@ -634,6 +640,22 @@ def train_one(
         model.load_state_dict(state["model_state_dict"])
         print(f"Resuming {tag} from {resume_path} (finished stages: {list(state['done']) or 'none'})")
 
+    stage_titles = {"stage1": "Stage 1 (invertible blocks)", "stage2": "Stage 2 ($\\beta$-VAE)",
+                    "stage3": "Stage 3 (joint)"}
+    snapshot_dir = checkpoint_path.parent / "snapshots" / tag
+
+    def snapshot(stage, epoch, history, name=None):
+        """Model copy + loss plot so far (all finished stages + the current one)."""
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_save({"model_state_dict": model.state_dict(), "norm_params": dict(norm), "model_config": model_config,
+                      "stage": stage, "epoch": epoch, "history": {**state["done"], stage: history}},
+                     snapshot_dir / (name or f"{stage}_ep{epoch:03d}.pth"))
+        histories_so_far = {stage_titles[k]: h for k, h in {**state["done"], stage: history}.items() if h.get("train")}
+        try:
+            plot_stage_losses(tag, histories_so_far, out_dir / "progress_loss.png")
+        except Exception as exc:  # noqa: BLE001 -- a plotting problem must never stop training
+            print(f"[{tag}] progress plot failed: {exc}")
+
     def run(stage, title, fn, **kw):
         if stage in state["done"]:
             print(f"{tag} {stage} already finished -- skipped")
@@ -645,10 +667,14 @@ def train_one(
         def save_state(stage_state):
             state["current"] = {"stage": stage, "state": stage_state}
             _atomic_save({**state, "model_state_dict": model.state_dict()}, resume_path)
+            if stage_state["epoch"] % SNAPSHOT_EVERY == 0:
+                snapshot(stage, stage_state["epoch"], stage_state["history"])
 
         history = fn(model, loaders, tag=tag, resume=resume, save_state=save_state, **kw)
         state["done"][stage], state["current"] = history, None
         _atomic_save({**state, "model_state_dict": model.state_dict()}, resume_path)
+        if history.get("train"):  # end of stage: best-validation weights
+            snapshot(stage, len(history["train"]), history, name=f"{stage}_best.pth")
         return history
 
     history1 = run("stage1", "Stage 1: invertible coupling blocks + P/Q/P'/Q'", train_stage1,
