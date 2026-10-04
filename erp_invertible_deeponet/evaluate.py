@@ -13,7 +13,7 @@ solver error (upper bound). Design recovery: m, k, f_t, x, y per resonator
 
 Saves to ``plots/<dataset>/<variant>/`` and a comparison in ``ALL_MODELS/``.
 
-Usage (from the repository root):  python -m erp_invertible_deeponet.evaluate [Q8 Q64 Q128 Q64-FNO Q64-DCO]
+Usage (from the repository root):  python -m erp_invertible_deeponet.evaluate [Q8 Q64 Q128 Q64-FNO Q64-DCO Q64-DNO ...]
 """
 
 from __future__ import annotations
@@ -44,7 +44,8 @@ from .train import DATASET, VARIANTS, load_variant, model_path, plot_dir, prepar
 _draw_plate = importlib.import_module("2_res_erp_inverse_models.evaluate")._draw_plate
 PARAMS = (("m", 0, "Mass $m$ (kg)"), ("k", 1, "Stiffness $k$ (kN/m)"), ("f_t", 2, "Tuning frequency $f_t$ (Hz)"),
           ("x", 3, "Position $x$ (m)"), ("y", 4, "Position $y$ (m)"))
-COLORS = {"Q8": "#eb6834", "Q64": "#2a78d6", "Q128": "#1f9e74", "Q64-FNO": "#8f5bb5", "Q64-DCO": "#c0392b"}
+COLORS = {"Q8": "#eb6834", "Q64": "#2a78d6", "Q128": "#1f9e74", "Q64-FNO": "#8f5bb5", "Q64-DCO": "#c0392b",
+          "Q64-DNO": "#b8860b", "Q64-WNO": "#17becf", "Q64-LNO": "#7f7f7f", "Q64-SIREN": "#e377c2"}
 
 
 def pca_floor(train_db: np.ndarray, test_db: np.ndarray, q: int) -> np.ndarray:

@@ -6,8 +6,9 @@ Variants (same architecture, different number of basis functions Q):
 * ``Q64`` -- padded: the design is padded with 56 latent numbers (z = 0 in the
   forward direction), so the trunk has Q = 64 basis functions.
 * ``Q128`` -- padded to Q = 128 (same trunk).
-* ``Q64-FNO`` / ``Q64-DCO`` -- Q = 64 with an FNO-style / DCO-style trunk
-  (see model.py); the inverse is unchanged.
+* ``Q64-FNO`` / ``Q64-DCO`` / ``Q64-DNO`` / ``Q64-WNO`` / ``Q64-LNO`` /
+  ``Q64-SIREN`` -- Q = 64 with a trunk built from that forward architecture's
+  layers (see model.py); the inverse is unchanged.
 
 Training reuses the project's interruption-safe loop
 (``erp_inverse_operators.train_all.train_one``: Adam + cosine LR, grad clip,
@@ -40,8 +41,11 @@ from .model import InvertibleDeepONet
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 DATASET = "200k_2res_18modes"
-VARIANTS = {"Q8": 0, "Q64": 56, "Q128": 120, "Q64-FNO": 56, "Q64-DCO": 56}  # name -> latent padding (Q = 8 + pad)
-TRUNKS = {"Q64-FNO": "fno", "Q64-DCO": "dco"}  # name -> trunk architecture (default: Fourier features + MLP)
+VARIANTS = {"Q8": 0, "Q64": 56, "Q128": 120, "Q64-FNO": 56, "Q64-DCO": 56, "Q64-DNO": 56, "Q64-WNO": 56,
+            "Q64-LNO": 56, "Q64-SIREN": 56}  # name -> latent padding (Q = 8 + pad)
+# name -> trunk architecture (default: Fourier features + MLP, the DeepONet trunk)
+TRUNKS = {"Q64-FNO": "fno", "Q64-DCO": "dco", "Q64-DNO": "dno", "Q64-WNO": "wno", "Q64-LNO": "lno",
+          "Q64-SIREN": "siren"}
 INVERSE_WARMUP = 10
 LR = 5e-4
 

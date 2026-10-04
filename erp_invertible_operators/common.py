@@ -55,6 +55,7 @@ from erp_forward_operators.neural_operator_utils import (
     SortedResonatorEncoder,
     build_resonator_encoder,
     enable_physical_features,
+    resolve_activation,
     set_physical_feature_normalization,
 )
 from erp_inverse_operators.design_space import BOUNDED12, BOUNDED_FIELDS, FULL15, decode_bounded_torch, design_dim as _design_dim
@@ -195,6 +196,26 @@ class InvertibleOperatorBase(nn.Module):
             dim += 4 * self.readout_bins
         self.readout_dim = dim
         return dim
+
+    def _build_standard_parts(self, freq_dim: int, activation, readout: str, readout_bins: int, vae_hidden: int,
+                              z_dim: int) -> None:
+        """The parts every family member shares, for subclasses that do not
+        need their own: inverse lift P' ([y(f), MLP(f)] -> Linear -> 2*width),
+        readout Q (per frequency), readout Q' (pooled -> design) and the
+        beta-VAE. Use together with :meth:`_standard_lift_inverse`."""
+        act = resolve_activation(activation)
+        w2 = 2 * self.width
+        self.freq_embed = MLP([1, freq_dim, freq_dim], activation=nn.SiLU)
+        self.lift_pp = nn.Linear(1 + freq_dim, w2)
+        self.lift_pp_activation = act()
+        self.project_q = nn.Sequential(nn.Linear(w2, w2), act(), nn.Linear(w2, 1))
+        self.project_qp = MLP([self._init_readout(readout, readout_bins), vae_hidden, self.design_dim],
+                              activation=nn.SiLU)
+        self.vae = DesignVAE(self.design_dim, z_dim=z_dim, hidden=vae_hidden)
+
+    def _standard_lift_inverse(self, spectrum: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
+        lifted = self.lift_pp(torch.cat((spectrum[..., None], self.freq_embed(frequency)), dim=-1))
+        return self.lift_pp_activation(lifted).transpose(1, 2)  # (B, 2*width, F)
 
     def _register_frequency_grid(self, frequency_hz: torch.Tensor) -> None:
         if frequency_hz.numel() != self.n_freq:

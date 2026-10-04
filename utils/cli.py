@@ -1153,7 +1153,7 @@ def _print_invertible_menu() -> None:
     print("=" * 56)
     for key, spec in INVERTIBLE_OPERATORS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
-    print(f"{len(INVERTIBLE_OPERATORS) + 1}. ALL three")
+    print(f"{len(INVERTIBLE_OPERATORS) + 1}. ALL {len(INVERTIBLE_OPERATORS)}")
     print("=" * 56)
 
 
@@ -1162,7 +1162,8 @@ def _prompt_invertible_options(invertible) -> dict:
     print("\nInvertible-operator configuration")
     print("1. Standard     (paper-style: 15-D design, softplus gate, pooled readout)  [existing models]")
     print("2. Recommended  (bounded 12-D design, identity-init bounded gate, binned readout,")
-    print("                 iFNO FFT padding, cycle+alignment terms 0.1, stage-2 on stage-1 estimates)")
+    print("                 iFNO FFT padding, cycle+alignment terms 0.1, stage-2 on stage-1 estimates,")
+    print("                 f_t-sorted resonator encoder, plate mode shapes / physical detuning)")
     print("3. Custom       (choose each option)")
     choice = _prompt_choice("Select configuration: ", {"1": None, "2": None, "3": None})
     if choice == "1":
@@ -1183,6 +1184,10 @@ def _prompt_invertible_options(invertible) -> dict:
         opts["align_weight"] = _prompt_float("Alignment weight", default=0.1, minimum=0.0)
     if _prompt_yes_no("Stage-2 VAE pretraining on stage-1 inverse estimates (suffix _s2e)?", default=True):
         opts["stage2_source"] = "estimates"
+    if _prompt_yes_no("f_t-sorted resonator encoder instead of the pooled set encoder (suffix _sortenc)?", default=True):
+        opts["encoder"] = "sorted"
+    if _prompt_yes_no("Plate mode shapes + physical detuning features (suffix _phys)?", default=True):
+        opts["coordinate_features"] = "physical"
     return opts
 
 

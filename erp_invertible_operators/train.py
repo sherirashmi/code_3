@@ -490,6 +490,9 @@ TRAIN_OPTION_DEFAULTS = {
 RECOMMENDED_OPTIONS = {
     "design_param": "bounded12", "gate": "bounded", "readout": "binned", "spectral_padding": 8,
     "cycle_weight": 0.1, "align_weight": 0.1, "stage2_source": "estimates",
+    # as in the final forward models: f_t-sorted resonator encoder (where the
+    # architecture has one) and plate mode shapes / physical detuning
+    "encoder": "sorted", "coordinate_features": "physical",
 }
 
 

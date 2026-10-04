@@ -14,9 +14,13 @@ Forward (Kaltenbach et al.):
   strict Q = D model.
 * ``psi``: the trunk, a network of the (normalised) frequency only, evaluated
   on the fixed frequency grid -> an (F, Q) basis matrix. ``trunk``: "mlp"
-  (Fourier features + MLP), "fno" (Fourier blocks along f, FNO-style) or
-  "dco" (residual MLP blocks + local Conv1d refinement, DCO-style). Any
-  architecture works here as long as it does not see the design.
+  (Fourier features + MLP), "fno" (Fourier blocks along f, FNO-style),
+  "dco" (residual MLP blocks + local Conv1d refinement, DCO-style), "dno"
+  (FiLM residual blocks, FiLM from a frequency embedding), "wno" (Haar
+  wavelet blocks), "lno" (learned pole/residue basis) or "siren" (sine
+  layers). Any architecture works here as long as it does not see the
+  design; GNO and STO are not trunk options because their core acts on the
+  resonators, which the trunk never sees.
 
 Inverse: the ERP is LINEAR in b. The trunk's basis is orthonormalised on every
 pass (QR; Psi^T Psi = F I), so for a target spectrum y the least-squares
@@ -44,8 +48,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from erp_forward_operators.dno import FiLMResidualBlock
 from erp_forward_operators.fno import FNOBlock1d
-from erp_forward_operators.neural_operator_utils import FrequencyRefinement1d, ResidualMLPBlock
+from erp_forward_operators.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock
+from erp_forward_operators.wno import MultiLevelHaarWaveletBlock1d
 
 LOG_SCALE_CLAMP = 1.0  # max e^1 scaling per coupling: keeps the inverse of off-manifold b bounded
 
@@ -183,7 +189,109 @@ class DCOTrunk(nn.Module):
         return self.project(h)
 
 
-TRUNKS = {"mlp": Trunk, "fno": FNOTrunk, "dco": DCOTrunk}
+class DNOTrunk(nn.Module):
+    """Basis functions built the DNO way: Fourier features -> Linear lift ->
+    ``depth`` FiLM residual blocks (erp_forward_operators/dno.py) -> local
+    refinement -> projection. In the forward DNO the FiLM is driven by the
+    design; a trunk must not see the design, so here it is driven by a
+    learned embedding of the frequency itself."""
+
+    def __init__(self, num_basis: int, width: int = 96, depth: int = 4, cond_dim: int = 32, num_fourier: int = 32) -> None:
+        super().__init__()
+        self.register_buffer("freqs", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.lift = nn.Linear(1 + 2 * num_fourier, width)
+        self.condition = MLP([1 + 2 * num_fourier, cond_dim, cond_dim], activation=nn.SiLU)
+        self.blocks = nn.ModuleList([FiLMResidualBlock(width, cond_dim, activation="silu") for _ in range(depth)])
+        self.refine = FrequencyRefinement1d(width)
+        self.project = nn.Linear(width, num_basis + 1)
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        feats = fourier_features(f_norm, self.freqs)
+        h, cond = F.silu(self.lift(feats)), self.condition(feats)
+        for block in self.blocks:
+            h = block(h, cond)
+        return self.project(self.refine(h.T[None])[0].T)
+
+
+class WNOTrunk(nn.Module):
+    """Basis functions built the WNO way: Fourier features -> Linear lift ->
+    ``depth`` multi-level Haar wavelet blocks (erp_forward_operators/wno.py)
+    -> pointwise projection."""
+
+    def __init__(self, num_basis: int, width: int = 40, depth: int = 4, levels: int = 3, num_fourier: int = 32) -> None:
+        super().__init__()
+        self.register_buffer("freqs", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.lift = nn.Linear(1 + 2 * num_fourier, width)
+        self.blocks = nn.ModuleList([MultiLevelHaarWaveletBlock1d(width, levels=levels, dropout=0.0, activation="gelu")
+                                     for _ in range(depth)])
+        self.project = nn.Sequential(nn.Linear(width, 2 * width), nn.GELU(), nn.Linear(2 * width, num_basis + 1))
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        x = self.lift(fourier_features(f_norm, self.freqs)).T[None]
+        for block in self.blocks:
+            x = block(x)
+        return self.project(x[0].T)
+
+
+class LNOTrunk(nn.Module):
+    """Basis functions built the LNO way: a learned pole/residue (rational)
+    basis r/(s - p) + conj(r)/(s - conj(p)) at s = i f
+    (erp_forward_operators/lno.py) -- resonance-shaped functions of f -- plus
+    Fourier features -> Linear lift -> local refinement -> MLP projection.
+    In the forward LNO the poles are predicted from the design; here they are
+    learned parameters, the same for every design (a trunk must not see the
+    design), spread over the band at initialisation."""
+
+    def __init__(self, num_basis: int, num_poles: int = 48, width: int = 96, num_fourier: int = 32) -> None:
+        super().__init__()
+        self.register_buffer("freqs", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.omega = nn.Parameter(torch.linspace(-1.0, 1.0, num_poles))
+        self.log_sigma = nn.Parameter(torch.full((num_poles,), -3.5))  # sharp resonances at start
+        self.r_re = nn.Parameter(0.05 * torch.randn(num_poles))
+        self.r_im = nn.Parameter(0.05 * torch.randn(num_poles))
+        self.lift = nn.Linear(2 * num_poles + 1 + 2 * num_fourier, width)
+        self.refine = FrequencyRefinement1d(width)
+        self.project = nn.Sequential(nn.Linear(width, width), nn.SiLU(), nn.Linear(width, num_basis + 1))
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        s = torch.complex(torch.zeros_like(f_norm), f_norm)[:, None]
+        pole = torch.complex(-(F.softplus(self.log_sigma) + 1e-4), self.omega)
+        res = torch.complex(self.r_re, self.r_im)
+        term = res / (s - pole) + res.conj() / (s - pole.conj())  # (F, P)
+        h = F.silu(self.lift(torch.cat((term.real, term.imag, fourier_features(f_norm, self.freqs)), dim=-1)))
+        return self.project(self.refine(h.T[None])[0].T)
+
+
+class SIRENTrunk(nn.Module):
+    """Basis functions built the SIREN way: f -> ``depth`` sine layers
+    sin(w0 (W h + b)) with SIREN initialisation (the sines replace the
+    Fourier features) -> local refinement -> linear projection. The forward
+    SIREN's FiLM modulation from the design is left out: a trunk must not
+    see the design."""
+
+    def __init__(self, num_basis: int, width: int = 128, depth: int = 4, omega_0: float = 30.0) -> None:
+        super().__init__()
+        self.omega_0 = float(omega_0)
+        self.layers = nn.ModuleList()
+        for i in range(depth):
+            layer = nn.Linear(1 if i == 0 else width, width)
+            bound = 1.0 / layer.in_features if i == 0 else math.sqrt(6.0 / layer.in_features) / self.omega_0
+            with torch.no_grad():
+                layer.weight.uniform_(-bound, bound)
+                layer.bias.uniform_(-bound, bound)
+            self.layers.append(layer)
+        self.refine = FrequencyRefinement1d(width)
+        self.project = nn.Linear(width, num_basis + 1)
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        h = f_norm[:, None]
+        for layer in self.layers:
+            h = torch.sin(self.omega_0 * layer(h))
+        return self.project(self.refine(h.T[None])[0].T)
+
+
+TRUNKS = {"mlp": Trunk, "fno": FNOTrunk, "dco": DCOTrunk, "dno": DNOTrunk, "wno": WNOTrunk, "lno": LNOTrunk,
+          "siren": SIRENTrunk}
 
 
 class InvertibleDeepONet(nn.Module):
