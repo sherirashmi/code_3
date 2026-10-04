@@ -269,7 +269,7 @@ class SIRENTrunk(nn.Module):
     SIREN's FiLM modulation from the design is left out: a trunk must not
     see the design."""
 
-    def __init__(self, num_basis: int, width: int = 128, depth: int = 4, omega_0: float = 30.0) -> None:
+    def __init__(self, num_basis: int, width: int = 128, depth: int = 4, omega_0: float = 10.0) -> None:
         super().__init__()
         self.omega_0 = float(omega_0)
         self.layers = nn.ModuleList()
