@@ -15,19 +15,21 @@ Forward (Kaltenbach et al.):
 * ``psi``: the trunk, an MLP of the (normalised) frequency with Fourier
   features, evaluated on the fixed frequency grid -> an (F, Q) basis matrix.
 
-Inverse: the ERP is LINEAR in b, so for a target spectrum y the coefficients
-have the closed-form regularised least-squares estimate
+Inverse: the ERP is LINEAR in b. The trunk's basis is orthonormalised on every
+pass (QR; Psi^T Psi = F I), so for a target spectrum y the least-squares
+coefficients are a plain projection,
 
-    b* = (Psi^T Psi + lam I)^-1 Psi^T (y - psi_0),  Cov = s2 (Psi^T Psi + lam I)^-1
+    b* = Psi^T (y - psi_0) / F,      Cov = (s2 / F) I
 
-(Gaussian posterior with a flat prior on b and noise variance s2 = the
-training residual). Samples b ~ N(b*, Cov) are pushed back through T^-1, and
+(Gaussian posterior with a flat prior on b; s2 = the training residual variance).
+This is exact -- a spectrum produced by the model inverts back to its own
+design -- and needs no regularisation. Samples b ~ N(b*, Cov) are pushed back through T^-1, and
 the design part of [a, z] is kept: several designs per target, no iterative
 optimisation, milliseconds. F (frequency points) can exceed Q; only Q = dim
 of the bijection is tied to D.
 
-Training: forward MSE on the normalised ERP plus an inverse-consistency term,
-||T^-1(b*(y))_a - a||^2 + w_z ||T^-1(b*(y))_z||^2, so the closed-form inverse
+Training: forward MSE on the normalised ERP plus an inverse-consistency term
+(Huber), |T^-1(b*(y))_a - a| + w_z |T^-1(b*(y))_z|, so the closed-form inverse
 of a training spectrum lands on its own design (and on z ~ 0).
 """
 
@@ -38,7 +40,7 @@ import math
 import torch
 import torch.nn as nn
 
-LOG_SCALE_CLAMP = 2.0
+LOG_SCALE_CLAMP = 1.0  # max e^1 scaling per coupling: keeps the inverse of off-manifold b bounded
 
 
 class AffineCoupling(nn.Module):
@@ -122,11 +124,10 @@ class Trunk(nn.Module):
 
 class InvertibleDeepONet(nn.Module):
     def __init__(self, design_dim: int, n_freq: int, pad: int = 0, num_layers: int = 10, hidden: int = 256,
-                 trunk_hidden: int = 256, ridge: float = 1e-4) -> None:
+                 trunk_hidden: int = 256) -> None:
         super().__init__()
         self.design_dim, self.pad, self.n_freq = int(design_dim), int(pad), int(n_freq)
         self.num_basis = self.design_dim + self.pad  # Q
-        self.ridge = float(ridge)
         self.branch = RealNVP(self.num_basis, num_layers=num_layers, hidden=hidden)
         self.trunk = Trunk(self.num_basis, hidden=trunk_hidden)
         self.register_buffer("f_norm", torch.linspace(-1.0, 1.0, self.n_freq))
@@ -134,9 +135,11 @@ class InvertibleDeepONet(nn.Module):
 
     # ---- pieces -----------------------------------------------------------------
     def basis(self):
-        """(Psi (F, Q), psi_0 (F,))."""
+        """(Psi (F, Q) with Psi^T Psi = F I, psi_0 (F,)). The raw trunk outputs are
+        orthonormalised by a (differentiable) QR decomposition."""
         out = self.trunk(self.f_norm)
-        return out[:, 1:], out[:, 0]
+        q, _ = torch.linalg.qr(out[:, 1:])
+        return q * math.sqrt(self.n_freq), out[:, 0]
 
     def _pad(self, a):
         if not self.pad:
@@ -153,21 +156,11 @@ class InvertibleDeepONet(nn.Module):
         return self.coefficients(a) @ psi.T + psi0
 
     # ---- inverse ------------------------------------------------------------------
-    def _gram(self, psi):
-        return psi.T @ psi + self.ridge * torch.eye(self.num_basis, device=psi.device, dtype=psi.dtype)
-
     def least_squares(self, spectrum, psi=None, psi0=None):
-        """Closed-form b* (B, Q) for spectra (B, F): the ERP is linear in b."""
+        """Closed-form b* (B, Q) for spectra (B, F): projection onto the orthonormal basis."""
         if psi is None:
             psi, psi0 = self.basis()
-        return torch.linalg.solve(self._gram(psi), ((spectrum - psi0) @ psi).T).T
-
-    def coefficient_posterior(self, spectrum):
-        """b* (B, Q) and the Cholesky factor (Q, Q) of Cov = s2 (Psi^T Psi + lam I)^-1."""
-        psi, psi0 = self.basis()
-        b_star = self.least_squares(spectrum, psi, psi0)
-        chol = torch.linalg.cholesky(self.noise_var * torch.linalg.inv(self._gram(psi)))
-        return b_star, chol
+        return (spectrum - psi0) @ psi / self.n_freq
 
     def invert_coefficients(self, b):
         """b (..., Q) -> (design (..., D), latent z (..., pad))."""
@@ -180,10 +173,11 @@ class InvertibleDeepONet(nn.Module):
     @torch.no_grad()
     def sample(self, spectrum, num_samples: int = 16):
         """(B, S, D) normalised designs; sample 0 is the posterior-mean (point) estimate."""
-        b_star, chol = self.coefficient_posterior(spectrum)
-        eps = torch.randn(b_star.shape[0], num_samples, self.num_basis, device=b_star.device)
-        eps[:, 0] = 0.0
-        b = b_star[:, None, :] + eps @ chol.T
+        b_star = self.least_squares(spectrum)
+        offsets = torch.randn(b_star.shape[0], num_samples, self.num_basis, device=b_star.device)
+        offsets = offsets * torch.sqrt(self.noise_var / self.n_freq)  # Cov = (s2 / F) I
+        offsets[:, 0] = 0.0
+        b = b_star[:, None, :] + offsets
         return self.invert_coefficients(b)[0]
 
     # ---- training -------------------------------------------------------------------
@@ -193,7 +187,9 @@ class InvertibleDeepONet(nn.Module):
         pred = self.coefficients(a) @ psi.T + psi0
         forward_loss = ((pred - spectrum) ** 2).mean()
         a_hat, z_hat = self.invert_coefficients(self.least_squares(spectrum, psi, psi0))
-        inverse_loss = ((a_hat - a) ** 2).mean()
-        latent_loss = (z_hat ** 2).mean() if self.pad else torch.zeros((), device=a.device)
+        # Huber: robust while the basis is still far from the data early in training
+        inverse_loss = nn.functional.smooth_l1_loss(a_hat, a)
+        latent_loss = nn.functional.smooth_l1_loss(z_hat, torch.zeros_like(z_hat)) if self.pad \
+            else torch.zeros((), device=a.device)
         total = forward_loss + inverse_weight * inverse_loss + latent_weight * latent_loss
         return {"total": total, "forward": forward_loss, "inverse": inverse_loss, "latent": latent_loss}

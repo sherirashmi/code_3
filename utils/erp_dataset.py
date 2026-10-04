@@ -134,11 +134,11 @@ DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
     "num_res": 2,
     "fixed_resonator": (0.2, 72.0),
 }
-DATASETS["100k_2res_18modes"] = {
-    "label": "100k configurations, 2 resonators, m, f_t, x, y all by Latin hypercube (k derived), "
+DATASETS["200k_2res_18modes"] = {
+    "label": "200k configurations, 2 resonators, m, f_t, x, y all by Latin hypercube (k derived), "
              "18 plate modes (6x3)",
-    "files": [f"datasets/dataset_erp_100k_2res_18modes_part{i}.pth" for i in range(1, 5)],
-    "num_configurations": 100_000,
+    "files": [f"datasets/dataset_erp_200k_2res_18modes_part{i}.pth" for i in range(1, 9)],
+    "num_configurations": 200_000,
     "modal_resolution": (6, 3),
     "num_res": 2,
 }

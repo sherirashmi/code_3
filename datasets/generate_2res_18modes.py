@@ -1,12 +1,12 @@
-"""Generate the 100k "2 resonators, everything varies, 18 plate modes" dataset.
+"""Generate the 200k "2 resonators, everything varies, 18 plate modes" dataset.
 
 * 2 resonators per configuration.
 * m in [0.1, 1.0] kg, f_t in [10, 160] Hz, x in [0.05, 1.35] m, y in
-  [0.05, 0.45] m: one Latin hypercube over all 100k configurations (8 numbers
+  [0.05, 0.45] m: one Latin hypercube over all 200k configurations (8 numbers
   each); stiffness derived, k = m (2 pi f_t)^2.
 * Plate basis 6 x 3 = 18 modes.
 
-Written as 4 shards of 25,000 configurations, registered as "100k_2res_18modes".
+Written as 8 shards of 25,000 configurations, registered as "200k_2res_18modes".
 
 Run from the repository root:  python datasets/generate_2res_18modes.py
 """
@@ -25,10 +25,10 @@ os.chdir(ROOT)
 
 NUM_RES = 2
 MODES = (6, 3)
-NUM_SHARDS = 4
-TOTAL = 100_000
+NUM_SHARDS = 8
+TOTAL = 200_000
 BASE_SEED = 2002
-TAG = "100k_2res_18modes"
+TAG = "200k_2res_18modes"
 
 
 def _generate_shard(args) -> str:
@@ -51,7 +51,7 @@ def main() -> None:
     from utils.physics import resonator_bounds
     from utils.support import lhs_sampling
 
-    samples = lhs_sampling(TOTAL, bounds=resonator_bounds(NUM_RES), seed=BASE_SEED)  # one LHS over all 100k
+    samples = lhs_sampling(TOTAL, bounds=resonator_bounds(NUM_RES), seed=BASE_SEED)  # one LHS over all 200k
     chunks = np.array_split(samples, NUM_SHARDS)
     print(f"Generating {TOTAL:,} configurations: {NUM_RES} resonators, m, f_t, x, y by LHS, "
           f"{MODES[0]}x{MODES[1]} plate modes, {NUM_SHARDS} shards")
