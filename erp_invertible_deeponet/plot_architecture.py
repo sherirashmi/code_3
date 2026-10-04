@@ -23,6 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from erp_forward_operators.don import DEFAULT_MODEL_CONFIG, build_model
+from erp_forward_operators.neural_operator_utils import build_operator_model
 from utils.plotting import save_figure
 
 from .model import InvertibleDeepONet
@@ -44,7 +45,9 @@ def count(module) -> int:
 
 
 def main() -> None:
-    don = build_model(3, **DEFAULT_MODEL_CONFIG)  # forward DON: trained on 3 resonators
+    # the final trained forward DON: 3 resonators, set + f_t-sorted encoder, physical plate-mode features
+    don = build_operator_model(build_model, 3, {**DEFAULT_MODEL_CONFIG, "use_sorted_branch": True,
+                                                "coordinate_features": "physical"})
     idon = InvertibleDeepONet(4 * NUM_RES, n_freq=N_FREQ, pad=PAD)
     P, T = DEFAULT_MODEL_CONFIG["basis_dim"], DEFAULT_MODEL_CONFIG["num_terms"]
     ctx, rw = DEFAULT_MODEL_CONFIG["context_dim"], DEFAULT_MODEL_CONFIG["refine_width"]
@@ -63,7 +66,7 @@ def main() -> None:
     yb, yt, h = 0.80, 0.625, 0.135  # branch row, trunk row, box height
     box(ax, 0.01, yb, 0.13, h, "Design", "3 resonators $\\times$\n$[m, k, f_t, x, y]$\n(unordered set)",
         LIGHT["grey"])
-    box(ax, 0.17, yb, 0.15, h, "Set encoder", "per-resonator MLP\n(+ plate sine features)\nmean + max pooling\n"
+    box(ax, 0.17, yb, 0.15, h, "Set + sorted encoder", "+ plate mode shapes\nset: shared MLP,\nmean + max pooling\nsorted: by $f_t$, MLP\n"
         f"{count(don.configuration_encoder):,} par.", LIGHT["blue"], edge=BLUE)
     box(ax, 0.35, yb + 0.02, 0.12, h - 0.04, f"Context $c$", f"{ctx} numbers\nsummary of\nthe design",
         LIGHT["blue"], edge=BLUE)
@@ -90,7 +93,7 @@ def main() -> None:
     arrow(ax, (0.64, yt + h / 2), (0.67, yt + h / 2 + 0.005))
     arrow(ax, (0.82, 0.78), (0.85, 0.78))
     arrow(ax, (0.92, yt + 0.115), (0.92, yt + 0.09))
-    ax.text(0.01, 0.598, "Not invertible: the set encoder compresses the design, the basis changes with the design "
+    ax.text(0.01, 0.598, "Not invertible: the encoder is a nonlinear many-to-one network, the basis changes with the design "
             "and the refinement is nonlinear $\\Rightarrow$ there is no closed-form way back from an ERP to a design.",
             fontsize=11.5, color=GREY, style="italic", va="top")
     ax.plot([0.01, 0.99], [0.565, 0.565], color=GREY, lw=0.8, ls=":")

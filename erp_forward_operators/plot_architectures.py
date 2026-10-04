@@ -21,7 +21,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from erp_forward_operators.operator_registry import OPERATORS
+from erp_forward_operators.neural_operator_utils import SetAndSortedResonatorEncoder, build_operator_model
+from erp_forward_operators.operator_registry import OPERATORS, forward_variant
 from utils.plotting import save_figure
 from utils.paths import PROJECT_ROOT
 
@@ -30,15 +31,16 @@ BLUE, ORANGE, GREEN, GREY, PURPLE, LIGHT = _bank.BLUE, _bank.ORANGE, _bank.GREEN
 
 OUT_DIR = PROJECT_ROOT / "erp_forward_operators" / "plots" / "ARCHITECTURES"
 NUM_RES, N_FREQ = 3, 301
+FINAL_VARIANT = {"sorted": True, "physical": True, "permutation": True}
 
 # layout: rows (y, h), tall span, columns (x, w)
-A, B, C = (0.64, 0.22), (0.37, 0.22), (0.10, 0.22)
-TALL = (0.12, 0.72)
+A, B, C = (0.64, 0.22), (0.38, 0.22), (0.12, 0.22)
+TALL = (0.14, 0.70)
 COLS = [(0.01, 0.11), (0.15, 0.16), (0.35, 0.14), (0.53, 0.17), (0.74, 0.12), (0.89, 0.10)]
 
 
-def count(module) -> int:
-    return sum(p.numel() for p in module.parameters())
+def count(*modules) -> int:
+    return sum(p.numel() for m in modules for p in m.parameters())
 
 
 def rect(col, row, span=1):
@@ -79,15 +81,21 @@ def freq_box(ax, r=None):
     return box(ax, r or rect(0, C), "Frequency $f$", f"{N_FREQ} points\n10--160 Hz\n(z-scored)", LIGHT["grey"])
 
 
-def set_encoder(ax, module, out_dim, r=None, title="Set encoder"):
-    return box(ax, r or rect(1, A), title, "per resonator: $[m, k, f_t, x, y]$\n+ 120 plate sine features\n"
-               "shared MLP (tanh)\nmean + max pooling, MLP\n"
+def set_encoder(ax, module, out_dim, r=None, title=None):
+    """Set encoder, or (final models) set + f_t-sorted encoder fused by a Linear layer."""
+    if isinstance(module, SetAndSortedResonatorEncoder):
+        return box(ax, r or rect(1, A), title or "Set + sorted encoder",
+                   "per resonator: $[m, k, f_t, x, y]$\n+ 120 plate mode shapes\n"
+                   "set: shared MLP, mean + max\nsorted: order by $f_t$, concat., MLP\n"
+                   f"Linear fusion $\\to$ context $c$ ({out_dim})\n{count(module):,} par.", LIGHT["blue"], BLUE)
+    return box(ax, r or rect(1, A), title or "Set encoder", "per resonator: $[m, k, f_t, x, y]$\n"
+               "+ 120 plate mode shapes\nshared MLP (tanh)\nmean + max pooling, MLP\n"
                f"$\\to$ context $c$ ({out_dim})  [{count(module):,} par.]", LIGHT["blue"], BLUE)
 
 
 def query_encoder(ax, module, out_dim, r=None):
     return box(ax, r or rect(1, B), "Resonance query", "per resonator and $f$: features,\n"
-               "$f$, $\\delta, |\\delta|, \\delta^2$  ($\\delta = f - f_t$)\nshared MLP (tanh),\nmean + max over resonators\n"
+               "$f$, $\\delta, |\\delta|, \\delta^2$  ($\\delta = \\frac{f - f_t}{\\sigma_f}$)\nshared MLP (tanh),\nmean + max over resonators\n"
                f"$\\to q(f)$ ({out_dim})  [{count(module):,} par.]", LIGHT["green"], GREEN)
 
 
@@ -103,14 +111,17 @@ def output_box(ax, dims, module=None, r=None):
                LIGHT["grey"])
 
 
-def setup(title, model, footer):
+def setup(title, model, footer, mode_note=True):
     fig, ax = plt.subplots(figsize=(18, 8.2))
     fig.subplots_adjust(left=0.005, right=0.995, top=0.995, bottom=0.005)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
     ax.text(0.01, 0.975, f"{title}  ({count(model):,} parameters)", fontsize=14, va="top")
-    ax.text(0.01, 0.045, footer, fontsize=11, color=GREY, style="italic", va="center")
+    if mode_note:
+        ax.text(0.01, 0.075, "Plate mode shapes: $\\sin(m\\pi x/L_x)$, $\\sin(n\\pi y/L_y)$ and their products "
+                "at each resonator position.", fontsize=10.5, color=GREY, va="center")
+    ax.text(0.01, 0.035, footer, fontsize=11, color=GREY, style="italic", va="center")
     return fig, ax
 
 
@@ -118,7 +129,7 @@ def setup(title, model, footer):
 def draw_nn(model, cfg):
     fig, ax = setup("NN: plain neural network (baseline)", model,
                     "No encoders, no cross-frequency mixing: every frequency is predicted on its own. The input "
-                    "order of the resonators matters (trained with a random order per batch).")
+                    "order of the resonators matters (trained with a random order per batch).", mode_note=False)
     d = design_box(ax, rect(0, A), f"{NUM_RES} resonators\nflattened\n$[m_1, k_1, \\ldots, y_{NUM_RES}]$\n"
                    f"({5 * NUM_RES} numbers)")
     f = freq_box(ax)
@@ -232,12 +243,19 @@ def draw_dco(model, cfg):
                     "Branch (design), trunk (frequency) and resonance-query features are concatenated (\"cat\") "
                     "and passed through a deep residual MLP at every frequency, then refined locally.")
     d, f = design_box(ax), freq_box(ax)
-    s = set_encoder(ax, model.branch, cfg["branch_dim"], title="Branch: set encoder")
+    bd = cfg["branch_dim"]
+    if model.use_sorted_branch:  # DCO keeps both branches separate and concatenates them in the lift
+        s = box(ax, rect(1, A), "Branch: set + sorted", "per resonator: $[m, k, f_t, x, y]$\n+ 120 plate mode shapes\n"
+                f"set: shared MLP, mean + max ({bd})\nsorted: order by $f_t$, concat.,\nMLP ({bd})\n"
+                f"{count(model.branch, model.sorted_branch):,} par.", LIGHT["blue"], BLUE)
+    else:
+        s = set_encoder(ax, model.branch, bd, title="Branch: set encoder")
     q = query_encoder(ax, model.resonance_query, cfg["query_dim"])
     tr = box(ax, rect(1, C), "Trunk MLP", f"$f$: MLP 1 $\\to$ {h} $\\to$ {cfg['trunk_dim']}\n"
              f"{count(model.trunk):,} par.", LIGHT["green"], GREEN)
-    lift_in = cfg["branch_dim"] + cfg["trunk_dim"] + cfg["query_dim"]
-    lift = box(ax, rect(2, TALL), "Lift", f"concatenate\n$[c, $ trunk$(f), q(f)]$\n({lift_in})\n\nLinear $\\to$ {h}"
+    lift_in = bd * (2 if model.use_sorted_branch else 1) + cfg["trunk_dim"] + cfg["query_dim"]
+    branches = "$c_{set}, c_{sort}$" if model.use_sorted_branch else "$c$"
+    lift = box(ax, rect(2, TALL), "Lift", f"concatenate\n$[${branches}$,$\ntrunk$(f), q(f)]$\n({lift_in})\n\nLinear $\\to$ {h}"
                f"\nSiLU\n\n{count(model.lift):,} par.", LIGHT["purple"], PURPLE)
     core = box(ax, rect(3, TALL), f"{cfg['depth']} $\\times$ residual MLP block",
                "$h \\leftarrow \\sigma(\\mathrm{LN}(h + \\mathrm{MLP}(h)))$\n\npointwise in $f$\n"
@@ -258,7 +276,7 @@ def draw_gno(model, cfg):
                     "The resonators are the nodes of a complete graph; message passing lets them interact, and every "
                     "frequency then attends to the resonators (a learned kernel integral over the graph).")
     d, f = design_box(ax), freq_box(ax)
-    nl = box(ax, rect(1, A), "Node lift", f"per resonator:\n$[m, k, f_t, x, y]$\n+ {feat - 5} sine features ({feat})\n"
+    nl = box(ax, rect(1, A), "Node lift", f"per resonator:\n$[m, k, f_t, x, y]$\n+ {feat - 5} plate mode shapes\n({feat})\n"
              f"MLP $\\to$ {w}\n{count(model.node_lift):,} par.", LIGHT["blue"], BLUE)
     gl = box(ax, rect(2, (0.50, 0.36)), f"{cfg['depth']} $\\times$ message passing", "complete graph\nof resonators\n\n"
              "edges: $\\Delta[m, k, f_t, x, y]$,\ndistance, $|\\Delta f_t|$\n\nmessage MLP, mean,\nupdate MLP,\n"
@@ -287,7 +305,7 @@ def draw_sto(model, cfg):
                     "Self-attention lets the resonators interact; every frequency then queries the resonators by "
                     "cross-attention, biased by how far $f$ is from each tuning frequency.")
     d, f = design_box(ax), freq_box(ax)
-    nl = box(ax, rect(1, A), "Node lift", f"per resonator:\n$[m, k, f_t, x, y]$\n+ {feat - 5} sine features ({feat})\n"
+    nl = box(ax, rect(1, A), "Node lift", f"per resonator:\n$[m, k, f_t, x, y]$\n+ {feat - 5} plate mode shapes\n({feat})\n"
              f"MLP $\\to$ {w}\n{count(model.node_lift):,} par.", LIGHT["blue"], BLUE)
     enc = box(ax, rect(2, (0.37, 0.49)), "Transformer encoder", f"{len(model.encoder.layers)} layers, {cfg['heads']} "
               f"heads\n\nself-attention\nbetween resonators\n\nfeed-forward {cfg['ff_dim']}\ndropout {cfg['dropout']:g}\n"
@@ -379,8 +397,11 @@ def main(names) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for name in names:
         spec = specs[name]
-        cfg = dict(spec["model_config"])
-        model = spec["build_model"](NUM_RES, **cfg)
+        # the final trained models: set + f_t-sorted encoder, physical plate-mode
+        # features (NN: random resonator order); same weights layout as their checkpoints
+        _, overrides = forward_variant(spec, FINAL_VARIANT)
+        cfg = {**spec["model_config"], **overrides}
+        model = build_operator_model(spec["build_model"], NUM_RES, cfg)
         fig = DRAW[name](model, cfg)
         path = OUT_DIR / f"{name.lower()}_architecture.png"
         save_figure(fig, path)
