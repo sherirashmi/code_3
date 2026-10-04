@@ -44,7 +44,7 @@ def count(module) -> int:
 
 
 def main() -> None:
-    don = build_model(NUM_RES, **DEFAULT_MODEL_CONFIG)
+    don = build_model(3, **DEFAULT_MODEL_CONFIG)  # forward DON: trained on 3 resonators
     idon = InvertibleDeepONet(4 * NUM_RES, n_freq=N_FREQ, pad=PAD)
     P, T = DEFAULT_MODEL_CONFIG["basis_dim"], DEFAULT_MODEL_CONFIG["num_terms"]
     ctx, rw = DEFAULT_MODEL_CONFIG["context_dim"], DEFAULT_MODEL_CONFIG["refine_width"]
@@ -61,7 +61,7 @@ def main() -> None:
     ax.text(0.01, 0.985, f"(a) DeepONet (DON), forward operator only: design $\\to$ ERP  "
             f"({count(don):,} parameters)", fontsize=13, weight="bold", va="top")
     yb, yt, h = 0.80, 0.625, 0.135  # branch row, trunk row, box height
-    box(ax, 0.01, yb, 0.13, h, "Design", f"{NUM_RES} resonators $\\times$\n$[m, k, f_t, x, y]$\n(unordered set)",
+    box(ax, 0.01, yb, 0.13, h, "Design", "3 resonators $\\times$\n$[m, k, f_t, x, y]$\n(unordered set)",
         LIGHT["grey"])
     box(ax, 0.17, yb, 0.15, h, "Set encoder", "per-resonator MLP\n(+ plate sine features)\nmean + max pooling\n"
         f"{count(don.configuration_encoder):,} par.", LIGHT["blue"], edge=BLUE)
