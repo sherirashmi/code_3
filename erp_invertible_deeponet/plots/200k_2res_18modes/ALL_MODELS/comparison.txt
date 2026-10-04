@@ -1,0 +1,5 @@
+Invertible DeepONet on '200k_2res_18modes' (forward on 5,000 and inverse on 500 test configurations)
+
+Variant     Q  fwd RMSE  PCA floor  peak err |  inv own  inv best  f_t r    m r    x r    y r  pos err  ms/target
+                   (dB)       (dB)      (dB) |     (dB)      (dB)                                 (cm)
+Q8          8      5.98       4.75      31.5 |     9.97      8.02  0.812  0.325  0.495 -0.028     24.4       0.40
