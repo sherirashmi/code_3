@@ -149,7 +149,8 @@ def draw_don(model, cfg):
     P, T = cfg["basis_dim"], cfg["num_terms"]
     fig, ax = setup("DON: DeepONet", model,
                     "Branch $\\times$ trunk: the ERP is a sum of design-dependent coefficients times basis functions "
-                    "of $f$; FiLM lets the basis itself change with the design, so peaks can move.")
+                    "of $f$. FiLM acts after the trunk's last linear layer, so the sum collapses to a fixed basis of "
+                    f"{cfg['hidden_dim']} functions of $f$ (the trunk's last hidden layer).")
     d, f = design_box(ax), freq_box(ax)
     s = set_encoder(ax, model.configuration_encoder, cfg["context_dim"])
     br = box(ax, rect(2, A), "Branch MLP", f"$c \\to b_{{j,p}}$\n{T} terms $\\times$ {P}\ncoefficients\n"

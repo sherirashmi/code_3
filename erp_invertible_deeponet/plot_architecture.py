@@ -77,7 +77,7 @@ def main() -> None:
         f"{count(don.trunk):,} par.", LIGHT["green"], edge=GREEN)
     box(ax, 0.35, yt, 0.12, h, "FiLM", "$\\gamma\\,\\varphi + \\beta$\n$\\gamma = 1 + 0.25\\tanh(\\cdot)$\n"
         f"$\\gamma, \\beta$ from $c$\n{count(don.trunk_modulation):,} par.", LIGHT["green"], edge=GREEN)
-    box(ax, 0.50, yt, 0.14, h, "Basis", "$\\varphi_{j,p}(f; c)$\ndepends on the\ndesign: peaks\ncan move",
+    box(ax, 0.50, yt, 0.14, h, "Basis", "$\\varphi_{j,p}(f; c)$\nlinear in the trunk's\nlast hidden layer\n$\\Rightarrow$ fixed basis of\n45 functions of $f$",
         LIGHT["green"], edge=GREEN)
     box(ax, 0.67, yt + 0.04, 0.15, 0.27, "Term sum", f"per term $j$:\n$\\sum_p b_{{j,p}}\\,\\varphi_{{j,p}}(f)/\\sqrt{{{P}}}$"
         f"\n\nsoftmax weights $w_j$\n$\\sum_j w_j(\\cdot) + $ bias", LIGHT["purple"], edge=PURPLE)
@@ -93,8 +93,8 @@ def main() -> None:
     arrow(ax, (0.64, yt + h / 2), (0.67, yt + h / 2 + 0.005))
     arrow(ax, (0.82, 0.78), (0.85, 0.78))
     arrow(ax, (0.92, yt + 0.115), (0.92, yt + 0.09))
-    ax.text(0.01, 0.598, "Not invertible: the encoder is a nonlinear many-to-one network, the basis changes with the design "
-            "and the refinement is nonlinear $\\Rightarrow$ there is no closed-form way back from an ERP to a design.",
+    ax.text(0.01, 0.598, "Not invertible: the encoder is many-to-one and the refinement is nonlinear $\\Rightarrow$ no closed-form way "
+            "back from an ERP to a design. Before the refinement the ERP is a combination of only 45 fixed functions of $f$.",
             fontsize=11.5, color=GREY, style="italic", va="top")
     ax.plot([0.01, 0.99], [0.565, 0.565], color=GREY, lw=0.8, ls=":")
 
@@ -147,8 +147,8 @@ def main() -> None:
         "forward MSE$(\\hat{\\mathbf{y}}, \\mathbf{y})$  +  $w\\,$Huber$(\\hat{\\mathbf{a}} - \\mathbf{a})$  +  "
         "$0.1\\,$Huber$(\\hat{\\mathbf{z}})$\n$\\hat{\\mathbf{a}}, \\hat{\\mathbf{z}}$ from the closed-form inverse "
         "of the training ERP;  $w$: 0 $\\to$ 1 over the first 10 epochs", LIGHT["purple"], edge=PURPLE)
-    ax.text(0.84, 0.075, "Key difference to (a):\nthe basis $\\Psi$ is fixed, so the\nERP is linear in $\\mathbf{b}$ "
-            "$\\Rightarrow$\nexact inverse; peaks cannot\nmove $\\Rightarrow$ many basis\nfunctions ($Q = 64$)",
+    ax.text(0.84, 0.075, "Key difference to (a):\nboth use a fixed basis of $f$;\nhere it is explicit, orthonormal\nand larger "
+            "($Q = 64$ vs 45),\nso the ERP is linear in $\\mathbf{b}$\n$\\Rightarrow$ exact inverse",
             fontsize=11, color=GREY, style="italic", va="center")
     ax.plot([], [], color=BLUE, lw=1.6, label="forward: design $\\to$ ERP")
     ax.plot([], [], color=ORANGE, lw=1.6, ls="--", label="inverse: ERP $\\to$ designs")
