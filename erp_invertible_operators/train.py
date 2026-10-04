@@ -479,6 +479,8 @@ MODEL_OPTION_DEFAULTS = {
     "gate": "softplus",           # _bg     : bounded, identity-initialised gate exp(c tanh(a L))
     "readout": "pooled",          # _bin    : + ordered frequency bins in the design readout
     "spectral_padding": 0,        # _pad    : zero-padded FFT (iFNO only)
+    "encoder": "set",             # _sortenc: f_t-sorted resonator encoder instead of the set encoder (iFNO/iDCO)
+    "coordinate_features": "zscored",  # _phys : plate mode shapes + physical detuning
 }
 TRAIN_OPTION_DEFAULTS = {
     "cycle_weight": 0.0,          # _cyc    : design cycle  x -> y_hat -> x_hat
@@ -500,9 +502,17 @@ def variant(key: str, use_sorted_branch: bool = False, options: dict | None = No
         opts["use_sorted_branch"] = False
     if spec["short"] != "iFNO":
         opts["spectral_padding"] = 0
+    if not spec.get("supports_sorted_branch"):
+        opts["encoder"] = "set"  # iGNO has no resonator encoder (resonators are graph nodes)
+    if opts["use_sorted_branch"] and opts["encoder"] == "set":
+        opts["encoder"] = "set+sorted"
     name = spec["short"]
-    if opts["use_sorted_branch"]:
+    if opts["encoder"] == "set+sorted":
         name += "_sorted"
+    elif opts["encoder"] == "sorted":
+        name += "_sortenc"
+    if opts["coordinate_features"] == "physical":
+        name += "_phys"
     if opts["design_param"] == "bounded12":
         name += "_b12"
     if opts["gate"] == "bounded":
@@ -516,9 +526,13 @@ def variant(key: str, use_sorted_branch: bool = False, options: dict | None = No
     if opts["stage2_source"] == "estimates":
         name += "_s2e"
     model_config = dict(spec["model_config"])
-    for k in ("use_sorted_branch", "design_param", "gate", "readout", "spectral_padding"):
+    for k in ("design_param", "gate", "readout", "spectral_padding", "coordinate_features"):
         if opts[k] != MODEL_OPTION_DEFAULTS[k]:
             model_config[k] = opts[k]
+    if opts["encoder"] == "set+sorted":
+        model_config["use_sorted_branch"] = True  # same checkpoints/names as before
+    elif opts["encoder"] != "set":
+        model_config["encoder"] = opts["encoder"]
     train_opts = {k: opts[k] for k in TRAIN_OPTION_DEFAULTS}
     return name, model_config, train_opts
 

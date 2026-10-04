@@ -51,7 +51,8 @@ import torch.nn as nn
 from erp_forward_operators.neural_operator_utils import (
     MLP,
     FrequencyRefinement1d,
-    physics_aware_resonator_features,
+    modal_features,
+    resonance_detuning,
     resolve_activation,
 )
 from erp_invertible_operators.common import DesignVAE, InvertibleOperatorBase
@@ -125,6 +126,9 @@ class GNOGateLayer1d(nn.Module):
 
 
 class IGNO(InvertibleOperatorBase):
+    uses_modal_features = True  # physical mode: plate mode shapes as node features
+    uses_detuning = True
+
     def __init__(
         self,
         design_dim: int,
@@ -140,6 +144,7 @@ class IGNO(InvertibleOperatorBase):
         tau: float = 1.0,
         activation: str | type[nn.Module] = "silu",
         design_param: str = "full15",
+        coordinate_features: str = "zscored",
         num_res: int = 3,
         gate: str = "softplus",
         gate_scale: float = 2.0,
@@ -193,9 +198,10 @@ class IGNO(InvertibleOperatorBase):
 
         # ---- beta-VAE over the design space (Sec 3.2) ----
         self.vae = DesignVAE(self.design_dim, z_dim=z_dim, hidden=vae_hidden)
+        self._init_features(coordinate_features)
 
     def _lift_forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
-        node_features = physics_aware_resonator_features(configuration, harmonics=self.modal_harmonics)
+        node_features = modal_features(self, configuration, self.modal_harmonics)
         h = self.node_lift(node_features)
         for layer in self.graph_layers:
             h = layer(h, configuration)
@@ -208,7 +214,7 @@ class IGNO(InvertibleOperatorBase):
         query_embedding = freq[:, :, None, :].expand(b, f, n, -1)
         query_frequency = frequency[:, :, None, :].expand(b, f, n, 1)
         f_t = configuration[:, None, :, 2:3].expand(b, f, n, 1)
-        detuning = query_frequency - f_t
+        detuning = resonance_detuning(self, query_frequency, f_t)
 
         pair = torch.cat(
             (node, raw, query_embedding, query_frequency, detuning, detuning.abs(), detuning.square()), dim=-1

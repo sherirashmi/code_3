@@ -73,7 +73,7 @@ from erp_forward_operators.neural_operator_utils import (
     build_resonator_encoder,
     resolve_activation,
 )
-from erp_invertible_operators.common import DesignVAE, InvertibleOperatorBase
+from erp_invertible_operators.common import DesignVAE, InvertibleOperatorBase, build_design_encoder
 from erp_invertible_operators.coupling import InvertibleCouplingStack
 from utils.physics import freqs as _frequency_grid_hz
 
@@ -154,6 +154,8 @@ class IFNO(InvertibleOperatorBase):
         tau: float = 1.0,
         activation: str | type[nn.Module] = "gelu",
         use_sorted_branch: bool = False,
+        encoder: str = "set",
+        coordinate_features: str = "zscored",
         design_param: str = "full15",
         num_res: int = 3,
         gate: str = "softplus",
@@ -174,10 +176,9 @@ class IFNO(InvertibleOperatorBase):
         # use_sorted_branch adds the f_t-sorted resonator branch next to the pooled
         # set branch (DCO_sorted design, see SetAndSortedResonatorEncoder).
         self.use_sorted_branch = bool(use_sorted_branch)
-        self.configuration_encoder = build_resonator_encoder(
-            use_sorted_branch=self.use_sorted_branch, num_res=self.num_res,
-            hidden_dim=config_hidden, element_dim=config_hidden, output_dim=2 * self.width
-        )
+        # encoder: "set" (pooled), "sorted" (f_t-ordered, lossless) or "set+sorted"
+        self.encoder = "set+sorted" if self.use_sorted_branch and encoder == "set" else encoder
+        self.configuration_encoder = build_design_encoder(self.encoder, False, self.num_res, config_hidden, 2 * self.width)
         self.resonance_query = ResonanceQueryEncoder(hidden_dim=query_dim, element_dim=query_dim, output_dim=query_dim)
         self.lift_p = nn.Linear(2 * self.width + query_dim + 1, 2 * self.width)
 
@@ -201,6 +202,7 @@ class IFNO(InvertibleOperatorBase):
 
         # ---- beta-VAE over the design space (Sec 3.2) ----
         self.vae = DesignVAE(self.design_dim, z_dim=z_dim, hidden=vae_hidden)
+        self._init_features(coordinate_features)
 
     def _lift_forward(self, configuration: torch.Tensor, frequency: torch.Tensor) -> torch.Tensor:
         context = self.configuration_encoder(configuration)[:, None, :].expand(-1, frequency.shape[1], -1)

@@ -33,6 +33,15 @@ Options (all default to the original behaviour, so old checkpoints load):
   ``readout_bins`` ordered frequency bins, so the design readout knows WHERE
   along the axis a feature occurred).
 * the coupling gate (``gate`` in coupling.py) is chosen by each subclass.
+* ``encoder`` (iFNO/iDCO): how the design enters the forward lift --
+  ``"set"`` (ResonatorSetEncoder: shared MLP + mean/max pooling, permutation
+  invariant but lossy), ``"sorted"`` (SortedResonatorEncoder: resonators
+  ordered by f_t and concatenated, lossless) or ``"set+sorted"`` (both,
+  fused; same as ``use_sorted_branch=True``).
+* ``coordinate_features``: ``"zscored"`` (sine features of the z-scored
+  coordinates) or ``"physical"`` (the plate's own mode shapes
+  sin(m pi x/Lx), sin(n pi y/Ly) and the detuning (f - f_t)/freq_std, as in
+  the final forward models; see erp_forward_operators.neural_operator_utils).
 """
 
 from __future__ import annotations
@@ -41,10 +50,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from erp_forward_operators.neural_operator_utils import MLP
+from erp_forward_operators.neural_operator_utils import (
+    MLP,
+    SortedResonatorEncoder,
+    build_resonator_encoder,
+    enable_physical_features,
+    set_physical_feature_normalization,
+)
 from erp_inverse_operators.design_space import BOUNDED12, BOUNDED_FIELDS, FULL15, decode_bounded_torch, design_dim as _design_dim
 
 _CONFIG_FIELDS = ("m", "k", "f_t", "x", "y")
+
+ENCODERS = ("set", "sorted", "set+sorted")
+
+
+def build_design_encoder(encoder: str, use_sorted_branch: bool, num_res: int, hidden_dim: int,
+                         output_dim: int) -> nn.Module:
+    """Resonator encoder of the forward lift (see the module docstring)."""
+    if use_sorted_branch and encoder == "set":
+        encoder = "set+sorted"
+    if encoder not in ENCODERS:
+        raise ValueError(f"encoder must be one of {ENCODERS}, got {encoder!r}.")
+    if encoder == "sorted":
+        return SortedResonatorEncoder(num_res=num_res, hidden_dim=hidden_dim, output_dim=output_dim)
+    return build_resonator_encoder(use_sorted_branch=encoder == "set+sorted", num_res=num_res,
+                                   hidden_dim=hidden_dim, element_dim=hidden_dim, output_dim=output_dim)
 
 
 class DesignVAE(nn.Module):
@@ -122,9 +152,21 @@ class InvertibleOperatorBase(nn.Module):
             self.register_buffer("b12_mean", torch.zeros(len(BOUNDED_FIELDS)))
             self.register_buffer("b12_std", torch.ones(len(BOUNDED_FIELDS)))
 
+    def _init_features(self, coordinate_features: str = "zscored") -> None:
+        """Call at the end of a subclass __init__: switch the feature builders
+        to physical scales if requested (buffers filled by
+        :meth:`set_design_normalization`, saved in the state dict)."""
+        if coordinate_features not in ("zscored", "physical"):
+            raise ValueError(f"coordinate_features must be 'zscored' or 'physical', got {coordinate_features!r}.")
+        self.coordinate_features = coordinate_features
+        if coordinate_features == "physical":
+            enable_physical_features(self)
+
     def set_design_normalization(self, norm_params) -> None:
         """Store the dataset normalisation used by the bounded12 design path
-        (no-op for full15)."""
+        and by the physical features (no-op for full15 + z-scored)."""
+        if getattr(self, "coordinate_features", "zscored") == "physical":
+            set_physical_feature_normalization(self, norm_params)
         if self.design_param != BOUNDED12:
             return
         dev = self.config_mean.device
