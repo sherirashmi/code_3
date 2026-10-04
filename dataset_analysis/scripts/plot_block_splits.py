@@ -32,13 +32,13 @@ import torch
 from matplotlib.patches import Rectangle
 
 import utils.plot_style  # noqa: F401
-from erp_forward_operators.neural_operator_utils import _configuration_features, _split_ids
+from erp_forward.scripts.neural_operator_utils import _configuration_features, _split_ids
 from utils.erp_dataset import FIXED_BLOCK_FREQUENCIES, fixed_block_tag
 from utils.physics import Lx, Ly, edge_margin, xf, yf
 from utils.plot_style import save_figure
 
-common = importlib.import_module("2_res_erp_inverse_models.common")
-sort_by_x = importlib.import_module("2_res_erp_inverse_models.design_space").sort_by_x
+common = importlib.import_module("erp_inverse.scripts.fixed_resonator.common")
+sort_by_x = importlib.import_module("erp_inverse.scripts.fixed_resonator.design_space").sort_by_x
 
 SPLITS = (("train", "Training", "#2a78d6"), ("val", "Validation", "#1f9e74"), ("test", "Test", "#eb6834"))
 NUM_SHOWN = 25

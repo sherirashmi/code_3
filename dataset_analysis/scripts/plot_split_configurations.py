@@ -41,7 +41,7 @@ from utils.plot_style import save_figure
 from utils.support import load_dataset
 
 TAG = sys.argv[1] if len(sys.argv) > 1 else "100k"
-CHECKPOINT = ROOT / "erp_forward_operators" / "models" / "GENERAL" / TAG / "dno.pth"
+CHECKPOINT = ROOT / "erp_forward" / "models" / TAG / "dno.pth"
 OUT_DIR = ROOT / "dataset_analysis" / TAG / "plots"
 SPLITS = (("train", "Training", "#2a78d6"), ("val", "Validation", "#1f9e74"), ("test", "Test", "#eb6834"))
 CMAP = plt.get_cmap("viridis")

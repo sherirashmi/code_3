@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 import time
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 import matplotlib
 matplotlib.use("Agg")

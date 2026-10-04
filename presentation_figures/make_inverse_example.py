@@ -13,8 +13,8 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import torch
 
-from erp_inverse_operators.common import denormalize_design, prepare_inverse_data
-from erp_inverse_operators.evaluate import _check_norm, load_inverse_model, score_samples
+from erp_inverse.scripts.common import denormalize_design, prepare_inverse_data
+from erp_inverse.scripts.evaluate import _check_norm, load_inverse_model, score_samples
 from utils.erp_dataset import DATASETS, configuration_to_resonators, denormalize_erp_array, select_dataset_modal_resolution
 from utils.solver import compute_erp_spectrum
 

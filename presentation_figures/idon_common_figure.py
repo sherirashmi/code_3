@@ -1,6 +1,6 @@
 """Common form of the Invertible DeepONet (Kaltenbach et al.); the trunk is the general, changing block.
 
-Facts: erp_invertible_deeponet/model.py and the nine checkpoints in models/200k_2res_18modes.
+Facts: erp_invertible_deeponet/scripts/model.py and the nine checkpoints in models/200k_2res_18modes.
 Parameters (parameters only, buffers excluded): Q8 938,665; Q64 1,384,257; Q128 1,893,505; Q64-FNO 1,388,945;
 Q64-DCO 1,402,049; Q64-DNO 1,325,377; Q64-WNO 1,319,665; Q64-LNO 1,240,321; Q64-SIREN 1,310,273 (RealNVP 1,153,280 for Q64).
 Training: Adam + cosine, lr 5e-4, 150 epochs (early stop), batch 128, inverse weight ramps over 10 epochs.

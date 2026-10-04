@@ -31,7 +31,7 @@ Typical use from any neural-operator file
     dataset, loaders = prepare_erp_dataset(
         num_samples=500,
         batch_size=64,
-        dataset_file="datasets/dataset_erp_ft.pth",
+        dataset_file="datasets/erp/3res/10k/dataset_erp_ft.pth",
         regenerate_dataset=False,
     )
 
@@ -76,7 +76,7 @@ from utils.support import lhs_sampling, load_dataset, save_dataset
 
 FEATURE_NAMES = ("m", "k", "f_t", "x", "y")
 DATASET_SCHEMA_VERSION = 2
-DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
+DEFAULT_DATASET_FILE = "datasets/erp/3res/10k/dataset_erp_ft.pth"
 
 
 # ==================================================
@@ -92,15 +92,15 @@ DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
 DATASETS: dict[str, dict[str, object]] = {
     "10k": {
         "label": "10k configurations, 150 plate modes (15x10)",
-        "files": ["datasets/dataset_erp_ft.pth"],
+        "files": ["datasets/erp/3res/10k/dataset_erp_ft.pth"],
         "num_configurations": 10_000,
         "modal_resolution": (15, 10),
     },
     "100k": {
         "label": "100k configurations, 150 plate modes (15x10)",
         "files": [
-            "datasets/dataset_erp_ft_100k_part1.pth",
-            "datasets/dataset_erp_ft_100k_part2.pth",
+            "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+            "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
         ],
         "num_configurations": 100_000,
         "modal_resolution": (15, 10),
@@ -108,10 +108,10 @@ DATASETS: dict[str, dict[str, object]] = {
     "200k_18modes": {
         "label": "200k configurations, 18 plate modes (6x3)",
         "files": [
-            "datasets/dataset_erp_ft_200k_18_modes_part1.pth",
-            "datasets/dataset_erp_ft_200k_18_modes_part2.pth",
-            "datasets/dataset_erp_ft_200k_18_modes_part3.pth",
-            "datasets/dataset_erp_ft_200k_18_modes_part4.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part1.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part2.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part3.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part4.pth",
         ],
         "num_configurations": 200_000,
         "modal_resolution": (6, 3),
@@ -119,7 +119,7 @@ DATASETS: dict[str, dict[str, object]] = {
 }
 DATASETS["100k_2res_grid_18modes"] = {
     "label": "100k configurations, 2 resonators on a 14x5 position grid, 18 plate modes (6x3)",
-    "files": [f"datasets/dataset_erp_100k_2res_grid14x5_18modes_part{i}.pth" for i in range(1, 5)],
+    "files": [f"datasets/erp/2res/100k_2res_grid_18modes/dataset_erp_100k_2res_grid14x5_18modes_part{i}.pth" for i in range(1, 5)],
     "num_configurations": 100_000,
     "modal_resolution": (6, 3),
     "num_res": 2,
@@ -128,7 +128,7 @@ DATASETS["100k_2res_grid_18modes"] = {
 DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
     "label": "100k configurations, 2 identical resonators (m = 0.2 kg, f_t = 72 Hz), continuous LHS x, y, "
              "18 plate modes (6x3)",
-    "files": [f"datasets/dataset_erp_100k_2res_fixed_m0p2_ft72_18modes_part{i}.pth" for i in range(1, 5)],
+    "files": [f"datasets/erp/2res/100k_2res_fixed_m0.2_ft72_18modes/dataset_erp_100k_2res_fixed_m0p2_ft72_18modes_part{i}.pth" for i in range(1, 5)],
     "num_configurations": 100_000,
     "modal_resolution": (6, 3),
     "num_res": 2,
@@ -137,12 +137,12 @@ DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
 DATASETS["200k_2res_18modes"] = {
     "label": "200k configurations, 2 resonators, m, f_t, x, y all by Latin hypercube (k derived), "
              "18 plate modes (6x3)",
-    "files": [f"datasets/dataset_erp_200k_2res_18modes_part{i}.pth" for i in range(1, 9)],
+    "files": [f"datasets/erp/2res/200k_2res_18modes/dataset_erp_200k_2res_18modes_part{i}.pth" for i in range(1, 9)],
     "num_configurations": 200_000,
     "modal_resolution": (6, 3),
     "num_res": 2,
 }
-# Block datasets for the position-only model bank (2_res_erp_inverse_models/block_bank.py):
+# Block datasets for the position-only model bank (erp_inverse/scripts/fixed_resonator/block_bank.py):
 # 10k configurations each, num_res identical resonators (m = 0.2 kg, one f_t per block), LHS x, y.
 FIXED_BLOCK_FREQUENCIES = (40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0)
 FIXED_BLOCK_NUM_RES = (2, 3)
@@ -157,7 +157,7 @@ for _nr in FIXED_BLOCK_NUM_RES:
         DATASETS[fixed_block_tag(_ft, num_res=_nr)] = {
             "label": f"10k configurations, {_nr} identical resonators (m = 0.2 kg, f_t = {_ft:g} Hz), continuous LHS x, y, "
                      "18 plate modes (6x3)",
-            "files": [f"datasets/dataset_erp_10k_{_nr}res_fixed_m0p2_ft{_ft:g}_18modes.pth"],
+            "files": [f"datasets/erp/blocks_{_nr}res/dataset_erp_10k_{_nr}res_fixed_m0p2_ft{_ft:g}_18modes.pth"],
             "num_configurations": 10_000,
             "modal_resolution": (6, 3),
             "num_res": _nr,
@@ -166,10 +166,22 @@ for _nr in FIXED_BLOCK_NUM_RES:
 DEFAULT_DATASET_TAG = "10k"
 
 
+def _repo_relative(path: str | Path) -> str:
+    """Repository-relative posix path (absolute paths inside the repository
+    are made relative, so they match the registry entries)."""
+    p = Path(path)
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(PROJECT_ROOT)
+        except ValueError:
+            pass
+    return p.as_posix()
+
+
 def _as_file_list(dataset_file: str | Path | Sequence[str]) -> list[str]:
     if isinstance(dataset_file, (str, Path)):
-        return [Path(dataset_file).as_posix()]
-    return [Path(f).as_posix() for f in dataset_file]
+        return [_repo_relative(dataset_file)]
+    return [_repo_relative(f) for f in dataset_file]
 
 
 def dataset_files(tag: str) -> str | list[str]:
@@ -1193,6 +1205,12 @@ def prepare_erp_dataset(
             )
     else:
         path = Path(dataset_file)
+        if not path.is_absolute() and not path.exists():
+            # repository-relative path (datasets/erp/...): resolve against the
+            # repository root, so a run from another folder loads the file
+            # instead of silently regenerating it
+            path = PROJECT_ROOT / path
+            dataset_file = str(path)
         should_generate = regenerate_dataset or not path.exists()
 
         if should_generate:
@@ -1336,8 +1354,9 @@ if __name__ == "__main__":
         filename=DEFAULT_DATASET_FILE,
         verbose=True,
     )
-    print(f"Dataset size: {Path('datasets/dataset_erp_ft.pth').stat().st_size / (1024**2):.2f} MB")
-    data = torch.load("datasets/dataset_erp_ft.pth", map_location="cpu", weights_only=False)
+    _demo_file = PROJECT_ROOT / "datasets/erp/3res/10k/dataset_erp_ft.pth"
+    print(f"Dataset size: {_demo_file.stat().st_size / (1024**2):.2f} MB")
+    data = torch.load(_demo_file, map_location="cpu", weights_only=False)
     print("Configurations:", data["num_samples"])
     print("Frequencies per configuration:", len(data["frequency_values"]))
     print("Total samples:", data["num_samples"] * len(data["frequency_values"]))

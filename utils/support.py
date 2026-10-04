@@ -81,10 +81,24 @@ def lhs_sampling(
 # File-system helpers
 # ==================================================
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _resolve(filename: str | os.PathLike[str]) -> Path:
+    """Repository-relative paths (e.g. ``datasets/erp/...``) are resolved
+    against the repository root, so every script works from any working
+    directory; absolute paths are used as given."""
+    path = Path(filename)
+    if path.is_absolute() or path.exists():
+        return path
+    return _PROJECT_ROOT / path
+
+
 def _ensure_parent_dir(filename: str | os.PathLike[str]) -> Path:
     path = Path(filename)
-    if path.parent != Path("."):
-        path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.is_absolute():
+        path = _PROJECT_ROOT / path
+    path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -99,7 +113,7 @@ def save_dataset(dataset: Any, filename: str | os.PathLike[str]) -> None:
 
 
 def load_dataset(filename: str | os.PathLike[str]) -> Any:
-    path = Path(filename)
+    path = _resolve(filename)
     if not path.exists():
         raise FileNotFoundError(f"{path} not found.")
     dataset = torch.load(path, map_location="cpu", weights_only=False)
@@ -122,7 +136,7 @@ def load_model(
     filename: str | os.PathLike[str],
     map_location: torch.device | str = device,
 ) -> torch.nn.Module:
-    path = Path(filename)
+    path = _resolve(filename)
     if not path.exists():
         raise FileNotFoundError(f"{path} not found.")
 

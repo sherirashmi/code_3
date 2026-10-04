@@ -133,7 +133,7 @@ bounds = resonator_bounds(num_res)
 # The resolution can also be preset through the ERP_MODAL_NX / ERP_MODAL_NY
 # environment variables. ``set_modal_resolution`` writes them too, so solver
 # worker processes started with the 'spawn' method (see
-# erp_inverse_operators/evaluate.py) inherit the same basis as the parent.
+# erp_inverse/scripts/evaluate.py) inherit the same basis as the parent.
 DEFAULT_NX = 15
 DEFAULT_NY = 10
 

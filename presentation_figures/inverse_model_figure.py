@@ -1,6 +1,6 @@
 """Presentation figure: inverse model (conditional normalizing flow, Flow_b12) and its loss / evaluation.
 
-Numbers read from the code and the trained checkpoint erp_inverse_operators/models/100k_2res_grid_18modes/
+Numbers read from the code and the trained checkpoint erp_inverse/models/100k_2res_grid_18modes/
 inverse_flow_b12.pth: 209,600 parameters (spectrum encoder 42,048 + 8 couplings 167,552), Adam 5e-4, cosine
 (eta_min 0.01 lr), 100 epochs, batch 64, grad-clip 5, 2 resonators -> D = 8, 8 samples per target.
 The spectrum and the candidate designs come from a real held-out target (make_inverse_example.py).

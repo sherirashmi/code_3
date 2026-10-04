@@ -1,6 +1,6 @@
 """Common form of the six inverse generators; the conditional generative head is the general, changing block.
 
-Facts: erp_inverse_operators/*.py and the b12 checkpoints in models/100k_2res_grid_18modes (2 resonators, design 8
+Facts: erp_inverse/scripts/*.py and the b12 checkpoints in models/100k_2res_grid_18modes (2 resonators, design 8
 numbers, 8 samples per target).  Parameter counts from the registry builders (design_dim 8): MDN 92,906, cVAE 148,128,
 Flow 209,600, Diffusion 93,640, BasisFlow 206,845, PadINN 810,704.  Adam, cosine to 1 % of lr, 100 epochs, batch 64.
 """

@@ -1,6 +1,6 @@
 """Presentation figure: invertible Fourier neural operator (iFNO, recommended configuration) and its losses.
 
-Sizes are counted on IFNO(design_dim=8, num_res=2) built with erp_invertible_operators.train.RECOMMENDED_OPTIONS:
+Sizes are counted on IFNO(design_dim=8, num_res=2) built with erp_invertible.scripts.train.RECOMMENDED_OPTIONS:
 lift P 43,792 (sorted encoder 30,448 + resonance query 9,408 + Linear 3,936), lift P' 2,752, coupling stack 117,796,
 readout Q 2,401, readout Q' 11,020, beta-VAE 10,644; total 188,405.  Training: 3 stages (20 / 25 / 15 epochs),
 Adam, batch 128 (committed iFNO checkpoint's training_config).

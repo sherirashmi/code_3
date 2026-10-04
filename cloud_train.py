@@ -10,7 +10,7 @@ Usage (one notebook cell, after cloning the repo)::
 
 What it does:
 
-1. With ``--out``: moves ``erp_forward_operators/models`` and ``.../plots`` into ``--out``
+1. With ``--out``: moves ``erp_forward/models`` and ``erp_forward/plots`` into ``--out``
    (a Google Drive folder on Colab, ``/kaggle/working/...`` on Kaggle) and
    leaves symlinks in their place, so EVERY checkpoint, progress file and
    plot is written straight to persistent storage. Files already in
@@ -50,7 +50,7 @@ def _copy_missing(src: Path, dst: Path) -> None:
 
 def link_outputs(out: Path) -> None:
     for sub in ("models", "plots"):
-        local = ROOT / "erp_forward_operators" / sub
+        local = ROOT / "erp_forward" / sub
         remote = out / sub
         remote.mkdir(parents=True, exist_ok=True)
         if local.is_symlink():
@@ -86,11 +86,11 @@ def main() -> None:
     if args.out:
         link_outputs(Path(args.out))
     else:
-        print(f"Saving models and plots inside the repository: {ROOT / 'erp_forward_operators'}")
+        print(f"Saving models and plots inside the repository: {ROOT / 'erp_forward'}")
 
     import torch
-    from erp_forward_operators import diagnose
-    from erp_forward_operators.operator_registry import OPERATORS
+    from erp_forward.scripts import diagnose
+    from erp_forward.scripts.operator_registry import OPERATORS
     from utils.cli import train_all_models
     from utils.erp_dataset import DATASETS, select_dataset_modal_resolution
 

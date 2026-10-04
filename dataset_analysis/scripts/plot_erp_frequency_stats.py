@@ -3,7 +3,7 @@
 """
 import sys
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 from pathlib import Path
 
@@ -16,8 +16,8 @@ import numpy as np
 from utils.erp_dataset import ERPDataset
 
 DATASET_100K = [
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
 ]
 OUT_DIR = Path("dataset_analysis/100k/plots")
 STATS_DIR = Path("dataset_analysis/100k/stats")

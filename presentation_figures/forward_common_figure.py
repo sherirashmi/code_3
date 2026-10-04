@@ -1,7 +1,7 @@
 """Common form of all ten forward neural operators; the operator core is the general, changing block.
 
-Facts: model_config / parameter counts of the ten checkpoints in models/GENERAL/100k (*_sorted_phys, *_phys, nn_perm);
-structures from erp_forward_operators/*.py (forward() of each class).  Training: AdamW 5e-4 (SIREN 2e-4), cosine,
+Facts: model_config / parameter counts of the ten checkpoints in erp_forward/models/100k (*_sorted_phys, *_phys, nn_perm);
+structures from erp_forward/scripts/*.py (forward() of each class).  Training: AdamW 5e-4 (SIREN 2e-4), cosine,
 200 epochs, batch 128, loss MSE + 0.5 slope + 0.05 peak, 100k configurations, 80/10/10.
 """
 from common_forms_kit import *  # noqa: F401,F403

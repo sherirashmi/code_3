@@ -152,7 +152,7 @@ def generate_field_dataset_shards(
     num_res: int = default_num_res,
     frequencies: np.ndarray | None = None,
     seed: int = 727,
-    filename_pattern: str = "datasets/dataset_field_displacement_part{shard}.pth",
+    filename_pattern: str = "datasets/displacement/dataset_field_displacement_part{shard}.pth",
     verbose: bool = True,
 ) -> list[str]:
     """Generate ``num_configurations`` split across ``num_shards`` files.

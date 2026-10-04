@@ -3,7 +3,7 @@
 For each of the 5 physical resonator parameters (m, k, f_t, x, y), overlays
 the train/validation/test subsets (one color each) on the same histogram --
 a sanity check that the random configuration-level split used everywhere in
-this project (see erp_forward_operators.neural_operator_utils._split_ids)
+this project (see erp_forward.scripts.neural_operator_utils._split_ids)
 doesn't accidentally skew any parameter's distribution toward one split.
 Values are pooled across all num_res resonators per configuration (the
 "parameter" is m, k, f_t, x, or y in general, not "resonator #2's mass"
@@ -11,7 +11,7 @@ specifically).
 """
 import sys
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 from pathlib import Path
 
@@ -21,15 +21,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from erp_forward_operators.neural_operator_utils import (
+from erp_forward.scripts.neural_operator_utils import (
     _configuration_features,
     _split_ids,
     prepare_operator_data,
 )
 
 DATASET_100K = [
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
 ]
 OUT_DIR = Path("dataset_analysis/100k/plots")
 

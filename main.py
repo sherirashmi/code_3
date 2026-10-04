@@ -16,8 +16,8 @@ ERP problem, one of iFNO/iDCO/iGNO) -- then dispatches accordingly. All
 menus, prompts, and orchestration live in utils/cli.py. Dataset
 preprocessing is handled by utils/erp_dataset.py (ERP) and
 utils/field_dataset.py (displacement); training/evaluation lives in
-erp_forward_operators/, erp_inverse_operators/,
-displacement_forward_operators/, and erp_invertible_operators/
+erp_forward/scripts/, erp_inverse/scripts/,
+disp_forward/scripts/, and erp_invertible/scripts/
 respectively; all figure creation/saving goes through utils/plotting.py.
 """
 

@@ -6,14 +6,14 @@ orchestration function lives here. Three top-level problems:
 - **ERP** (resonator configuration <-> ERP spectrum):
     - **Forward** (configuration -> ERP spectrum):
         1. general train / evaluate / predict for any operator in
-           ``erp_forward_operators.operator_registry.OPERATORS`` (or all), or
+           ``erp_forward.scripts.operator_registry.OPERATORS`` (or all), or
         2. the frequency-holdout generalisation experiment.
     - **Inverse** (ERP spectrum -> configuration): train / evaluate / predict
-      for any model in ``erp_inverse_operators.registry.INVERSE_MODELS``, or
+      for any model in ``erp_inverse.scripts.registry.INVERSE_MODELS``, or
       train all of them (+ solver-scored cohort evaluation).
-- **Displacement field**: ``displacement_forward_operators.train_all.run_one``.
+- **Displacement field**: ``disp_forward.scripts.train_all.run_one``.
 - **Invertible** (iFNO / iDCO / iGNO, joint forward + inverse): train or
-  evaluate, see ``erp_invertible_operators/train.py``.
+  evaluate, see ``erp_invertible/scripts/train.py``.
 
 Every ERP workflow first asks WHICH DATASET to use (``utils.erp_dataset.
 DATASETS``). The choice fixes (a) the plate-mode basis the solver uses for
@@ -22,10 +22,10 @@ every reference spectrum (15x10 = 150 modes, or 6x3 = 18 modes for the
 (b) the dataset sub-folder all checkpoints and plots go into, see
 ``utils/paths.py``:
 
-    erp_forward_operators/plots/GENERAL/<dataset>/<MODEL>/
+    erp_forward/plots/models/<dataset>/<MODEL>/
         loss_curve.png, erp_spectrum_test_config_01..05.png,
         prediction_vs_ground_truth.png, prediction_spectrum.png
-    erp_forward_operators/plots/GENERAL/<dataset>/ALL_MODELS/
+    erp_forward/plots/models/<dataset>/ALL_MODELS/
         all_training_loss.png, all_validation_loss.png, all_models_loss.png, ...
 """
 
@@ -57,28 +57,28 @@ from utils.paths import (
     inverse_model_path,
     inverse_plot_dir,
 )
-from erp_forward_operators.operator_registry import (
+from erp_forward.scripts.operator_registry import (
     OPERATORS,
     PADDING_MODE_OPERATORS,
     PERMUTATION_AUGMENT_OPERATORS,
     PHYSICAL_FEATURE_OPERATORS,
     forward_variant,
 )
-from erp_forward_operators.frequency_holdout import run_frequency_holdout
+from erp_forward.scripts.frequency_holdout import run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     save_all_model_comparison_plots,
     save_operator_experiment_plots,
 )
 
-from erp_inverse_operators.registry import INVERSE_MODELS
-from erp_inverse_operators.train_all import train_one_inverse_model
-from erp_inverse_operators import evaluate as inverse_evaluate
-from erp_inverse_operators import evaluate_design as inverse_evaluate_design
+from erp_inverse.scripts.registry import INVERSE_MODELS
+from erp_inverse.scripts.train_all import train_one_inverse_model
+from erp_inverse.scripts import evaluate as inverse_evaluate
+from erp_inverse.scripts import evaluate_design as inverse_evaluate_design
 
-from displacement_forward_operators.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
+from disp_forward.scripts.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
 
-from erp_invertible_operators.registry import INVERTIBLE_OPERATORS
+from erp_invertible.scripts.registry import INVERTIBLE_OPERATORS
 
 
 SEED = 727
@@ -530,10 +530,10 @@ def train_all_models(
     ``forward_options`` selects the other opt-in variants (see
     :func:`_prompt_forward_options`).
 
-    For every operator, saves into ``plots/GENERAL/<dataset>/<MODEL>/`` its
+    For every operator, saves into ``erp_forward/plots/models/<dataset>/<MODEL>/`` its
     loss curve, 5 test-spectrum comparisons and the predicted-vs-true parity
     plot; then the cross-model figures (incl. all models' training and
-    validation loss) into ``plots/GENERAL/<dataset>/ALL_MODELS/``.
+    validation loss) into ``erp_forward/plots/models/<dataset>/ALL_MODELS/``.
 
     A failure in one operator (e.g. out of memory) is reported and the
     remaining operators still run, so an overnight run is not lost.
@@ -728,7 +728,7 @@ def main_forward():
     if method == "2":
         return main_frequency_holdout()
     if method == "3":
-        from erp_forward_operators import diagnose
+        from erp_forward.scripts import diagnose
 
         tag, _dataset_file = _prompt_dataset("100k")
         return diagnose.main(tag)
@@ -950,7 +950,7 @@ def _prompt_inverse_variant() -> tuple[str, str]:
 
 
 def _inverse_name(key: str, spectrum_encoder: str, design_param: str) -> str:
-    from erp_inverse_operators.train_all import resolve_variant
+    from erp_inverse.scripts.train_all import resolve_variant
 
     return resolve_variant(key, spectrum_encoder, design_param)[0]
 
@@ -980,7 +980,7 @@ def main_all_inverse_models():
             "Skip these (reuse their saved checkpoints instead of retraining)", default=True
         )
 
-    from erp_inverse_operators.train_all import main as train_all_inverse
+    from erp_inverse.scripts.train_all import main as train_all_inverse
 
     print(f"\nTraining {len(keys)} inverse model(s); per-model loss curves -> "
           f"{INVERSE_ROOT / 'plots' / tag}/<MODEL>/, comparison figures -> {INVERSE_ROOT / 'plots' / tag / ALL_MODELS}")
@@ -1069,7 +1069,7 @@ def main_inverse():
     configuration = _prompt_configuration(int(DATASETS[tag].get("num_res", default_num_res))) if target_choice == "1" else None
     num_samples = _prompt_int("Number of candidate designs to sample", default=6, minimum=1)
 
-    from erp_inverse_operators.predict import predict_one, print_report
+    from erp_inverse.scripts.predict import predict_one, print_report
 
     result = predict_one(
         name,
@@ -1123,13 +1123,13 @@ def _print_displacement_menu() -> None:
 def main_displacement():
     """Interactive entry point for the displacement-field workflow (fixed,
     already-tuned pipeline per architecture, see
-    ``displacement_forward_operators.train_all.run_one``)."""
+    ``disp_forward.scripts.train_all.run_one``)."""
     _print_displacement_menu()
     all_key = str(len(DISPLACEMENT_OPERATORS) + 1)
     key = _prompt_choice("Select architecture/workflow: ", {**DISPLACEMENT_OPERATORS, all_key: None})
     keys = list(DISPLACEMENT_OPERATORS.keys()) if key == all_key else [key]
 
-    from displacement_forward_operators.train_all import run_one
+    from disp_forward.scripts.train_all import run_one
 
     results = []
     for architecture_key in keys:
@@ -1158,7 +1158,7 @@ def _print_invertible_menu() -> None:
 
 
 def _prompt_invertible_options(invertible) -> dict:
-    """Configuration of the invertible operators (see erp_invertible_operators/train.py)."""
+    """Configuration of the invertible operators (see erp_invertible/scripts/train.py)."""
     print("\nInvertible-operator configuration")
     print("1. Standard     (paper-style: 15-D design, softplus gate, pooled readout)  [existing models]")
     print("2. Recommended  (bounded 12-D design, identity-init bounded gate, binned readout,")
@@ -1194,7 +1194,7 @@ def _prompt_invertible_options(invertible) -> dict:
 def main_invertible_operators():
     """Invertible-operator family (Long et al., arXiv:2402.11722): train with
     the 3-stage schedule, or re-evaluate saved checkpoints."""
-    import erp_invertible_operators.train as invertible
+    import erp_invertible.scripts.train as invertible
 
     _print_invertible_menu()
     all_key = str(len(INVERTIBLE_OPERATORS) + 1)
@@ -1223,7 +1223,7 @@ def main_invertible_operators():
 
     num_configurations = _prompt_num_configurations(tag)
     batch_size = _prompt_int("Batch size", default=invertible.BATCH_SIZE, minimum=1)
-    print("\nThree-stage schedule (see erp_invertible_operators/train.py):")
+    print("\nThree-stage schedule (see erp_invertible/scripts/train.py):")
     stage1 = _prompt_int("Stage 1 epochs (invertible blocks: J_FWD + J_INV + round-trip terms)",
                          default=invertible.STAGE1_EPOCHS, minimum=0)
     stage2 = _prompt_int("Stage 2 epochs (beta-VAE pretraining on designs)",

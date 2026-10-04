@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 import time
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import matplotlib
@@ -51,8 +51,8 @@ RES_IDX = 1  # which of the 3 resonators gets perturbed
 
 print("Loading dataset for realistic baseline configurations...")
 dataset = ERPDataset().load_shards([
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
 ])
 configs_all = np.asarray(dataset.configuration_features, dtype=np.float64)  # (N,3,5) [m,k,f_t,x,y]
 N = configs_all.shape[0]

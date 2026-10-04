@@ -7,7 +7,7 @@ them from the repository root and they write into the folder of their dataset.
 
 | Folder | Dataset | Contents |
 |---|---|---|
-| `10k/` | `datasets/dataset_erp_ft.pth`: 10,000 configurations, 3 resonators, 150 plate modes | `plots/repo_mass_ft_histograms.png` (tuning-frequency and derived-mass histograms), `videos/erp_dataset_configs.gif` (80 random configurations: ERP spectrum and plate displacement) |
+| `10k/` | `datasets/erp/3res/10k/dataset_erp_ft.pth`: 10,000 configurations, 3 resonators, 150 plate modes | `plots/repo_mass_ft_histograms.png` (tuning-frequency and derived-mass histograms), `videos/erp_dataset_configs.gif` (80 random configurations: ERP spectrum and plate displacement) |
 | `100k/` | 100,000 configurations, 3 resonators with varying mass, tuning frequency and position, 150 plate modes (two shard files) | `plots/`: `dataset_100k_statistics.png`, `erp_frequency_statistics.png`, `erp_frequency_boxplot.png`, `parameter_split_distributions.png`, `field_sensitivity.png`, `similar_erp_pairs.png`, `similar_erp_clusters.png`; `stats/`: `erp_frequency_statistics.csv`, `erp_frequency_boxplot.csv`; `videos/erp_dataset_configs.gif` |
 | `100k_2res_fixed_m0.2_ft72_18modes/` | 100,000 configurations, 2 identical resonators (0.2 kg, tuning frequency 72 Hz), only positions vary, 18 plate modes | `plots/erp_frequency_boxplot.png`, `stats/erp_frequency_boxplot.csv`, `videos/erp_dataset_configs.gif` |
 | `legacy_5k_peak_analysis/` | An earlier 5,000-configuration dataset (peak-count and peak-spacing analysis from `others/analyze_erp_dataset.py`) | `stats/peak_analysis_summary.txt`, `stats/per_configuration_peak_analysis.csv` |

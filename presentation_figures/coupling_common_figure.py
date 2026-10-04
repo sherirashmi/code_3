@@ -1,8 +1,8 @@
 """Common form of the eight invertible coupling-flow operators (iFNO, iDCO, iGNO, iDNO, iWNO, iLNO, iSIREN, iSTO).
 
 Two blocks change with the architecture: the lift P (where the design enters) and the gate network L of the coupling
-blocks.  Parameter counts: each operator built with erp_invertible_operators.train.RECOMMENDED_OPTIONS (2 resonators,
-design_dim 8).  Loss terms and stages: erp_invertible_operators/train.py and common.py.
+blocks.  Parameter counts: each operator built with erp_invertible.scripts.train.RECOMMENDED_OPTIONS (2 resonators,
+design_dim 8).  Loss terms and stages: erp_invertible/scripts/train.py and common.py.
 """
 from common_forms_kit import *  # noqa: F401,F403
 from common_forms_kit import elem, card, frame, loss_panel, FWD_COL, INV_COL, VARY_FILL, VARY_EDGE

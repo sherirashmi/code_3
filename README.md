@@ -19,9 +19,9 @@ Every ERP workflow first asks **which dataset** to use. That choice sets
 
 | Tag            | Files                                        | Configurations | Plate modes        |
 |----------------|----------------------------------------------|---------------:|--------------------|
-| `10k`          | `datasets/dataset_erp_ft.pth`                 | 10 000         | 15 × 10 = 150      |
-| `100k`         | `datasets/dataset_erp_ft_100k_part{1,2}.pth`  | 100 000        | 15 × 10 = 150      |
-| `200k_18modes` | `datasets/dataset_erp_ft_200k_18_modes_part{1..4}.pth` | 200 000 | 6 × 3 = 18   |
+| `10k`          | `datasets/erp/3res/10k/dataset_erp_ft.pth`                 | 10 000         | 15 × 10 = 150      |
+| `100k`         | `datasets/erp/3res/100k/dataset_erp_ft_100k_part{1,2}.pth`  | 100 000        | 15 × 10 = 150      |
+| `200k_18modes` | `datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part{1..4}.pth` | 200 000 | 6 × 3 = 18   |
 
 Choosing the dataset immediately sets the solver's `Nx`/`Ny` (15/10 for the
 150-mode datasets, 6/3 for the 18-mode one). Every trained model records the
@@ -38,7 +38,7 @@ by up to ~25 dB, so mixing bases silently corrupts any solver comparison.)
 ## Folder layout
 
 ```
-erp_forward_operators/
+erp_forward/scripts/
   models/GENERAL/<dataset>/<model>.pth          main.py: ERP → Forward → General
   models/FREQ_HOLDOUT/<dataset>/<model>.pth     main.py: ERP → Forward → Frequency holdout
   models/DCO_VARIANTS/  models/LEGACY/          archived experiments / outdated checkpoints
@@ -48,11 +48,11 @@ erp_forward_operators/
                                                 all_models_loss, box plots, bar charts, comparison_table.txt
   plots/FREQ_HOLDOUT/<dataset>/{<MODEL>,ALL_MODELS}/
   plots/DCO_VARIANTS/  plots/GNO_VARIANTS/  plots/LEGACY/
-erp_inverse_operators/
+erp_inverse/scripts/
   models/<dataset>/inverse_<model>.pth
   plots/<dataset>/<MODEL>/   (loss_curve, single-model evaluation)
   plots/<dataset>/ALL_MODELS/ (all_models_loss, validation_reconstructions, stats, recovery)
-erp_invertible_operators/          (iFNO, iDCO, iGNO)
+erp_invertible/scripts/          (iFNO, iDCO, iGNO)
   models/<dataset>/<model>.pth
   plots/<dataset>/<MODEL>/   (loss_curve, stage_losses, forward plots, inverse plots, metrics.json)
   plots/<dataset>/ALL_MODELS/
@@ -146,7 +146,7 @@ pair of tuning frequencies or a resonator nearest a plate edge. The same
 columns go into the train-all comparison table, plus an
 `ALL_MODELS/error_breakdown_bars.png`. To re-score already trained models
 without retraining, use forward method 3 in `main.py`, or run
-`python -m erp_forward_operators.diagnose 100k`.
+`python -m erp_forward.scripts.diagnose 100k`.
 
 100k results (`plots/GENERAL/100k/ALL_MODELS/error_breakdown.txt`, RMSE in dB):
 
@@ -184,7 +184,7 @@ Inverse training / evaluate / predict in `main.py` ask for two options
 | Option | Choices | Name suffix |
 |---|---|---|
 | Spectrum encoder | **pooled** (conv + global mean/max; all existing models) or **positional** (normalised-frequency input channel + 16 ordered frequency bins, flattened, so peak *positions* are kept) | `_pos` |
-| Design space | **full 15-D** `[m,k,f_t,x,y]` z-scored (existing models) or **bounded 12-D** `[m,f_t,x,y]`, logit-bounded to the generation ranges, `k = m(2πf_t)²` derived (`erp_inverse_operators/design_space.py`) | `_b12` |
+| Design space | **full 15-D** `[m,k,f_t,x,y]` z-scored (existing models) or **bounded 12-D** `[m,f_t,x,y]`, logit-bounded to the generation ranges, `k = m(2πf_t)²` derived (`erp_inverse/scripts/design_space.py`) | `_b12` |
 
 With the bounded 12-D space every model output decodes to a valid,
 consistent design (no clipping), and densities are exact: they are
@@ -225,7 +225,7 @@ import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))
 ```
 
 **Interruption-safe runs:** `python cloud_train.py --out <persistent folder> --models DNO,GNO,STO --physical`
-links `erp_forward_operators/models` and `plots` into the persistent folder
+links `erp_forward/models` and `erp_forward/plots` into the persistent folder
 (Google Drive on Colab, `/kaggle/working/...` on Kaggle). Every 5 epochs each
 model's full state is saved as `<model>.resume.pt` plus
 `<model>_progress.csv/.png`. Re-running the same command after a disconnect
@@ -240,7 +240,7 @@ A GPU speeds up training; the solver-scored evaluation runs on the CPU cores.
 
 ## Training details
 
-### Forward operators (`erp_forward_operators/neural_operator_utils.py`)
+### Forward operators (`erp_forward/scripts/neural_operator_utils.py`)
 
 Loss on z-scored ERP (`erp_spectrum_loss`):
 
@@ -269,7 +269,7 @@ spectrum b, window 7.)
 | NN | 200 | 5e-4 | 112,925 | hidden_dim=148, depth=6, dropout=0.1, relu |
 | LNO | 200 | 5e-4 | 112,340 | width=90, num_poles=13, config_hidden=64, pole_hidden=64, query_dim=25, dropout=0.1, silu |
 
-### Invertible operators (`erp_invertible_operators/train.py`) — staged training
+### Invertible operators (`erp_invertible/scripts/train.py`) — staged training
 
 Yes, staged: three stages after Long et al. (arXiv:2402.11722, Sec. 3.3).
 All terms are MSEs on z-scored quantities (design vector sorted by f_t).
@@ -316,10 +316,10 @@ sample selected with the model's own forward direction (target-informed,
 no solver); the point estimate; and the oracle best-of-N by solver. Predicted
 resonators are sorted by f_t before parameter recovery.
 
-### Inverse models (`erp_inverse_operators/`)
+### Inverse models (`erp_inverse/scripts/`)
 
 MDN, cVAE, conditional flow, conditional diffusion, BasisFlow, PadINN and
 the surrogate-in-the-loop inverse (frozen DCO + GNO forward operators; uses
 the forward checkpoints of the same dataset when they exist). Adam, cosine
 schedule to 1 % LR, gradient clipping 5, best-validation restore; per-model
-LR/epochs in `erp_inverse_operators/registry.py`.
+LR/epochs in `erp_inverse/scripts/registry.py`.

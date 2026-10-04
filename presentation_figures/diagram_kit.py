@@ -128,7 +128,7 @@ def sample_erp(index: int = 21) -> np.ndarray:
     """A real ERP spectrum (dB) from the 10k dataset, used purely as an illustration."""
     from utils.support import load_dataset
 
-    payload = load_dataset(str(ROOT / "datasets" / "dataset_erp_ft.pth"))
+    payload = load_dataset(str(ROOT / "datasets" / "erp" / "3res" / "10k" / "dataset_erp_ft.pth"))
     return np.asarray(payload["responses"], dtype=np.float64)[index, :, 0]
 
 

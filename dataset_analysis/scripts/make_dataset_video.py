@@ -14,7 +14,7 @@ from utils.physics import omega_n
 from utils.solver import compute_displacement
 from utils.support import load_dataset
 
-payload = load_dataset("datasets/dataset_erp_ft.pth")
+payload = load_dataset("datasets/erp/3res/10k/dataset_erp_ft.pth")
 freqs = np.asarray(payload["frequency_values"], dtype=np.float64)
 configs = np.asarray(payload["configuration_features"], dtype=np.float64)  # (N, 3, 5): m, k, f_t, x, y
 responses = np.asarray(payload["responses"], dtype=np.float64)[:, :, 0]
