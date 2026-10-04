@@ -144,8 +144,13 @@ def validation_loss(model, loader, loss_fn) -> float:
     return total / n if n else float("nan")
 
 
-def train_one(model, loaders, loss_fn, epochs, lr, name, resume_path=None, save_every: int = 5):
+def train_one(model, loaders, loss_fn, epochs, lr, name, resume_path=None, save_every: int = 5,
+              early_stop_epoch: int | None = None):
     """Adam + cosine LR schedule, grad-clip 5, best-validation checkpointing.
+
+    ``early_stop_epoch`` (e.g. 50): after that epoch, training stops if the
+    best validation loss of the last 10 epochs is not lower than the best of
+    all earlier epochs (loss constant or increasing); the best weights are kept.
 
     Non-finite batch losses are skipped (with a warning) rather than
     poisoning the weights; if a whole epoch is non-finite training stops
@@ -238,6 +243,16 @@ def train_one(model, loaders, loss_fn, epochs, lr, name, resume_path=None, save_
         print(f"[{name}] epoch {epoch + 1:3d}/{epochs} | train={train_loss:.4f} | val={val_loss:.4f}")
         if resume_file is not None and ((epoch + 1) % max(int(save_every), 1) == 0 or epoch + 1 == epochs):
             save_progress(epoch + 1)
+        if early_stop_epoch and epoch + 1 == int(early_stop_epoch) < epochs and len(history["val"]) > 10:
+            earlier, recent = min(history["val"][:-10]), min(history["val"][-10:])
+            if not recent < earlier:
+                print(f"[{name}] epoch {epoch + 1}: no improvement over the last 10 epochs "
+                      f"(best {recent:.4f} vs {earlier:.4f} before) -- stopping early.")
+                history["stopped_early_at"] = epoch + 1
+                if resume_file is not None:
+                    save_progress(epoch + 1)
+                break
+            print(f"[{name}] epoch {epoch + 1}: still improving ({recent:.4f} < {earlier:.4f}) -- continuing.")
 
     if best_state is not None:
         model.load_state_dict(best_state)

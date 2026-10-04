@@ -103,12 +103,12 @@ _DESIGN_PHYSICAL_BOUNDS = {
 # plain DCO, just a different checkpoint's worth of trained weights.
 _SURROGATE_BUILDERS = {"dco": _build_dco, "dco_staged": _build_dco, "gno": _build_gno}
 
-from utils.paths import FORWARD_ROOT as _FORWARD_ROOT, forward_model_path as _forward_model_path
+from utils.paths import FORWARD_ROOT as _FORWARD_ROOT, find_existing as _find_existing, forward_model_path as _forward_model_path
 
-# Trained on the 100k (150-mode) dataset.
+# Trained on the 100k (150-mode, 3-resonator) dataset.
 DEFAULT_SURROGATE_CHECKPOINTS = (
-    str(_FORWARD_ROOT / "models" / "experiments" / "dco_variants" / "dco_staged.pth"),
-    str(_FORWARD_ROOT / "models" / "100k" / "gno.pth"),
+    str(_find_existing(_FORWARD_ROOT / "models" / "experiments" / "dco_variants" / "dco_staged.pth")),
+    str(_find_existing(_FORWARD_ROOT / "models" / "100k" / "gno.pth")),
 )
 
 
@@ -116,9 +116,18 @@ def surrogate_checkpoints_for(dataset_tag: str) -> tuple[str, ...]:
     """Frozen DCO+GNO surrogates trained on the SAME dataset (hence the same
     plate-mode physics) as the inverse model, when they exist; otherwise the
     100k defaults, with a warning if that means mixing modal resolutions."""
-    candidates = tuple(str(_forward_model_path(name, dataset_tag)) for name in ("dco", "gno"))
+    candidates = tuple(str(_find_existing(_forward_model_path(name, dataset_tag))) for name in ("dco", "gno"))
     if all(Path(c).exists() for c in candidates):
         return candidates
+    from utils.erp_dataset import DATASETS
+
+    num_res = int(DATASETS.get(dataset_tag, {}).get("num_res", 3))
+    if num_res != 3:
+        raise ValueError(
+            f"The surrogate inverse needs forward DCO and GNO models trained on '{dataset_tag}' "
+            f"({num_res} resonators): {', '.join(candidates)}. Train them first (ERP -> Forward); the "
+            "100k fallback surrogates are for 3 resonators."
+        )
     if dataset_tag != "100k":
         print(
             f"WARNING: no forward DCO/GNO checkpoints for dataset '{dataset_tag}' "

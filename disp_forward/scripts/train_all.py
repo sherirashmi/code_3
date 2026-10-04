@@ -50,8 +50,11 @@ PHYSICS_POINTS_PER_STEP = 16
 SEED = 727
 
 
+DISPLACEMENT_FILES = [f"datasets/displacement/dataset_field_displacement_part{i}.pth" for i in range(1, 5)]
+
+
 def load_scoped_dataset():
-    files = [str(project_path(f"datasets/displacement/dataset_field_displacement_part{i}.pth")) for i in range(1, 5)]
+    files = [str(project_path(f)) for f in DISPLACEMENT_FILES]
     raw = load_field_dataset_shards(files)
     rng = np.random.default_rng(SEED)
     idx = rng.choice(raw["collocation_points"].shape[1], size=POINTS_PER_CONFIG_USED, replace=False)

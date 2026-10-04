@@ -2,67 +2,101 @@
 
 Forward (resonator configuration → ERP spectrum), inverse (ERP spectrum →
 configuration) and invertible (both directions, one set of weights) neural
-operators for a plate with 3 tuned mass resonators, plus displacement-field
+operators for a plate with 2 or 3 tuned mass resonators, plus displacement-field
 operators.
 
 ```bash
 python main.py        # interactive menu; works from any working directory
 ```
 
-Every ERP workflow first asks **which dataset** to use. That choice sets
+Every workflow first asks **which dataset** to use (only the datasets that
+suit the chosen workflow are listed, with their number of resonators). That
+choice sets
 
 1. the **plate-mode basis** used by the physics solver for every reference
    spectrum (prediction plots, solver-scored inverse evaluation) — applied
    automatically when the data are loaded, including in parallel solver
-   workers, and
-2. the **dataset sub-folder** for checkpoints and plots.
+   workers,
+2. the **number of resonators** (2 or 3) every model is built for, and
+3. the **dataset sub-folder** for checkpoints and plots.
 
-| Tag            | Files                                        | Configurations | Plate modes        |
-|----------------|----------------------------------------------|---------------:|--------------------|
-| `10k`          | `datasets/erp/3res/10k/dataset_erp_ft.pth`                 | 10 000         | 15 × 10 = 150      |
-| `100k`         | `datasets/erp/3res/100k/dataset_erp_ft_100k_part{1,2}.pth`  | 100 000        | 15 × 10 = 150      |
-| `200k_18modes` | `datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part{1..4}.pth` | 200 000 | 6 × 3 = 18   |
+| Tag | Resonators | Configurations | Plate modes | Files |
+|---|---:|---:|---|---|
+| `10k` | 3 | 10,000 | 15 × 10 | `datasets/erp/3res/10k/` (1 file) |
+| `100k` | 3 | 100,000 | 15 × 10 | `datasets/erp/3res/100k/` (2 files) |
+| `200k_18modes` | 3 | 200,000 | 6 × 3 | `datasets/erp/3res/200k_18modes/` (4 files) |
+| `100k_2res_grid_18modes` | 2 | 100,000 | 6 × 3 | `datasets/erp/2res/100k_2res_grid_18modes/` (4 files) |
+| `100k_2res_fixed_m0.2_ft72_18modes` | 2 | 100,000 | 6 × 3 | `datasets/erp/2res/100k_2res_fixed_m0.2_ft72_18modes/` (4 files) |
+| `200k_2res_18modes` | 2 | 200,000 | 6 × 3 | `datasets/erp/2res/200k_2res_18modes/` (8 files) |
+| `10k_<N>res_fixed_m0.2_ft<f_t>_18modes` | 2 or 3 | 10,000 each | 6 × 3 | `datasets/erp/blocks_<N>res/` (model-bank blocks, f_t = 40 … 100 Hz) |
 
-Choosing the dataset immediately sets the solver's `Nx`/`Ny` (15/10 for the
-150-mode datasets, 6/3 for the 18-mode one). Every trained model records the
-`Nx`/`Ny` it was trained with in its checkpoint (`modal_resolution`), and
-whenever a model is loaded again (evaluate, predict, inverse sampling,
-invertible evaluation) that recorded basis is re-applied for all solver
-calculations made with it. A model whose basis differs from the selected
-dataset is rejected with an error. Checkpoints saved before this field
-existed fall back to their dataset's basis.
+Every trained model records the `Nx`/`Ny` it was trained with in its
+checkpoint (`modal_resolution`), and whenever a model is loaded again that
+recorded basis is re-applied for all solver calculations made with it. A model
+whose basis differs from the selected dataset is rejected with an error.
 
 (The 18-mode dataset differs from a 150-mode solve of the same configuration
 by up to ~25 dB, so mixing bases silently corrupts any solver comparison.)
 
+## `main.py` menu
+
+1. **ERP forward operators** — DON, DNO, FNO, DCO, GNO, STO, SIREN, WNO, NN,
+   LNO: train / evaluate / predict, train-all, frequency holdout, error
+   breakdown; options: encoder (set / + f_t-sorted), feature scaling
+   (z-scored / physical), NN permutation, FNO padding.
+2. **ERP inverse models** — MDN, cVAE, Flow, Diffusion, BasisFlow, PadINN,
+   Surrogate: train / evaluate / predict, train-all; options: spectrum encoder,
+   design parameterisation (full 5 × N / bounded 4 × N). Also the
+   **fixed-resonator position models** (MDN / Flow / Diffusion, m and f_t
+   fixed) and the **model bank** (one Flow per f_t block + solver check).
+3. **Invertible operators** (coupling flow) — iFNO, iDCO, iGNO, iDNO, iWNO,
+   iLNO, iSIREN, iSTO: 3-stage training or evaluation; standard /
+   recommended / custom options (encoder, design, gate, readout, …).
+4. **Invertible DeepONet** — Q8 (strict Q = D), Q64, Q128 and the trunk
+   variants Q64-FNO/-DCO/-DNO/-WNO/-LNO/-SIREN: train (stops at epoch 50 if
+   the validation loss stopped improving), evaluate, comparison plots.
+5. **Displacement field** — the ten architectures on the field dataset.
+
 ## Folder layout
 
+Every model family has the same three subfolders: `scripts/` (code),
+`models/` (checkpoints), `plots/` (figures, sorted by type).
+
 ```
-erp_forward/scripts/
-  models/GENERAL/<dataset>/<model>.pth          main.py: ERP → Forward → General
-  models/FREQ_HOLDOUT/<dataset>/<model>.pth     main.py: ERP → Forward → Frequency holdout
-  models/DCO_VARIANTS/  models/LEGACY/          archived experiments / outdated checkpoints
-  plots/GENERAL/<dataset>/<MODEL>/              loss_curve, erp_spectrum_test_config_01..05,
-                                                prediction_vs_ground_truth, prediction_spectrum
-  plots/GENERAL/<dataset>/ALL_MODELS/           all_training_loss, all_validation_loss,
-                                                all_models_loss, box plots, bar charts, comparison_table.txt
-  plots/FREQ_HOLDOUT/<dataset>/{<MODEL>,ALL_MODELS}/
-  plots/DCO_VARIANTS/  plots/GNO_VARIANTS/  plots/LEGACY/
-erp_inverse/scripts/
-  models/<dataset>/inverse_<model>.pth
-  plots/<dataset>/<MODEL>/   (loss_curve, single-model evaluation)
-  plots/<dataset>/ALL_MODELS/ (all_models_loss, validation_reconstructions, stats, recovery)
-erp_invertible/scripts/          (iFNO, iDCO, iGNO)
+erp_forward/                     forward operators, design -> ERP
+  scripts/                       dno.py, fno.py, ..., operator_registry.py, neural_operator_utils.py
   models/<dataset>/<model>.pth
-  plots/<dataset>/<MODEL>/   (loss_curve, stage_losses, forward plots, inverse plots, metrics.json)
-  plots/<dataset>/ALL_MODELS/
-utils/paths.py        single source of truth for all of the above
-utils/plot_style.py   thesis LaTeX style for every figure
+  models/experiments/{frequency_holdout,dco_variants}/   models/legacy/
+  plots/models/<dataset>/<MODEL>/  and  plots/models/<dataset>/ALL_MODELS/
+  plots/experiments/{frequency_holdout,dco_variants,gno_variants}/  plots/architectures/  plots/legacy/
+erp_inverse/                     inverse models, ERP -> design
+  scripts/                       mdn.py, flow.py, ..., train_all.py, evaluate.py
+  scripts/fixed_resonator/       position-only models (m, f_t fixed) and the model bank
+  models/<dataset>/inverse_<model>.pth    models/fixed_resonator/<dataset>/<model>.pth
+  plots/models/<dataset>/{<MODEL>,ALL_MODELS}/   plots/fixed_resonator/<dataset>/   plots/experiments/block_bank[_3res]/
+erp_invertible/                  coupling-flow invertible operators (iFNO, iDCO, ...)
+  scripts/   models/<dataset>/<model>.pth   plots/models/<dataset>/{<MODEL>,ALL_MODELS}/   plots/architectures/
+  FORWARD_VS_INVERTIBLE.md       what each invertible model keeps from / changes in its forward model
+erp_invertible_deeponet/         invertible DeepONet (Kaltenbach et al.)
+  scripts/   models/<dataset>/idon_<variant>.pth   plots/models/<dataset>/{<VARIANT>,ALL_MODELS}/   plots/architectures/
+disp_forward/                    forward operators, design -> displacement field
+  scripts/   models/<model>.pth   plots/models/<MODEL>/
+datasets/
+  erp/3res/<tag>/  erp/2res/<tag>/  erp/blocks_2res/  erp/blocks_3res/  displacement/
+  scripts/                       dataset generators
+dataset_analysis/                dataset statistics, split plots, videos (scripts/ + one folder per dataset)
+presentation_figures/            figures for talks (common-form diagrams)
+utils/paths.py                   single source of truth for every model/plot path
+utils/plot_style.py              thesis LaTeX style for every figure
 ```
 
-`LEGACY/nn_100k_before_plain_mlp.pth`, `dco_high.pth`, `dco_low.pth`,
-`dno_high.pth`, … were trained with older model code and no longer load into
-the current architectures; retrain them if needed.
+Paths are anchored at the repository root, so every script works from any
+working directory. Set `THESIS_OUTPUT_ROOT=/some/folder` to write all models
+and plots there instead (same layout; datasets are still read from the
+repository, and trained models in the repository remain usable).
+
+`models/legacy/` holds checkpoints trained with older model code that no longer
+load into the current architectures.
 
 ## Figures
 
@@ -75,7 +109,7 @@ Matplotlib's LaTeX mode needs `type1cm.sty` (Ubuntu/Debian:
 
 ## Dataset: 2 resonators on a 14 x 5 position grid (`100k_2res_grid_18modes`)
 
-`datasets/generate_grid_2res_18modes.py` (about 10 min on 4 cores) creates
+`datasets/scripts/generate_grid_2res_18modes.py` (about 10 min on 4 cores) creates
 100,000 configurations with:
 
 * 2 resonators per configuration;
@@ -148,7 +182,7 @@ columns go into the train-all comparison table, plus an
 without retraining, use forward method 3 in `main.py`, or run
 `python -m erp_forward.scripts.diagnose 100k`.
 
-100k results (`plots/GENERAL/100k/ALL_MODELS/error_breakdown.txt`, RMSE in dB):
+100k results (`erp_forward/plots/models/100k/ALL_MODELS/error_breakdown.txt`, RMSE in dB):
 
 | Model | All | Low 5 % f | Interior | High 5 % f | At peaks | Off peaks | Close f_t | Near edge |
 |---|---|---|---|---|---|---|---|---|

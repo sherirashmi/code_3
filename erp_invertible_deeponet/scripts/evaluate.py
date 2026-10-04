@@ -63,9 +63,10 @@ def peak_error(pred: np.ndarray, true: np.ndarray) -> np.ndarray:
     return np.abs(pred[np.arange(len(true)), idx] - true[np.arange(len(true)), idx])
 
 
-def evaluate_variant(name, dataset, loaders, num_targets: int = 500, num_samples: int = 16, num_forward: int = 5000):
-    model, norm = load_variant(name)
-    out_dir = plot_dir(DATASET, name)
+def evaluate_variant(name, dataset, loaders, num_targets: int = 500, num_samples: int = 16, num_forward: int = 5000,
+                     dataset_tag: str = DATASET):
+    model, norm = load_variant(name, dataset_tag)
+    out_dir = plot_dir(dataset_tag, name)
     freq = np.asarray(dataset.frequency_values, dtype=np.float64)
     num_res = int(dataset.num_res)
     test_ids = _split_ids(dataset)["test"]
@@ -178,11 +179,16 @@ def evaluate_variant(name, dataset, loaders, num_targets: int = 500, num_samples
     return metrics
 
 
-def main(names=None):
-    names = [n for n in (names or list(VARIANTS)) if model_path(n).exists()]
-    dataset, loaders = prepare()
-    results = {n: evaluate_variant(n, dataset, loaders) for n in names}
-    lines = [f"Invertible DeepONet on '{DATASET}' (forward on 5,000 and inverse on 500 test configurations)", "",
+def main(names=None, dataset_tag: str = DATASET, num_targets: int = 500, num_samples: int = 16):
+    names = [n for n in (names or list(VARIANTS)) if model_path(n, dataset_tag).exists()]
+    if not names:
+        print(f"No trained invertible DeepONet variants on '{dataset_tag}'.")
+        return {}
+    dataset, loaders = prepare(dataset_tag)
+    num_targets = min(int(num_targets), len(loaders["test"].dataset))
+    num_forward = min(5000, len(loaders["test"].dataset))
+    results = {n: evaluate_variant(n, dataset, loaders, num_targets, num_samples, num_forward, dataset_tag) for n in names}
+    lines = [f"Invertible DeepONet on '{dataset_tag}' (forward on {num_forward:,} and inverse on {num_targets} test configurations)", "",
              f"{'Variant':<9} {'Q':>4} {'fwd RMSE':>9} {'PCA floor':>10} {'peak err':>9} | {'inv own':>8} {'inv best':>9} "
              f"{'f_t r':>6} {'m r':>6} {'x r':>6} {'y r':>6} {'pos err':>8} {'ms/target':>10}",
              f"{'':<9} {'':>4} {'(dB)':>9} {'(dB)':>10} {'(dB)':>9} | {'(dB)':>8} {'(dB)':>9} {'':>6} {'':>6} {'':>6} {'':>6} {'(cm)':>8}"]
@@ -194,9 +200,16 @@ def main(names=None):
                      f"{d['f_t']['pearson_r']:>6.3f} {d['m']['pearson_r']:>6.3f} {d['x']['pearson_r']:>6.3f} {d['y']['pearson_r']:>6.3f} "
                      f"{d['position_error_median_cm']:>8.1f} {m['inverse_ms_per_target']:>10.2f}")
     text = "\n".join(lines)
-    (plot_dir(DATASET) / "comparison.txt").write_text(text + "\n")
+    (plot_dir(dataset_tag) / "comparison.txt").write_text(text + "\n")
     print("\n" + text)
+    return results
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:] or None)
+    args = sys.argv[1:]
+    tag = DATASET
+    if "--dataset" in args:
+        i = args.index("--dataset")
+        tag = args[i + 1]
+        args = args[:i] + args[i + 2:]
+    main(args or None, tag)

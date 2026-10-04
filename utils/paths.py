@@ -41,15 +41,23 @@ All paths are absolute (anchored at the repository root), so running
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-FORWARD_ROOT = PROJECT_ROOT / "erp_forward"
-INVERSE_ROOT = PROJECT_ROOT / "erp_inverse"
-INVERTIBLE_ROOT = PROJECT_ROOT / "erp_invertible"
-IDON_ROOT = PROJECT_ROOT / "erp_invertible_deeponet"
-DISPLACEMENT_ROOT = PROJECT_ROOT / "disp_forward"
+# Where models/ and plots/ are written. Defaults to the repository itself;
+# set THESIS_OUTPUT_ROOT (e.g. to a scratch or Google Drive folder) to send
+# every checkpoint and figure there instead -- the family folders are then
+# created below it with the same layout. Datasets are always read from the
+# repository.
+OUTPUT_ROOT = Path(os.environ.get("THESIS_OUTPUT_ROOT") or PROJECT_ROOT).resolve()
+
+FORWARD_ROOT = OUTPUT_ROOT / "erp_forward"
+INVERSE_ROOT = OUTPUT_ROOT / "erp_inverse"
+INVERTIBLE_ROOT = OUTPUT_ROOT / "erp_invertible"
+IDON_ROOT = OUTPUT_ROOT / "erp_invertible_deeponet"
+DISPLACEMENT_ROOT = OUTPUT_ROOT / "disp_forward"
 DATASETS_ROOT = PROJECT_ROOT / "datasets"
 
 GENERAL = "GENERAL"
@@ -69,6 +77,21 @@ def project_path(path: str | Path) -> Path:
     """Absolute path for a repository-relative path (absolute paths unchanged)."""
     path = Path(path)
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def find_existing(path: str | Path) -> Path:
+    """``path`` if it exists; otherwise, when outputs are redirected
+    (THESIS_OUTPUT_ROOT), the same file inside the repository -- so trained
+    models shipped with the repository stay usable (e.g. the frozen forward
+    surrogates). Returns ``path`` unchanged if neither exists."""
+    path = Path(path)
+    if path.exists() or OUTPUT_ROOT == PROJECT_ROOT:
+        return path
+    try:
+        fallback = PROJECT_ROOT / path.resolve().relative_to(OUTPUT_ROOT)
+    except ValueError:
+        return path
+    return fallback if fallback.exists() else path
 
 
 def architecture_dir(root: Path) -> Path:
@@ -159,9 +182,9 @@ def displacement_plot_dir(model_short: str) -> Path:
 
 
 __all__ = [
-    "PROJECT_ROOT", "FORWARD_ROOT", "INVERSE_ROOT", "INVERTIBLE_ROOT", "IDON_ROOT", "DISPLACEMENT_ROOT",
+    "PROJECT_ROOT", "OUTPUT_ROOT", "FORWARD_ROOT", "INVERSE_ROOT", "INVERTIBLE_ROOT", "IDON_ROOT", "DISPLACEMENT_ROOT",
     "DATASETS_ROOT", "GENERAL", "FREQ_HOLDOUT", "ALL_MODELS",
-    "project_path", "architecture_dir",
+    "project_path", "find_existing", "architecture_dir",
     "forward_model_path", "forward_plot_root", "forward_plot_dir",
     "inverse_model_path", "inverse_plot_dir", "fixed_resonator_model_path", "fixed_resonator_plot_dir",
     "block_bank_plot_dir",

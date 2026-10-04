@@ -260,7 +260,8 @@ def evaluate_model(name: str, dataset_tag: str = DEFAULT_DATASET, data=None, num
 
     # ---- ERP + plate examples ---------------------------------------------------------
     own_pick = picks[shown]
-    for i in range(min(num_examples, n)):
+    num_examples = min(int(num_examples), n)  # fewer test targets than requested examples
+    for i in range(num_examples):
         fig = _spectrum_example(name, i, freq, f_low, f_high, true_erp[i], true_design[i], solved[i], samples[i],
                                 int(own_pick[i]), int(picks["oracle"][i]), own_label)
         save_figure(fig, out_dir / f"erp_spectrum_test_config_{i + 1:02d}.png")

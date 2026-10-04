@@ -51,11 +51,13 @@ from utils.paths import (
     GENERAL,
     INVERSE_ROOT,
     INVERTIBLE_ROOT,
+    fixed_resonator_model_path,
     forward_model_path,
     forward_plot_dir,
     forward_plot_root,
     inverse_model_path,
     inverse_plot_dir,
+    project_path,
 )
 from erp_forward.scripts.operator_registry import (
     OPERATORS,
@@ -163,21 +165,32 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
 
 
 def _dataset_available(tag: str) -> bool:
-    return all(Path(f).exists() for f in DATASETS[tag]["files"])
+    return all(project_path(f).exists() for f in DATASETS[tag]["files"])
 
 
-def _prompt_dataset(default_tag: str = DEFAULT_DATASET_TAG) -> tuple[str, str | list[str]]:
+def _dataset_num_res(tag: str) -> int:
+    return int(DATASETS[tag].get("num_res", default_num_res))
+
+
+def _dataset_kind(tag: str) -> str:
+    """"fixed": m and f_t fixed (position-only data, model-bank blocks); "general": everything varies."""
+    return "fixed" if "fixed_resonator" in DATASETS[tag] else "general"
+
+
+def _prompt_dataset(default_tag: str = DEFAULT_DATASET_TAG, kind: str = "general") -> tuple[str, str | list[str]]:
     """Ask which raw dataset to use -> (tag, file or shard list).
 
-    The tag decides the solver's plate-mode basis (applied automatically
-    when the data is loaded) and the dataset sub-folder for checkpoints and
-    plots.
+    ``kind``: "general" (m, k, f_t, x, y all vary -- forward, inverse,
+    invertible models), "fixed" (m and f_t fixed -- position-only models,
+    model-bank blocks) or "any". The tag decides the solver's plate-mode basis
+    (applied automatically when the data is loaded), the number of resonators
+    and the dataset sub-folder for checkpoints and plots.
     """
-    tags = list(DATASETS)
+    tags = [t for t in DATASETS if kind == "any" or _dataset_kind(t) == kind]
     print("\nWhich dataset?")
     for i, tag in enumerate(tags, start=1):
         missing = "" if _dataset_available(tag) else "   [files missing]"
-        print(f"{i}. {tag:<13s} {DATASETS[tag]['label']}{missing}")
+        print(f"{i:>2}. {tag:<34s} {_dataset_num_res(tag)} res.  {DATASETS[tag]['label']}{missing}")
     default_index = tags.index(default_tag) + 1 if default_tag in tags else 1
     while True:
         index = _prompt_int("Select dataset", default=default_index, minimum=1, maximum=len(tags))
@@ -376,6 +389,9 @@ def _print_inverse_menu() -> None:
         print(f"{key}. {spec['name']} ({spec['short']})")
     print(f"{len(INVERSE_MODELS) + 1}. Train ALL (or a selection of) inverse models "
           "(+ optional solver-scored evaluation)")
+    print(f"{len(INVERSE_MODELS) + 2}. Fixed-resonator position models (MDN / Flow / Diffusion; m and f_t fixed,")
+    print("    predict x, y only)")
+    print(f"{len(INVERSE_MODELS) + 3}. Model bank (one position Flow per f_t block + solver check)")
     print("=" * 52)
 
 
@@ -983,7 +999,7 @@ def main_all_inverse_models():
     from erp_inverse.scripts.train_all import main as train_all_inverse
 
     print(f"\nTraining {len(keys)} inverse model(s); per-model loss curves -> "
-          f"{INVERSE_ROOT / 'plots' / tag}/<MODEL>/, comparison figures -> {INVERSE_ROOT / 'plots' / tag / ALL_MODELS}")
+          f"{INVERSE_ROOT / 'plots' / 'models' / tag}/<MODEL>/, comparison figures -> {INVERSE_ROOT / 'plots' / 'models' / tag / ALL_MODELS}")
     train_all_inverse(
         num_configurations=num_configurations,
         epochs=epochs,
@@ -1013,9 +1029,15 @@ def main_inverse():
     """Interactive entry point for the inverse (ERP -> configuration) workflow."""
     _print_inverse_menu()
     all_models_key = str(len(INVERSE_MODELS) + 1)
-    key = _prompt_choice("Select inverse model/workflow: ", {**INVERSE_MODELS, all_models_key: None})
+    fixed_key, bank_key = str(len(INVERSE_MODELS) + 2), str(len(INVERSE_MODELS) + 3)
+    key = _prompt_choice("Select inverse model/workflow: ",
+                         {**INVERSE_MODELS, all_models_key: None, fixed_key: None, bank_key: None})
     if key == all_models_key:
         return main_all_inverse_models()
+    if key == fixed_key:
+        return main_fixed_resonator()
+    if key == bank_key:
+        return main_block_bank()
 
     spec = INVERSE_MODELS[key]
     _print_inverse_action_menu()
@@ -1029,7 +1051,7 @@ def main_inverse():
     print(f"Action     : {action}")
     print(f"Dataset    : {tag}")
     print(f"Checkpoint : {inverse_model_path(name, tag)}")
-    print(f"Plots      : {INVERSE_ROOT / 'plots' / tag / name}")
+    print(f"Plots      : {INVERSE_ROOT / 'plots' / 'models' / tag / name}")
     print("=" * 68)
 
     if action == "train":
@@ -1089,26 +1111,180 @@ def main_inverse():
 
 
 def main():
-    """Interactive entry point: choose the problem, then dispatch."""
-    print("\nWhich problem would you like to work on?")
-    print("1. ERP           (resonator configuration <-> ERP spectrum)")
-    print("2. Displacement  (configuration, frequency, position -> velocity field)")
-    print("3. Invertible    (joint forward+inverse operator, ERP problem: iFNO/iDCO/iGNO)")
-    problem = _prompt_choice("Select problem: ", {"1": None, "2": None, "3": None})
-    if problem == "1":
-        return main_erp()
-    if problem == "2":
-        return main_displacement()
-    return main_invertible_operators()
+    """Interactive entry point: choose the model family, then dispatch."""
+    print("\nWhich model family?")
+    print("1. ERP forward operators   (resonator configuration -> ERP spectrum)")
+    print("2. ERP inverse models      (ERP spectrum -> resonator configuration; incl. fixed-resonator")
+    print("                            position models and the model bank)")
+    print("3. Invertible operators    (coupling flow, forward + inverse: " +
+          ", ".join(spec["short"] for spec in INVERTIBLE_OPERATORS.values()) + ")")
+    print("4. Invertible DeepONet     (Kaltenbach et al.: exact inverse; Q8, Q64, Q128, trunk variants)")
+    print("5. Displacement field      (configuration, frequency, position -> velocity field)")
+    family = _prompt_choice("Select model family: ", {str(i): None for i in range(1, 6)})
+    return {"1": main_forward, "2": main_inverse, "3": main_invertible_operators, "4": main_invertible_deeponet,
+            "5": main_displacement}[family]()
 
 
 def main_erp():
-    """ERP problem: choose forward or inverse, then dispatch."""
+    """ERP problem: choose forward or inverse, then dispatch (kept for scripts that call it)."""
     print("\nWhat would you like to run?")
     print("1. Forward  (resonator configuration -> ERP spectrum)")
     print("2. Inverse  (ERP spectrum -> resonator configuration)")
     mode = _prompt_choice("Select workflow: ", {"1": None, "2": None})
     return main_forward() if mode == "1" else main_inverse()
+
+
+def _prompt_positions(num_res: int) -> list[tuple[float, float]]:
+    """x, y of every resonator (m and f_t are fixed by the dataset/block)."""
+    positions = []
+    for i in range(num_res):
+        while True:
+            try:
+                x = float(input(f"Resonator {i + 1} x position (m, 0 to {Lx:g}): ").strip())
+                y = float(input(f"Resonator {i + 1} y position (m, 0 to {Ly:g}): ").strip())
+            except ValueError:
+                print("Please enter numeric values.")
+                continue
+            if 0.0 <= x <= Lx and 0.0 <= y <= Ly:
+                positions.append((x, y))
+                break
+            print(f"Position must satisfy 0 <= x <= {Lx:g}, 0 <= y <= {Ly:g}.")
+    return positions
+
+
+def main_fixed_resonator():
+    """Position-only inverse models (erp_inverse/scripts/fixed_resonator): m and f_t
+    fixed by the dataset, the models predict every resonator's x, y."""
+    from erp_inverse.scripts.fixed_resonator import evaluate as fr_evaluate
+    from erp_inverse.scripts.fixed_resonator import predict_custom as fr_custom
+    from erp_inverse.scripts.fixed_resonator import train_all as fr_train
+    from erp_inverse.scripts.fixed_resonator.common import plot_dir as fr_plot_dir, prepare_data as fr_prepare
+    from erp_inverse.scripts.fixed_resonator.registry import INVERSE_MODELS as FR_MODELS
+
+    print("\nFixed-resonator position models")
+    for key, spec in FR_MODELS.items():
+        print(f"{key}. {spec['name']} ({spec['short']})")
+    keys = _prompt_selection("Which models (e.g. 1,2 or 'all')", FR_MODELS)
+    names = [FR_MODELS[k]["short"] for k in keys]
+    print("\nOperation")
+    print("1. Train (then solver-scored evaluation)")
+    print("2. Evaluate saved checkpoints")
+    print("3. Predict your own resonator positions")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    tag, _files = _prompt_dataset("100k_2res_fixed_m0.2_ft72_18modes", kind="fixed")
+    print(f"Checkpoints: {fixed_resonator_model_path('<model>', tag)}   Plots: {fr_plot_dir(tag).parent}/")
+
+    if action == "1":
+        epochs = _prompt_optional_int("Epochs (empty = each model's default)")
+        n_test = _prompt_int("Held-out targets for the solver-scored evaluation", default=200, minimum=1)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        return fr_train.main(dataset_tag=tag, models=names, epochs=epochs, skip_existing=False,
+                             num_test_examples=n_test, num_samples=n_samples)
+    trained = [n for n in names if fixed_resonator_model_path(n, tag).exists()]
+    if not trained:
+        print(f"No trained models among {names} on '{tag}' -- train them first.")
+        return None
+    if action == "2":
+        n_test = _prompt_int("Held-out targets for the solver-scored evaluation", default=200, minimum=1)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        data = fr_prepare(tag)
+        for name in trained:
+            fr_evaluate.evaluate_model(name, tag, data=data, num_test_examples=n_test, num_samples=n_samples)
+        return fr_evaluate.compare_models(tag, trained)
+    num_res = _dataset_num_res(tag)
+    print(f"\nEnter the {num_res} resonator positions (m and f_t are fixed by '{tag}').")
+    configurations = [("Your configuration", _prompt_positions(num_res))]
+    n_samples = _prompt_int("Candidate designs to sample per model", default=16, minimum=1)
+    return fr_custom.main(dataset_tag=tag, configurations=configurations, models=tuple(trained), num_samples=n_samples)
+
+
+def main_block_bank():
+    """Model bank: one position Flow per f_t block (fixed m), the solver picks the block."""
+    from erp_inverse.scripts.fixed_resonator import block_bank, predict_bank
+    from erp_inverse.scripts.fixed_resonator import train_all as fr_train
+    from utils.erp_dataset import FIXED_BLOCK_FREQUENCIES, FIXED_BLOCK_NUM_RES, fixed_block_tag
+
+    print("\nResonators per configuration: " + ", ".join(str(n) for n in FIXED_BLOCK_NUM_RES))
+    num_res = _prompt_int("Number of resonators", default=FIXED_BLOCK_NUM_RES[0],
+                          minimum=min(FIXED_BLOCK_NUM_RES), maximum=max(FIXED_BLOCK_NUM_RES))
+    tags = [fixed_block_tag(f, num_res=num_res) for f in FIXED_BLOCK_FREQUENCIES]
+    print("Block datasets: " + ", ".join(tags))
+    missing = [t for t in tags if not _dataset_available(t)]
+    if missing:
+        print(f"Missing block datasets: {missing} -- generate them with "
+              f"python datasets/scripts/generate_fixed_blocks.py --num-res {num_res}")
+        return None
+    print("\nOperation")
+    print("1. Train the block models (one Flow per block)")
+    print("2. Evaluate the bank on held-out targets of every block")
+    print("3. Predict designs for your own configuration")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    if action == "1":
+        epochs = _prompt_optional_int("Epochs per block (empty = default)")
+        retrain = _prompt_yes_no("Retrain blocks that already have a checkpoint", default=False)
+        for tag in tags:
+            select_dataset_modal_resolution(tag)
+            fr_train.main(dataset_tag=tag, models=["Flow"], epochs=epochs, skip_existing=not retrain,
+                          evaluate_models=False)
+        return None
+    if action == "2":
+        per_block = _prompt_int("Held-out targets per block", default=100, minimum=1)
+        n_samples = _prompt_int("Samples per block and target", default=16, minimum=1)
+        return block_bank.main(per_block=per_block, num_samples=n_samples, num_res=num_res)
+    f_t = _prompt_float("Tuning frequency f_t of all resonators (Hz)", default=72.0, minimum=1.0)
+    xy = [v for pos in _prompt_positions(num_res) for v in pos]
+    n_samples = _prompt_int("Samples per block", default=32, minimum=1)
+    return predict_bank.main(true_design=predict_bank.design_from_config(f_t, *xy), name="config_cli", num_samples=n_samples,
+                             num_res=num_res)
+
+
+def main_invertible_deeponet():
+    """Invertible DeepONet (erp_invertible_deeponet): RealNVP branch x fixed trunk
+    basis, exact projection inverse."""
+    from erp_invertible_deeponet.scripts import collage_examples, plot_best_of_samples
+    from erp_invertible_deeponet.scripts import evaluate as idon_evaluate
+    from erp_invertible_deeponet.scripts import train as idon
+
+    names = list(idon.VARIANTS)
+    print("\nInvertible DeepONet variants (Q = number of basis functions; D = 4 x resonators)")
+    for i, name in enumerate(names, start=1):
+        q = idon.VARIANTS[name]
+        trunk = idon.TRUNKS.get(name, "mlp")
+        print(f"{i}. {name:<10s} Q = {'D (strict)' if q == 'D' else q:<10}  trunk: {trunk}")
+    registry = {str(i): {"short": n, "name": n} for i, n in enumerate(names, start=1)}
+    chosen = [registry[k]["short"] for k in _prompt_selection("Which variants (e.g. 2,3 or 'all')", registry)]
+    print("\nOperation")
+    print("1. Train (stops early at epoch 50 if the validation loss has not improved since epoch 40)")
+    print("2. Evaluate (solver-checked inverse; comparison table)")
+    print("3. Comparison plots (target ERP + best of 16 per variant; example collages)")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    tag, _files = _prompt_dataset(idon.DATASET if idon.DATASET in DATASETS else "100k")
+    print(f"Checkpoints: {idon.model_path('<variant>', tag)}   Plots: {idon.PACKAGE_ROOT / 'plots' / 'models' / tag}/")
+
+    if action == "1":
+        epochs = _prompt_int("Epochs", default=150, minimum=1)
+        batch_size = _prompt_int("Batch size", default=128, minimum=1)
+        dataset, loaders = idon.prepare(tag, batch_size=batch_size)
+        for name in chosen:
+            if idon.model_path(name, tag).exists() and not _prompt_yes_no(
+                    f"{name} is already trained on '{tag}' -- retrain it", default=False):
+                continue
+            idon.train_variant(name, dataset, loaders, dataset_tag=tag, epochs=epochs, early_stop_epoch=50)
+        if _prompt_yes_no("Evaluate the trained variants now (solver-checked)", default=True):
+            return idon_evaluate.main(chosen, tag)
+        return None
+    trained = [n for n in chosen if idon.model_path(n, tag).exists()]
+    if not trained:
+        print(f"None of {chosen} is trained on '{tag}'.")
+        return None
+    if action == "2":
+        n_targets = _prompt_int("Held-out target spectra", default=500, minimum=3)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        return idon_evaluate.main(trained, tag, num_targets=n_targets, num_samples=n_samples)
+    plot_best_of_samples.main(trained, dataset_tag=tag)
+    for k in (1, 2, 3):
+        collage_examples.collage(trained, k, tag)
+    return None
 
 
 def _print_displacement_menu() -> None:
@@ -1129,7 +1305,14 @@ def main_displacement():
     key = _prompt_choice("Select architecture/workflow: ", {**DISPLACEMENT_OPERATORS, all_key: None})
     keys = list(DISPLACEMENT_OPERATORS.keys()) if key == all_key else [key]
 
-    from disp_forward.scripts.train_all import run_one
+    import disp_forward.scripts.train_all as displacement_training
+
+    print("\nWhich dataset?")
+    print(f"1. field_displacement   {len(displacement_training.DISPLACEMENT_FILES)} shards in datasets/displacement/ "
+          "(configuration, frequency, collocation points -> velocity field)")
+    _prompt_choice("Select dataset: ", {"1": None})
+    displacement_training.EPOCHS = _prompt_int("Epochs", default=displacement_training.EPOCHS, minimum=1)
+    run_one = displacement_training.run_one
 
     results = []
     for architecture_key in keys:
@@ -1160,8 +1343,9 @@ def _print_invertible_menu() -> None:
 def _prompt_invertible_options(invertible) -> dict:
     """Configuration of the invertible operators (see erp_invertible/scripts/train.py)."""
     print("\nInvertible-operator configuration")
-    print("1. Standard     (paper-style: 15-D design, softplus gate, pooled readout)  [existing models]")
-    print("2. Recommended  (bounded 12-D design, identity-init bounded gate, binned readout,")
+    print("1. Standard     (paper-style: 5 x num_res design, softplus gate, pooled readout, set encoder,")
+    print("                 z-scored features)  [older models]")
+    print("2. Recommended  (bounded 4 x num_res design, identity-init bounded gate, binned readout,")
     print("                 iFNO FFT padding, cycle+alignment terms 0.1, stage-2 on stage-1 estimates,")
     print("                 f_t-sorted resonator encoder, plate mode shapes / physical detuning)")
     print("3. Custom       (choose each option)")
@@ -1171,7 +1355,7 @@ def _prompt_invertible_options(invertible) -> dict:
     if choice == "2":
         return dict(invertible.RECOMMENDED_OPTIONS)
     opts = {}
-    if _prompt_yes_no("Bounded 12-D design [m, f_t, x, y] with k derived (suffix _b12)?", default=True):
+    if _prompt_yes_no("Bounded design, 4 numbers per resonator [m, f_t, x, y] with k derived (suffix _b12)?", default=True):
         opts["design_param"] = "bounded12"
     if _prompt_yes_no("Identity-initialised bounded gate exp(c tanh(a L)) (suffix _bg)?", default=True):
         opts["gate"] = "bounded"
@@ -1184,8 +1368,11 @@ def _prompt_invertible_options(invertible) -> dict:
         opts["align_weight"] = _prompt_float("Alignment weight", default=0.1, minimum=0.0)
     if _prompt_yes_no("Stage-2 VAE pretraining on stage-1 inverse estimates (suffix _s2e)?", default=True):
         opts["stage2_source"] = "estimates"
-    if _prompt_yes_no("f_t-sorted resonator encoder instead of the pooled set encoder (suffix _sortenc)?", default=True):
-        opts["encoder"] = "sorted"
+    print("\nResonator encoder (iFNO, iDCO, iDNO, iWNO, iLNO, iSIREN; iGNO and iSTO have none)")
+    print("1. f_t-sorted encoder             (suffix _sortenc)  [recommended]")
+    print("2. Set encoder (mean + max pool)  [older models]")
+    print("3. Set + f_t-sorted encoder       (suffix _sorted)")
+    opts["encoder"] = {"1": "sorted", "2": "set", "3": "set+sorted"}[_prompt_choice("Select encoder: ", {"1": None, "2": None, "3": None})]
     if _prompt_yes_no("Plate mode shapes + physical detuning features (suffix _phys)?", default=True):
         opts["coordinate_features"] = "physical"
     return opts
@@ -1205,9 +1392,7 @@ def main_invertible_operators():
     print("1. Train (3-stage schedule) + forward/inverse evaluation")
     print("2. Evaluate saved checkpoint(s)")
     evaluate_only = _prompt_choice("Select operation: ", {"1": None, "2": None}) == "2"
-    use_sorted_branch = _prompt_encoder_variant(
-        [INVERTIBLE_OPERATORS[k]["short"] for k in keys if INVERTIBLE_OPERATORS[k].get("supports_sorted_branch")]
-    )
+    use_sorted_branch = False  # the encoder is chosen in the options below
     options = _prompt_invertible_options(invertible)
     print("Model name(s): " + ", ".join(invertible.variant(k, use_sorted_branch, options)[0] for k in keys))
     tag, dataset_file = _prompt_dataset("100k")
@@ -1231,7 +1416,7 @@ def main_invertible_operators():
     stage3 = _prompt_int("Stage 3 epochs (joint fine-tuning)", default=invertible.STAGE3_EPOCHS, minimum=0)
     inverse_weight = _prompt_float("Stage 3 weight of the direct inverse term J_INV (0 = paper's eq 11)",
                                    default=invertible.STAGE3_INVERSE_WEIGHT, minimum=-1e-12)
-    print(f"\nPlots -> {INVERTIBLE_ROOT / 'plots' / tag}/<MODEL>/ (and {ALL_MODELS}/ when training several)")
+    print(f"\nPlots -> {INVERTIBLE_ROOT / 'plots' / 'models' / tag}/<MODEL>/ (and {ALL_MODELS}/ when training several)")
     return invertible.main(
         keys=tuple(keys),
         num_configurations=num_configurations,

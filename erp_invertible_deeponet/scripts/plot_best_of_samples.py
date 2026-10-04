@@ -36,16 +36,16 @@ from .train import DATASET, VARIANTS, load_variant, model_path, plot_dir, prepar
 DEFAULT = ("Q8", "Q64", "Q128", "Q64-FNO", "Q64-DCO", "Q64-DNO", "Q64-WNO", "Q64-LNO", "Q64-SIREN")
 
 
-def main(names, num_examples: int = 3, num_samples: int = 16, seed: int = 727) -> None:
-    names = [n for n in names if n in VARIANTS and model_path(n).exists()]
-    dataset, loaders = prepare()
+def main(names, num_examples: int = 3, num_samples: int = 16, seed: int = 727, dataset_tag: str = DATASET) -> None:
+    names = [n for n in names if n in VARIANTS and model_path(n, dataset_tag).exists()]
+    dataset, loaders = prepare(dataset_tag)
     freq = np.asarray(dataset.frequency_values, dtype=np.float64)
     num_res = int(dataset.num_res)
     spectra = torch.cat([s for s, _ in loaders["test"]])[:num_examples]
     best, rmse = {}, {}
     with ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 1), mp_context=SPAWN_CONTEXT) as pool:
         for name in names:
-            model, norm = load_variant(name)
+            model, norm = load_variant(name, dataset_tag)
             torch.manual_seed(seed)
             with torch.no_grad():
                 flat = model.sample(spectra.to(device), num_samples).cpu().numpy()
@@ -72,11 +72,17 @@ def main(names, num_examples: int = 3, num_samples: int = 16, seed: int = 727) -
                   title_fontsize=9)
     np.atleast_1d(axes)[-1].set_xlabel(FREQ_LABEL)
     fig.tight_layout()
-    path = plot_dir(DATASET) / "best_of_samples_all_variants.png"
+    path = plot_dir(dataset_tag) / "best_of_samples_all_variants.png"
     save_figure(fig, path)
     plt.close(fig)
     print(f"Saved {path}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:] or DEFAULT)
+    args = sys.argv[1:]
+    tag = DATASET
+    if "--dataset" in args:
+        i = args.index("--dataset")
+        tag = args[i + 1]
+        args = args[:i] + args[i + 2:]
+    main(args or DEFAULT, dataset_tag=tag)
