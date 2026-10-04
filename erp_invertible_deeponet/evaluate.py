@@ -13,7 +13,7 @@ solver error (upper bound). Design recovery: m, k, f_t, x, y per resonator
 
 Saves to ``plots/<dataset>/<variant>/`` and a comparison in ``ALL_MODELS/``.
 
-Usage (from the repository root):  python -m erp_invertible_deeponet.evaluate [Q8 Q64]
+Usage (from the repository root):  python -m erp_invertible_deeponet.evaluate [Q8 Q64 Q128 Q64-FNO Q64-DCO]
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from .train import DATASET, VARIANTS, load_variant, model_path, plot_dir, prepar
 _draw_plate = importlib.import_module("2_res_erp_inverse_models.evaluate")._draw_plate
 PARAMS = (("m", 0, "Mass $m$ (kg)"), ("k", 1, "Stiffness $k$ (kN/m)"), ("f_t", 2, "Tuning frequency $f_t$ (Hz)"),
           ("x", 3, "Position $x$ (m)"), ("y", 4, "Position $y$ (m)"))
-COLORS = {"Q8": "#eb6834", "Q64": "#2a78d6"}
+COLORS = {"Q8": "#eb6834", "Q64": "#2a78d6", "Q128": "#1f9e74", "Q64-FNO": "#8f5bb5", "Q64-DCO": "#c0392b"}
 
 
 def pca_floor(train_db: np.ndarray, test_db: np.ndarray, q: int) -> np.ndarray:
@@ -182,13 +182,13 @@ def main(names=None):
     dataset, loaders = prepare()
     results = {n: evaluate_variant(n, dataset, loaders) for n in names}
     lines = [f"Invertible DeepONet on '{DATASET}' (forward on 5,000 and inverse on 500 test configurations)", "",
-             f"{'Variant':<8} {'Q':>4} {'fwd RMSE':>9} {'PCA floor':>10} {'peak err':>9} | {'inv own':>8} {'inv best':>9} "
+             f"{'Variant':<9} {'Q':>4} {'fwd RMSE':>9} {'PCA floor':>10} {'peak err':>9} | {'inv own':>8} {'inv best':>9} "
              f"{'f_t r':>6} {'m r':>6} {'x r':>6} {'y r':>6} {'pos err':>8} {'ms/target':>10}",
-             f"{'':<8} {'':>4} {'(dB)':>9} {'(dB)':>10} {'(dB)':>9} | {'(dB)':>8} {'(dB)':>9} {'':>6} {'':>6} {'':>6} {'':>6} {'(cm)':>8}"]
+             f"{'':<9} {'':>4} {'(dB)':>9} {'(dB)':>10} {'(dB)':>9} | {'(dB)':>8} {'(dB)':>9} {'':>6} {'':>6} {'':>6} {'':>6} {'(cm)':>8}"]
     for n, m in results.items():
         own, best = m["inverse"]["own"], m["inverse"]["oracle"]
         d = own["design"]
-        lines.append(f"{n:<8} {m['Q']:>4} {m['forward']['rmse_median_db']:>9.2f} {m['forward']['pca_floor_median_db']:>10.2f} "
+        lines.append(f"{n:<9} {m['Q']:>4} {m['forward']['rmse_median_db']:>9.2f} {m['forward']['pca_floor_median_db']:>10.2f} "
                      f"{m['forward']['peak_error_median_db']:>9.1f} | {own['erp']['rmse_db']:>8.2f} {best['erp']['rmse_db']:>9.2f} "
                      f"{d['f_t']['pearson_r']:>6.3f} {d['m']['pearson_r']:>6.3f} {d['x']['pearson_r']:>6.3f} {d['y']['pearson_r']:>6.3f} "
                      f"{d['position_error_median_cm']:>8.1f} {m['inverse_ms_per_target']:>10.2f}")

@@ -5,6 +5,9 @@ Variants (same architecture, different number of basis functions Q):
 * ``Q8``  -- strict Kaltenbach et al.: Q = D = 8 (2 resonators x [m, f_t, x, y]).
 * ``Q64`` -- padded: the design is padded with 56 latent numbers (z = 0 in the
   forward direction), so the trunk has Q = 64 basis functions.
+* ``Q128`` -- padded to Q = 128 (same trunk).
+* ``Q64-FNO`` / ``Q64-DCO`` -- Q = 64 with an FNO-style / DCO-style trunk
+  (see model.py); the inverse is unchanged.
 
 Training reuses the project's interruption-safe loop
 (``erp_inverse_operators.train_all.train_one``: Adam + cosine LR, grad clip,
@@ -37,7 +40,8 @@ from .model import InvertibleDeepONet
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 DATASET = "200k_2res_18modes"
-VARIANTS = {"Q8": 0, "Q64": 56}  # name -> latent padding (Q = 8 + pad)
+VARIANTS = {"Q8": 0, "Q64": 56, "Q128": 120, "Q64-FNO": 56, "Q64-DCO": 56}  # name -> latent padding (Q = 8 + pad)
+TRUNKS = {"Q64-FNO": "fno", "Q64-DCO": "dco"}  # name -> trunk architecture (default: Fourier features + MLP)
 INVERSE_WARMUP = 10
 LR = 5e-4
 
@@ -63,7 +67,8 @@ def prepare(dataset_tag: str = DATASET, batch_size: int = 128, seed: int = 727):
 
 def build(name: str, dataset) -> InvertibleDeepONet:
     design_dim = 4 * int(dataset.num_res)
-    return InvertibleDeepONet(design_dim, n_freq=len(dataset.frequency_values), pad=VARIANTS[name])
+    return InvertibleDeepONet(design_dim, n_freq=len(dataset.frequency_values), pad=VARIANTS[name],
+                              trunk=TRUNKS.get(name, "mlp"))
 
 
 def loss_fn(model, spectrum, design, epoch):
@@ -98,7 +103,7 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
     print(f"[iDON-{name}] coefficient-posterior noise variance (normalised ERP) = {s2:.4f}")
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"model_state_dict": model.state_dict(), "norm_params": dict(dataset.norm_params), "variant": name,
-                "design_dim": 4 * int(dataset.num_res), "pad": VARIANTS[name], "n_freq": len(dataset.frequency_values),
+                "design_dim": 4 * int(dataset.num_res), "pad": VARIANTS[name], "trunk": TRUNKS.get(name, "mlp"), "n_freq": len(dataset.frequency_values),
                 "num_res": int(dataset.num_res), "history": history, "dataset_tag": dataset_tag,
                 "training_config": {"epochs": epochs, "lr": LR, "inverse_warmup_epochs": INVERSE_WARMUP,
                                     "loss": "forward MSE + w * Huber(inverse) + 0.1 * Huber(latent)", "seed": seed}}, path)
@@ -112,7 +117,7 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
 
 def load_variant(name: str, dataset_tag: str = DATASET):
     ckpt = torch.load(model_path(name, dataset_tag), map_location=device, weights_only=False)
-    model = InvertibleDeepONet(ckpt["design_dim"], n_freq=ckpt["n_freq"], pad=ckpt["pad"])
+    model = InvertibleDeepONet(ckpt["design_dim"], n_freq=ckpt["n_freq"], pad=ckpt["pad"], trunk=ckpt.get("trunk", "mlp"))
     model.load_state_dict(ckpt["model_state_dict"])
     return model.to(device).eval(), ckpt["norm_params"]
 

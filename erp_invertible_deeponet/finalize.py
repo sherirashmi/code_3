@@ -17,7 +17,7 @@ import torch
 from utils.plotting import plot_loss_curves
 from utils.support import device
 
-from .train import DATASET, INVERSE_WARMUP, LR, VARIANTS, build, model_path, plot_dir, prepare, set_noise_variance
+from .train import DATASET, INVERSE_WARMUP, LR, TRUNKS, VARIANTS, build, model_path, plot_dir, prepare, set_noise_variance
 
 
 def finalize(name: str, dataset, loaders) -> None:
@@ -31,7 +31,7 @@ def finalize(name: str, dataset, loaders) -> None:
     print(f"[iDON-{name}] stopped after epoch {state['epoch']}: best validation loss {state['best_val']:.4f} "
           f"(epoch {best_epoch}); noise variance {s2:.4f}")
     torch.save({"model_state_dict": model.state_dict(), "norm_params": dict(dataset.norm_params), "variant": name,
-                "design_dim": 4 * int(dataset.num_res), "pad": VARIANTS[name], "n_freq": len(dataset.frequency_values),
+                "design_dim": 4 * int(dataset.num_res), "pad": VARIANTS[name], "trunk": TRUNKS.get(name, "mlp"), "n_freq": len(dataset.frequency_values),
                 "num_res": int(dataset.num_res), "history": history, "dataset_tag": DATASET,
                 "training_config": {"epochs_planned": int(state["epochs"]), "epochs_run": int(state["epoch"]),
                                     "stopped_early": True, "best_epoch": best_epoch, "lr": LR,

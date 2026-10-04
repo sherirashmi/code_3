@@ -12,8 +12,11 @@ Forward (Kaltenbach et al.):
   with ``pad`` latent numbers z, T acts on [a, z] and Q = D + pad basis
   functions are available (z = 0 in the forward direction). ``pad = 0`` is the
   strict Q = D model.
-* ``psi``: the trunk, an MLP of the (normalised) frequency with Fourier
-  features, evaluated on the fixed frequency grid -> an (F, Q) basis matrix.
+* ``psi``: the trunk, a network of the (normalised) frequency only, evaluated
+  on the fixed frequency grid -> an (F, Q) basis matrix. ``trunk``: "mlp"
+  (Fourier features + MLP), "fno" (Fourier blocks along f, FNO-style) or
+  "dco" (residual MLP blocks + local Conv1d refinement, DCO-style). Any
+  architecture works here as long as it does not see the design.
 
 Inverse: the ERP is LINEAR in b. The trunk's basis is orthonormalised on every
 pass (QR; Psi^T Psi = F I), so for a target spectrum y the least-squares
@@ -39,6 +42,10 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+from erp_forward_operators.fno import FNOBlock1d
+from erp_forward_operators.neural_operator_utils import FrequencyRefinement1d, ResidualMLPBlock
 
 LOG_SCALE_CLAMP = 1.0  # max e^1 scaling per coupling: keeps the inverse of off-manifold b bounded
 
@@ -122,14 +129,75 @@ class Trunk(nn.Module):
         return self.net(torch.cat((f_norm[:, None], torch.sin(arg), torch.cos(arg)), dim=-1))
 
 
+def fourier_features(f_norm: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
+    """(F,) -> (F, 1 + 2K): [f, sin(k pi f), cos(k pi f)]."""
+    arg = f_norm[:, None] * freqs[None, :]
+    return torch.cat((f_norm[:, None], torch.sin(arg), torch.cos(arg)), dim=-1)
+
+
+class FNOTrunk(nn.Module):
+    """Basis functions built the FNO way: Fourier features lifted to ``width``
+    channels along the frequency axis, ``depth`` Fourier blocks (global
+    spectral convolution on the lowest ``modes`` modes + local Conv1d, as in
+    erp_forward_operators/fno.py), then a pointwise projection to Q + 1
+    functions. A function of the frequency only -- the basis stays fixed for
+    every design, so the inverse stays a projection."""
+
+    def __init__(self, num_basis: int, width: int = 40, modes: int = 32, depth: int = 4, num_fourier: int = 32,
+                 padding: int = 16) -> None:
+        super().__init__()
+        self.register_buffer("freqs", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.padding = int(padding)
+        self.lift = nn.Linear(1 + 2 * num_fourier, width)
+        self.blocks = nn.ModuleList([FNOBlock1d(width, modes, dropout=0.0, activation="gelu") for _ in range(depth)])
+        self.project = nn.Sequential(nn.Linear(width, 2 * width), nn.GELU(), nn.Linear(2 * width, num_basis + 1))
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        x = self.lift(fourier_features(f_norm, self.freqs)).T[None]  # (1, width, F)
+        x = F.pad(x, (self.padding, self.padding))  # zero padding: the band edges must not wrap
+        for block in self.blocks:
+            x = block(x)
+        x = x[..., self.padding: x.shape[-1] - self.padding]
+        return self.project(x[0].T)
+
+
+class DCOTrunk(nn.Module):
+    """Basis functions built the DCO way: Fourier features -> Linear lift ->
+    ``depth`` residual MLP blocks (pointwise in f) -> the shared local
+    frequency refinement (Conv1d, as in erp_forward_operators/dco.py) ->
+    projection to Q + 1 functions. A function of the frequency only."""
+
+    def __init__(self, num_basis: int, width: int = 128, depth: int = 4, num_fourier: int = 32) -> None:
+        super().__init__()
+        self.register_buffer("freqs", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.lift = nn.Linear(1 + 2 * num_fourier, width)
+        self.blocks = nn.ModuleList([ResidualMLPBlock(width, activation=nn.SiLU) for _ in range(depth)])
+        self.refine = FrequencyRefinement1d(width)
+        self.project = nn.Linear(width, num_basis + 1)
+
+    def forward(self, f_norm: torch.Tensor) -> torch.Tensor:
+        h = F.silu(self.lift(fourier_features(f_norm, self.freqs)))
+        for block in self.blocks:
+            h = block(h)
+        h = self.refine(h.T[None])[0].T
+        return self.project(h)
+
+
+TRUNKS = {"mlp": Trunk, "fno": FNOTrunk, "dco": DCOTrunk}
+
+
 class InvertibleDeepONet(nn.Module):
     def __init__(self, design_dim: int, n_freq: int, pad: int = 0, num_layers: int = 10, hidden: int = 256,
-                 trunk_hidden: int = 256) -> None:
+                 trunk_hidden: int = 256, trunk: str = "mlp") -> None:
         super().__init__()
         self.design_dim, self.pad, self.n_freq = int(design_dim), int(pad), int(n_freq)
         self.num_basis = self.design_dim + self.pad  # Q
         self.branch = RealNVP(self.num_basis, num_layers=num_layers, hidden=hidden)
-        self.trunk = Trunk(self.num_basis, hidden=trunk_hidden)
+        self.trunk_type = str(trunk)
+        if self.trunk_type == "mlp":
+            self.trunk = Trunk(self.num_basis, hidden=trunk_hidden)
+        else:
+            self.trunk = TRUNKS[self.trunk_type](self.num_basis)
         self.register_buffer("f_norm", torch.linspace(-1.0, 1.0, self.n_freq))
         self.register_buffer("noise_var", torch.tensor(1.0))  # set after training (training residual)
 
