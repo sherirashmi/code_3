@@ -1,6 +1,7 @@
-"""ERP distribution at each of the 301 frequency points over the 100k three-resonator dataset (panel (a) of
-dataset_analysis/100k/plots/erp_frequency_boxplot.png), drawn alone from the stored statistics
-(dataset_analysis/100k/stats/erp_frequency_boxplot.csv): median, interquartile range, Tukey whiskers (1.5 x IQR), min-max.
+"""ERP distribution at each of the 301 frequency points of a dataset (panel (a) of dataset_analysis/<tag>/plots/erp_frequency_boxplot.png),
+drawn alone from the stored statistics (dataset_analysis/<tag>/stats/erp_frequency_boxplot.csv): median, interquartile range,
+Tukey whiskers (1.5 x IQR), min-max.   Usage: python presentation_figures/erp_frequency_band_plot.py [tag]   (default 100k)
+Output: presentation_figures/erp_frequency_band_plot[_<tag>].{png,pdf,svg}
 """
 import sys
 from pathlib import Path
@@ -15,10 +16,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import utils.physics as physics
+from utils.erp_dataset import DATASETS
 import utils.plot_style  # noqa: F401
 
 BLUE, MODE_COLOR = "#2a78d6", "#9a9a94"
-d = np.genfromtxt(ROOT / "dataset_analysis" / "100k" / "stats" / "erp_frequency_boxplot.csv", delimiter=",", names=True)
+TAG = sys.argv[1] if len(sys.argv) > 1 else "100k"
+spec = DATASETS[TAG]
+physics.set_modal_resolution(*spec["modal_resolution"], verbose=False)
+NUM = {1: "one", 2: "two", 3: "three"}[int(spec["num_res"])]
+N_CONFIG = int(spec["num_configurations"])
+d = np.genfromtxt(ROOT / "dataset_analysis" / TAG / "stats" / "erp_frequency_boxplot.csv", delimiter=",", names=True)
 freq, vmin, lo, q1, med, q3, hi, vmax = (d[k] for k in ("frequency_hz", "min_db", "lower_whisker_db", "q1_db", "median_db",
                                                        "q3_db", "upper_whisker_db", "max_db"))
 modes = [f for f in physics.omega_n / (2 * np.pi) if freq.min() <= f <= freq.max()]
@@ -38,8 +45,8 @@ ax.set_ylabel("ERP (dB)")
 ax.grid(alpha=0.3)
 ax.legend(loc="lower right", fontsize=9, ncol=2)
 ax.set_title(f"ERP distribution at each of the {freq.size} frequency points")
-fig.suptitle("ERP at each frequency over 100,000 configurations: three resonators with varying mass, tuning frequency and position", fontsize=13)
+fig.suptitle(f"ERP at each frequency over {N_CONFIG:,} configurations: {NUM} resonators with varying mass, tuning frequency and position", fontsize=13)
 fig.tight_layout()
 for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
-    fig.savefig(ROOT / "presentation_figures" / f"erp_frequency_band_plot.{ext}", facecolor="white", **kw)
+    fig.savefig(ROOT / "presentation_figures" / f"erp_frequency_band_plot{'' if TAG == '100k' else '_' + TAG}.{ext}", facecolor="white", **kw)
 print("saved")
