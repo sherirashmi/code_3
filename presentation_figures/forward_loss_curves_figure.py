@@ -1,5 +1,5 @@
 """Training and validation loss of the forward operators (100k dataset, 200 epochs): the histories stored in the checkpoints of
-erp_forward/models/100k (*_sorted_phys, GNO_phys, STO_phys, NN_perm). Two panels, y axes "Training loss" / "Validation loss", no titles,
+erp_forward/models/100k (*_sorted_phys, GNO_phys, STO_phys, NN_perm). Validation curves smoothed (9-epoch centred moving average). Two panels, y axes "Training loss" / "Validation loss", no titles,
 one shared legend and the loss equation underneath. Colours and dashed lines as in erp_forward/plots/models/100k/ALL_MODELS.
 """
 import sys
@@ -34,10 +34,20 @@ for label, name, _, _ in MODELS:
     ck = torch.load(ROOT / "erp_forward" / "models" / "100k" / f"{name}.pth", map_location="cpu", weights_only=False)
     hist[label] = {k: np.asarray(ck["history"][k], dtype=float) for k in ("train", "val")}
 
+SMOOTH = 9  # epochs, centred moving average of the validation loss (window shrinks at the ends)
+
+
+def smooth(y, w=SMOOTH):
+    h = w // 2
+    return np.array([y[max(0, i - h): i + h + 1].mean() for i in range(y.size)])
+
+
 fig, axes = plt.subplots(1, 2, figsize=(16, 7.0))
 for ax, key, ylabel in zip(axes, ("train", "val"), ("Training loss", "Validation loss")):
     for label, _, colour, dashed in MODELS:
         y = hist[label][key]
+        if key == "val":
+            y = smooth(y)
         ax.plot(np.arange(1, y.size + 1), y, color=colour, lw=2.0, ls="--" if dashed else "-", label=label)
     ax.set_yscale("log")
     ax.set_xlabel("Epoch")
@@ -48,7 +58,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, fontsize=11, bbox_to_anchor=(0.5, 0.105))
 fig.text(0.5, 0.055, r"$\mathcal{L}=\mathrm{MSE}+0.5\,\mathrm{MSE}_{\Delta}+0.05\sum_{\mathrm{peaks}}\mathrm{SE}$", ha="center", va="center", fontsize=15)
 fig.text(0.5, 0.008, r"MSE: mean squared error of the normalized spectrum; $\mathrm{MSE}_{\Delta}$: the same on first differences (slope); "
-         "SE: squared error at the true peak frequencies, summed.", ha="center", va="center", fontsize=9.5, color="#555555")
+         "SE: squared error at the true peak frequencies, summed. Validation curves: moving average over 9 epochs.", ha="center", va="center", fontsize=9.5, color="#555555")
 fig.subplots_adjust(left=0.065, right=0.99, top=0.97, bottom=0.30, wspace=0.18)
 for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
     fig.savefig(ROOT / "presentation_figures" / f"forward_loss_curves.{ext}", facecolor="white", **kw)
