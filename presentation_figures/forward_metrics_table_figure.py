@@ -18,7 +18,7 @@ from matplotlib.patches import FancyBboxPatch
 import utils.plot_style  # noqa: F401
 
 COMB, TRANS, REL, PER = ("#dbe8f6", "#8fb4d9"), ("#ebe2f5", "#b39ad1"), ("#fde7d3", "#eba46f"), ("#fdf3c9", "#e0c25a")
-GOOD = ("#e1f1de", "#97c791")
+GOOD, BAD = ("#e1f1de", "#97c791"), ("#f8c4c4", "#d96b6b")
 CELL = ("#ffffff", "#c3ccd6")
 TITLE, SUB = "#1c3550", "#4a5a6a"
 CSV = ROOT / "erp_forward" / "plots" / "models" / "100k" / "ALL_MODELS" / "forward_models_metrics.csv"
@@ -45,16 +45,10 @@ data = {r["Model"]: r for r in csv.DictReader(open(CSV))}
 worst = {c: (max if low else min)(float(data[n][c]) for n, *_ in ROWS) for c, _, _, low in COLUMNS}
 
 
-def mix(a, b, t):
-    ca, cb = [int(a[i : i + 2], 16) for i in (1, 3, 5)], [int(b[i : i + 2], 16) for i in (1, 3, 5)]
-    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(ca, cb))
-
-
 def badness(col, value):
-    """White (good) to red (bad), scaled between the best and the worst value of the column."""
+    """One red for bad values: worse than halfway between the best and the worst value of the column."""
     t = (value - best[col]) / (worst[col] - best[col])
-    t = max(0.0, min(1.0, t)) ** 1.6  # middle values stay close to white
-    return (mix("#ffffff", "#f6a5a5", t), mix("#c3ccd6", "#d96b6b", t))
+    return BAD if t > 0.5 else CELL
 
 
 best = {c: (min if low else max)(float(data[n][c]) for n, *_ in ROWS) for c, _, _, low in COLUMNS}
@@ -95,7 +89,7 @@ for i, (key, label, core, color) in enumerate(ROWS):
         ax.text(x0 + MW / 2, ym, fmt.format(value), fontsize=13.5, ha="center", va="center", color=TITLE, zorder=4)
 ax.text(W / 2, 3.6, "Latest 200-epoch models, 100k dataset (10,000 test spectra). Correlation: Pearson $r$ over all points. "
         "Peak RMSE: error at the resonance peaks of the true ERP.", fontsize=10, ha="center", va="center", color=SUB)
-ax.text(W / 2, 1.6, "Best value of each column in green; the worse the value, the redder.", fontsize=10, ha="center", va="center", color=SUB)
+ax.text(W / 2, 1.6, "Best value of each column in green; red: worse than halfway between the best and the worst value of the column.", fontsize=10, ha="center", va="center", color=SUB)
 for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
     fig.savefig(ROOT / "presentation_figures" / f"forward_metrics_table.{ext}", facecolor="white", **kw)
 print("saved")
