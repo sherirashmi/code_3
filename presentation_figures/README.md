@@ -42,3 +42,13 @@ Scripts: `*_common_figure.py`, shared helpers in `common_forms_kit.py`.
 
 The icons use one real 2-resonator example (`inverse_example.npz`).  Scripts: `forward_model_block_diagram.py`,
 `forward_core_list_figure.py`, `idon_ifno_block_diagrams.py`.
+
+## Plate model and equations
+
+| Figure | Content |
+|---|---|
+| `plate_three_resonators` | simply supported plate with the driving force and three sprung-mass resonators (positions are illustrative) |
+| `plate_equations` | equations from the plate and resonator PDEs, through the modal expansion, coupled system and harmonic solve, to the ERP |
+
+Equations follow `utils/physics.py` and `utils/solver.py` (resonator damping c = 1 N s/m, real plate modal frequencies).
+Scripts: `plate_schematic_figure.py`, `plate_equations_figure.py`.
