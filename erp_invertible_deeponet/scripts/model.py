@@ -50,7 +50,7 @@ import torch.nn.functional as F
 
 from erp_forward.scripts.dno import FiLMResidualBlock
 from erp_forward.scripts.fno import FNOBlock1d
-from erp_forward.scripts.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock
+from erp_forward.scripts.neural_operator_utils import MLP, FrequencyRefinement1d, ResidualMLPBlock, erp_spectrum_loss
 from erp_forward.scripts.wno import MultiLevelHaarWaveletBlock1d
 
 LOG_SCALE_CLAMP = 1.0  # max e^1 scaling per coupling: keeps the inverse of off-manifold b bounded
@@ -357,11 +357,16 @@ class InvertibleDeepONet(nn.Module):
         return self.invert_coefficients(b)[0]
 
     # ---- training -------------------------------------------------------------------
-    def training_loss(self, spectrum, design, inverse_weight: float = 1.0, latent_weight: float = 0.1):
+    def training_loss(self, spectrum, design, inverse_weight: float = 1.0, latent_weight: float = 0.1,
+                      slope_weight: float = 0.0, peak_weight: float = 0.0):
+        """Forward term: MSE on the normalised ERP, plus (optional, as for the
+        forward operators) ``slope_weight`` * MSE of the first difference along
+        frequency and ``peak_weight`` * squared error at the true spectrum's peaks."""
         a = design.reshape(design.shape[0], -1)
         psi, psi0 = self.basis()
         pred = self.coefficients(a) @ psi.T + psi0
-        forward_loss = ((pred - spectrum) ** 2).mean()
+        forward_loss = erp_spectrum_loss(pred[..., None], spectrum[..., None],
+                                         slope_weight=slope_weight, peak_weight=peak_weight)
         a_hat, z_hat = self.invert_coefficients(self.least_squares(spectrum, psi, psi0))
         # Huber: robust while the basis is still far from the data early in training
         inverse_loss = nn.functional.smooth_l1_loss(a_hat, a)

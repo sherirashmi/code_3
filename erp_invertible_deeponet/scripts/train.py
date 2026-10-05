@@ -27,6 +27,8 @@ Usage (from the repository root)::
     python -m erp_invertible_deeponet.scripts.train                       # every variant, 200k_2res_18modes
     python -m erp_invertible_deeponet.scripts.train Q64 --epochs 100
     python -m erp_invertible_deeponet.scripts.train Q64 Q128 --dataset 100k   # 3 resonators
+    python -m erp_invertible_deeponet.scripts.train Q64 --retrain --loss erp  # retrain with the ERP loss
+    (--loss erp, the default: MSE + slope + peak term from 80 % of the epochs; --loss mse: plain MSE)
 """
 
 from __future__ import annotations
@@ -55,6 +57,15 @@ TRUNKS = {"Q64-FNO": "fno", "Q64-DCO": "dco", "Q64-DNO": "dno", "Q64-WNO": "wno"
           "Q64-SIREN": "siren"}
 INVERSE_WARMUP = 10
 LR = 5e-4
+# Forward ERP loss, as for the forward operators: MSE + SLOPE_WEIGHT * MSE of the
+# first difference along frequency + PEAK_WEIGHT * squared error at the true
+# spectrum's peaks; the peak term is switched on after PEAK_START_FRACTION of the
+# epochs (the basis first learns the overall spectra, then sharpens the peaks).
+# Validation always uses the final loss (peak term on), so every epoch is scored
+# with the same objective.  loss="mse": plain MSE (the original iDON loss).
+SLOPE_WEIGHT = 0.5
+PEAK_WEIGHT = 0.05
+PEAK_START_FRACTION = 0.8
 
 
 def model_path(name: str, dataset_tag: str = DATASET) -> Path:
@@ -92,9 +103,25 @@ def build(name: str, dataset) -> InvertibleDeepONet:
                               trunk=TRUNKS.get(name, "mlp"))
 
 
-def loss_fn(model, spectrum, design, epoch):
-    weight = min(1.0, (epoch + 1) / INVERSE_WARMUP)
-    return model.training_loss(spectrum, design, inverse_weight=weight)["total"]
+def make_loss_fn(epochs: int, loss: str = "erp"):
+    """Training loss of epoch ``epoch`` (0-based); see SLOPE_WEIGHT / PEAK_WEIGHT."""
+    peak_start = int(round(PEAK_START_FRACTION * epochs))
+
+    def loss_fn(model, spectrum, design, epoch):
+        weight = min(1.0, (epoch + 1) / INVERSE_WARMUP)
+        slope = SLOPE_WEIGHT if loss == "erp" else 0.0
+        peak = PEAK_WEIGHT if loss == "erp" and epoch >= peak_start else 0.0
+        return model.training_loss(spectrum, design, inverse_weight=weight, slope_weight=slope,
+                                   peak_weight=peak)["total"]
+
+    return loss_fn
+
+
+def loss_description(epochs: int, loss: str = "erp") -> str:
+    if loss != "erp":
+        return "forward MSE + w * Huber(inverse) + 0.1 * Huber(latent)"
+    return (f"forward [MSE + {SLOPE_WEIGHT} * slope MSE + {PEAK_WEIGHT} * peak SE (from epoch "
+            f"{int(round(PEAK_START_FRACTION * epochs)) + 1})] + w * Huber(inverse) + 0.1 * Huber(latent)")
 
 
 @torch.no_grad()
@@ -113,7 +140,7 @@ def set_noise_variance(model, loader, max_batches: int = 200) -> float:
 
 
 def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epochs: int = 150, seed: int = 727,
-                  early_stop_epoch: int | None = 50):
+                  early_stop_epoch: int | None = 50, loss: str = "erp"):
     """Train one variant; stops at ``early_stop_epoch`` if the validation loss has
     stopped improving (None: always run all epochs)."""
     print(f"\n{'#' * 70}\nInvertible DeepONet {name}: D = {4 * dataset.num_res}, Q = {4 * dataset.num_res + padding(name, 4 * dataset.num_res)}"
@@ -122,7 +149,8 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
     print(f"{sum(p.numel() for p in model.parameters()):,} parameters")
     path = model_path(name, dataset_tag)
     resume = path.with_suffix(".resume.pt")
-    history = train_one(model, loaders, loss_fn, epochs=epochs, lr=LR, name=f"iDON-{name}", resume_path=resume,
+    print(f"Loss: {loss_description(epochs, loss)}")
+    history = train_one(model, loaders, make_loss_fn(epochs, loss), epochs=epochs, lr=LR, name=f"iDON-{name}", resume_path=resume,
                         early_stop_epoch=early_stop_epoch)
     stopped = history.pop("stopped_early_at", None)
     s2 = set_noise_variance(model, loaders["train"])
@@ -133,7 +161,7 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
                 "num_res": int(dataset.num_res), "history": history, "dataset_tag": dataset_tag,
                 "training_config": {"epochs": epochs, "epochs_run": len(history["val"]), "stopped_early": stopped is not None,
                                     "lr": LR, "inverse_warmup_epochs": INVERSE_WARMUP,
-                                    "loss": "forward MSE + w * Huber(inverse) + 0.1 * Huber(latent)", "seed": seed}}, path)
+                                    "loss": loss_description(epochs, loss), "loss_mode": loss, "seed": seed}}, path)
     resume.unlink(missing_ok=True)
     print(f"Saved {path}")
     plot_loss_curves(history["train"], history["val"], title=f"Invertible DeepONet {name}: training history",
@@ -157,13 +185,16 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default=DATASET, choices=sorted(DATASETS), help="registered dataset tag")
     parser.add_argument("--no-early-stop", action="store_true", help="always train all epochs (default: stop at "
                         "epoch 50 if the validation loss stopped improving)")
+    parser.add_argument("--loss", choices=("erp", "mse"), default="erp",
+                        help="erp: MSE + slope + peak term from 80%% of the epochs (default); mse: plain MSE")
+    parser.add_argument("--retrain", action="store_true", help="retrain variants that already have a checkpoint")
     args = parser.parse_args()
     seed_everything(727)
     dataset, loaders = prepare(args.dataset, batch_size=args.batch_size)
     for variant in args.variants:
-        if model_path(variant, args.dataset).exists():
-            print(f"{model_path(variant, args.dataset)} exists -- skipping {variant}.")
+        if model_path(variant, args.dataset).exists() and not args.retrain:
+            print(f"{model_path(variant, args.dataset)} exists -- skipping {variant} (--retrain to redo).")
             continue
         train_variant(variant, dataset, loaders, dataset_tag=args.dataset, epochs=args.epochs,
-                      early_stop_epoch=None if args.no_early_stop else 50)
+                      early_stop_epoch=None if args.no_early_stop else 50, loss=args.loss)
     print("ALL DONE", flush=True)
