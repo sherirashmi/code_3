@@ -130,20 +130,19 @@ def make_invertible(name="invertible_general_block_diagram"):
     y_bot = 7.0
     icon_erp(ax, cx - 9, y_bot, 18, 13)
     ax.text(cx, y_bot - 3.2, "ERP spectrum", fontsize=13, ha="center", va="center", color=TITLE)
-    # forward (blue, down): one design -> architecture -> ERP
-    arrow(ax, (cx - 3, y_top - 0.6), (cx - 3, ya1 + 0.3), FWD)
+    # forward (blue, down): every design -> architecture -> the same ERP; inverse (orange dashed, up): ERP -> architecture -> designs
+    for i in range(3):
+        xp, xa = cx + (i - 1) * 15.5, cx + (i - 1) * 9.0
+        arrow(ax, (xp - 1.6, y_top - 0.6), (xa - 1.6, ya1 + 0.3), FWD)
+        arrow(ax, (xa + 1.6, ya1 + 0.3), (xp + 1.6, y_top - 0.6), INV, "--")
     arrow(ax, (cx - 3, ya0 - 0.3), (cx - 3, y_bot + 13.4), FWD)
-    # inverse (orange dashed, up): ERP -> architecture -> several designs
     arrow(ax, (cx + 3, y_bot + 14.2), (cx + 3, ya0 - 0.3), INV, "--")
-    arrow(ax, (cx - 9, ya1 + 0.3), (cx - 15.5, y_top - 0.6), INV, "--")
-    arrow(ax, (cx + 3, ya1 + 0.3), (cx + 3, y_top - 0.6), INV, "--")
-    arrow(ax, (cx + 9, ya1 + 0.3), (cx + 15.5, y_top - 0.6), INV, "--")
     # key (right of the arrows)
     arrow(ax, (33.0, 25.0), (38.0, 25.0), FWD)
     ax.text(39.0, 25.0, "forward", fontsize=11.5, color=FWD, ha="left", va="center")
     arrow(ax, (38.0, 21.0), (33.0, 21.0), INV, "--")
     ax.text(39.0, 21.0, "inverse", fontsize=11.5, color=INV, ha="left", va="center")
-    ax.text(W / 2, 0.9, "forward: one design gives one ERP;  inverse: one ERP gives several designs", fontsize=10.5, ha="center", va="center", color=SUB)
+    ax.text(W / 2, 0.9, "forward: every design gives the same ERP;  inverse: that ERP gives several designs", fontsize=10.5, ha="center", va="center", color=SUB)
     for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
         fig.savefig(ROOT / "presentation_figures" / f"{name}.{ext}", facecolor="white", **kw)
     plt.close(fig)
