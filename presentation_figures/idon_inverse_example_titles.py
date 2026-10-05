@@ -30,7 +30,7 @@ OUT_WIDTH = 3000
 TITLE_SIZE = 14
 
 
-def retitled(variant: str) -> Image.Image:
+def retitled(variant: str, title: str | None) -> Image.Image:
     img = Image.open(BASE / variant / f"inverse_example_{EXAMPLE}.png").convert("RGB")
     ink = np.asarray(img).min(axis=2) < 245
     W = img.width
@@ -51,17 +51,18 @@ def retitled(variant: str) -> Image.Image:
     out = img.copy()
     white = Image.new("RGB", (cmax - cmin + 24, h), "white")
     out.paste(white, (cmin - 12, nxt))
-    fig = plt.figure(figsize=(white.width * 1.6 / DPI, h / DPI), dpi=DPI)
-    fig.text(0.5, 0.5, TITLES[variant], fontsize=TITLE_SIZE, ha="center", va="center")
-    fig.canvas.draw()
-    strip = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3])
-    plt.close(fig)
-    cx = (cmin + cmax) // 2
-    out.paste(strip, (cx - strip.width // 2, nxt))
+    if title is not None:
+        fig = plt.figure(figsize=(white.width * 1.6 / DPI, h / DPI), dpi=DPI)
+        fig.text(0.5, 0.5, title, fontsize=TITLE_SIZE, ha="center", va="center")
+        fig.canvas.draw()
+        strip = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3])
+        plt.close(fig)
+        cx = (cmin + cmax) // 2
+        out.paste(strip, (cx - strip.width // 2, nxt))
     return out.crop((0, nxt - 30, W, img.height))  # the old figure title is cropped away
 
 
-panels = [retitled(v) for v in TITLES]
+panels = [retitled(v, TITLES[v]) for v in TITLES]
 panels = [p.resize((OUT_WIDTH, round(p.height * OUT_WIDTH / p.width)), Image.LANCZOS) for p in panels]
 canvas = Image.new("RGB", (OUT_WIDTH, sum(p.height for p in panels)), "white")
 y = 0
@@ -70,3 +71,9 @@ for p in panels:
     y += p.height
 canvas.save(ROOT / "presentation_figures" / "idon_inverse_q64_vs_q64erp.png", optimize=True)
 print("saved", canvas.size)
+
+# Q64-ERP alone, without any title above the plots
+single = retitled("Q64-ERP", None)
+single = single.resize((OUT_WIDTH, round(single.height * OUT_WIDTH / single.width)), Image.LANCZOS)
+single.save(ROOT / "presentation_figures" / "idon_inverse_q64erp.png", optimize=True)
+print("saved single", single.size)
