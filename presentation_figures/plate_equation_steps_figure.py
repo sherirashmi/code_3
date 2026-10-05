@@ -25,8 +25,8 @@ STEPS = {
         r"$D\nabla^4 w+\rho h\,\ddot w=f_d(t)\,\delta(x-x_d)\,\delta(y-y_d)-\sum_{i=1}^{3}\delta(x-x_i)\,\delta(y-y_i)\,\left[k_i(w-u_i)+c_i(\dot w-\dot u_i)\right]$",
         r"$m_i\ddot u_i+c_i(\dot u_i-\dot w_i)+k_i(u_i-w_i)=0,\qquad w_i=w(x_i,y_i,t),\qquad i=1,2,3$",
     ],
-    "step2_modal_expansion": [
-        r"$w(x,y,t)=\sum_{m,n}q_{mn}(t)\,\phi_{mn}(x,y),\qquad \phi_{mn}=\dfrac{2}{\sqrt{\rho h L_xL_y}}\,\sin\dfrac{m\pi x}{L_x}\,\sin\dfrac{n\pi y}{L_y}$",
+    "step2_mode_shapes_and_frequencies": [
+        r"$\phi_{mn}=\dfrac{2}{\sqrt{\rho h L_xL_y}}\,\sin\dfrac{m\pi x}{L_x}\,\sin\dfrac{n\pi y}{L_y}$",
         r"$\omega_{mn}=\sqrt{\dfrac{D}{\rho h}}\left[\left(\dfrac{m\pi}{L_x}\right)^2+\left(\dfrac{n\pi}{L_y}\right)^2\right],\qquad N$ modes",
     ],
     "step3_coupled_modal_system": [
