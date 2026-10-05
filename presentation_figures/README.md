@@ -37,6 +37,7 @@ Scripts: `*_common_figure.py`, shared helpers in `common_forms_kit.py`.
 |---|---|
 | `forward_model_block_diagram`, `forward_core_architectures` | forward model and the core operation of each architecture |
 | `idon_block_diagram` | Invertible DeepONet (Q8, Q64): RealNVP and basis blocks, forward and inverse arrows |
+| `invertible_gate_networks` | the gate network L of each invertible operator (list, same style as the forward core list) |
 | `ifno_family_block_diagram` | invertible coupling-flow operators (iFNO and variants): lift, coupling stack with gate L, readout |
 
 The icons use one real 2-resonator example (`inverse_example.npz`).  Scripts: `forward_model_block_diagram.py`,
