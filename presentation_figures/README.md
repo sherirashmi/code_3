@@ -62,3 +62,11 @@ Scripts: `plate_schematic_figure.py`, `plate_equation_steps_figure.py`.
 | `plate_demo_3_erp_sweep` | ERP over 10-160 Hz with the frequency of the field plots marked |
 
 Script: `plate_demo_three_pictures.py` (optional argument: the frequency in Hz; solver `utils/solver.py`, 150 modes).
+
+## Training loss
+
+| Figure | Content |
+|---|---|
+| `loss_function` | forward-operator loss: MSE + 0.5 slope MSE + 0.05 peak squared error (`erp_spectrum_loss`, normalised ERP; peaks = local maxima of the true spectrum) |
+
+Script: `loss_equation_figure.py`. The committed invertible DeepONet Q8/Q64 checkpoints were trained with plain MSE.
