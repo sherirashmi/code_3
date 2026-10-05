@@ -1,9 +1,8 @@
-"""DCO trained with the peak term from the first epoch (erp_forward/models/100k/dco.pth) versus from 80 % of the
-epochs (erp_forward/models/experiments/dco_variants/dco_staged.pth), on the 100k dataset's test split.
-
-Both checkpoints were identified from the repo's peak_term_evolution plots: on the first test configuration they give
-the plot's errors (12.168 and 15.719 dB^2). Output: the first N_CONFIGS test configurations as spectra, and metrics over
-the whole test split (RMSE, mean absolute error at every true resonance peak, at the tallest peak).
+"""DCO trained with no peak term (erp_forward/models/legacy/dco.pth), with the peak term from the first epoch
+(erp_forward/models/100k/dco.pth) and with the staged peak term (erp_forward/models/100k/dco_sorted_phys.pth, 200 epochs),
+all on the 100k dataset's test split. Output: the first N_CONFIGS test configurations as spectra, and metrics over the whole
+test split (RMSE, mean absolute error at every true resonance peak, at the tallest peak).
+Note: the staged model also uses sorted resonators and physical features and 200 epochs, the other two do not.
 """
 import json
 import sys
@@ -29,8 +28,9 @@ from utils.support import device
 N_CONFIGS = 8
 FILES = ["datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth", "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth"]
 MODELS = {  # label -> (checkpoint, colour)
+    "no peak term": ("erp_forward/models/legacy/dco.pth", "#7f7f7f"),
     "peak term from the first epoch": ("erp_forward/models/100k/dco.pth", "#d62728"),
-    "peak term from 80% of the epochs": ("erp_forward/models/experiments/dco_variants/dco_staged.pth", "#2ca02c"),
+    "peak term from 80% of the epochs (staged)": ("erp_forward/models/100k/dco_sorted_phys.pth", "#2ca02c"),
 }
 OUT = ROOT / "presentation_figures"
 
@@ -42,7 +42,7 @@ def predict(checkpoint):
     ids = np.asarray(ps["selected_source_ids"])
     ds, loaders = prepare_operator_data(num_configurations=int(ids.size), batch_size=256, dataset_file=FILES,
                                         preprocessing_state=ps, verbose=False)
-    model = build_operator_model(dco.build_model, ds.num_res, ck["model_config"]).to(device)
+    model = build_operator_model(dco.build_model, ds.num_res, ck["model_config"], norm_params=ds.norm_params).to(device)
     model.load_state_dict(ck["model_state_dict"])
     model.eval()
     preds, trues, cfgs = [], [], []
@@ -67,6 +67,8 @@ def metrics(pred, true):
 
 results = {label: predict(path) for label, (path, _) in MODELS.items()}
 true, cfg, freq = next(iter(results.values()))[1:]
+for label, r in results.items():  # the three models must be scored on the same ground-truth spectra
+    assert np.allclose(r[1], true, atol=1e-3), f"{label}: test split differs from the first model"
 stats = {label: metrics(p, true) for label, (p, *_) in results.items()}
 (OUT / "peak_schedule_metrics.json").write_text(json.dumps(stats, indent=2))
 for label, m in stats.items():
@@ -78,7 +80,7 @@ for i, ax in enumerate(axes.ravel()):
     for label, (path, colour) in MODELS.items():
         mse = float(((results[label][0][i] - true[i]) ** 2).mean())
         ax.plot(freq, results[label][0][i], color=colour, lw=1.6, ls="--", label=f"{label}" if i == 0 else None)
-        ax.text(0.99, 0.06 + 0.12 * list(MODELS).index(label), rf"MSE $={mse:.1f}$", transform=ax.transAxes, ha="right",
+        ax.text(0.99, 0.05 + 0.11 * list(MODELS).index(label), rf"MSE $={mse:.1f}$", transform=ax.transAxes, ha="right",
                 color=colour, fontsize=10)
     for ft in cfg[i][:, 2]:
         ax.axvline(ft, color="#c2412c", ls=":", lw=0.9)
@@ -87,7 +89,7 @@ for i, ax in enumerate(axes.ravel()):
     ax.set_ylabel("ERP (dB)")
 for ax in axes[-1]:
     ax.set_xlabel("Frequency (Hz)")
-fig.legend(*axes.ravel()[0].get_legend_handles_labels(), loc="upper center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 1.0))
+fig.legend(*axes.ravel()[0].get_legend_handles_labels(), loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.0))
 fig.tight_layout(rect=[0, 0, 1, 0.965])
 for ext, kw in (("png", dict(dpi=170)), ("pdf", {})):
     fig.savefig(OUT / f"peak_schedule_comparison.{ext}", facecolor="white", **kw)
