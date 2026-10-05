@@ -70,3 +70,5 @@ Script: `plate_demo_three_pictures.py` (optional argument: the frequency in Hz; 
 | `loss_function` | forward-operator loss: MSE + 0.5 slope MSE + 0.05 peak squared error (`erp_spectrum_loss`, normalised ERP; peaks = local maxima of the true spectrum) |
 
 Script: `loss_equation_figure.py`. The committed invertible DeepONet Q8/Q64 checkpoints were trained with plain MSE.
+
+| `idon_loss_function` | Invertible DeepONet loss with the ERP option (Q64-ERP): MSE + 0.5 slope + peak term from 80 % of the epochs + inverse and latent Huber terms; script `idon_loss_equation_figure.py` |
