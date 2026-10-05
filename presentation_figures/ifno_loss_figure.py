@@ -18,15 +18,16 @@ FS = 17.0  # one font size for every equation in every image
 PAD_X, PAD_Y, GAP = 26.0, 18.0, 16.0  # points
 STEPS = {
     "ifno_loss_function": [
-        r"Stage 3 (all parts together):  $\mathcal{L}=\mathcal{L}_{\mathrm{fwd}}+\mathcal{L}_{\mathrm{inv}}+\mathcal{L}_{\mathrm{dir},a}+\mathcal{L}_{\mathrm{dir},y}+\mathcal{L}_{\mathrm{VAE}}$",
         r"Stage 1 (invertible blocks only):  $\mathcal{L}=\mathcal{L}_{\mathrm{fwd}}+\mathcal{L}_{\mathrm{inv}}+\mathcal{L}_{\mathrm{dir},a}+\mathcal{L}_{\mathrm{dir},y}$",
-        r"Stage 2 (VAE only):  $\mathcal{L}=\mathcal{L}_{\mathrm{VAE}}=\mathcal{L}_{\mathrm{recon}}+\beta\,\mathcal{L}_{\mathrm{KL}},\qquad \beta=0.05$",
-        r"$\mathcal{L}_{\mathrm{fwd}}=\mathrm{mean}\,(\hat y-y)^2,\qquad \mathcal{L}_{\mathrm{inv}}=\mathrm{mean}\,(\hat a-a)^2$",
-        r"$\mathcal{L}_{\mathrm{dir},y}=\mathrm{mean}\,(\tilde y-y)^2,\qquad \mathcal{L}_{\mathrm{dir},a}=\mathrm{mean}\,(\tilde a-a)^2,\qquad \mathcal{L}_{\mathrm{recon}}=\mathrm{mean}\,(a_{\mathrm{rec}}-a)^2$",
-        r"$a$: design;  $y$: ERP;  $\mathcal{L}_{\mathrm{KL}}$: distance of the VAE latent distribution from $\mathcal{N}(0,1)$",
-        r"$\hat y$, $\hat a$: ERP and design predicted through the invertible blocks (forward and inverse)",
-        r"$\tilde y$, $\tilde a$: ERP and design read out directly from the lifted ERP and design (blocks skipped)",
-        r"$a_{\mathrm{rec}}$: design reconstructed by the VAE",
+        r"Stage 2 (VAE only):  $\mathcal{L}=\mathcal{L}_{\mathrm{recon}}+\beta\,\mathcal{L}_{\mathrm{KL}},\qquad \beta=0.05$",
+        r"Stage 3 (all parts together):  $\mathcal{L}=\mathcal{L}_{\mathrm{fwd}}+\mathcal{L}_{\mathrm{inv}}+\mathcal{L}_{\mathrm{dir},a}+\mathcal{L}_{\mathrm{dir},y}+\mathcal{L}_{\mathrm{recon}}+\beta\,\mathcal{L}_{\mathrm{KL}}$",
+        r"$\mathcal{L}_{\mathrm{fwd}}$: ERP predicted from the design, against the true ERP",
+        r"$\mathcal{L}_{\mathrm{inv}}$: design estimated from the ERP, against the true design",
+        r"$\mathcal{L}_{\mathrm{dir},a}$: design read out directly from the design encoding (blocks skipped), against the true design",
+        r"$\mathcal{L}_{\mathrm{dir},y}$: ERP read out directly from the ERP encoding (blocks skipped), against the true ERP",
+        r"$\mathcal{L}_{\mathrm{recon}}$: design rebuilt by the VAE, against the true design",
+        r"$\mathcal{L}_{\mathrm{KL}}$: keeps the VAE latent distribution close to a standard normal distribution $\mathcal{N}(0,1)$",
+        r"All other terms are mean squared errors.",
     ],
 }
 
