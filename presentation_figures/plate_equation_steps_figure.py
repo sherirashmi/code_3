@@ -30,16 +30,16 @@ STEPS = {
         r"$\omega_{mn}=\sqrt{\dfrac{D}{\rho h}}\left[\left(\dfrac{m\pi}{L_x}\right)^2+\left(\dfrac{n\pi}{L_y}\right)^2\right],\qquad N$ modes",
     ],
     "step3_coupled_modal_system": [
-        r"$\mathbf{M}\ddot{\mathbf{x}}+\mathbf{C}\dot{\mathbf{x}}+\mathbf{K}\mathbf{x}=\mathbf{f},\qquad \mathbf{x}=[q_1,\ldots,q_N,\,u_1,u_2,u_3]^{\top},\qquad \mathbf{M}=\mathrm{diag}(1,\ldots,1,\,m_1,m_2,m_3)$",
+        r"$\mathbf{M}\ddot{\mathbf{w}}+\mathbf{C}\dot{\mathbf{w}}+\mathbf{K}\mathbf{w}=\mathbf{f},\qquad \mathbf{w}=[q_1,\ldots,q_N,\,u_1,u_2,u_3]^{\top},\qquad \mathbf{M}=\mathrm{diag}(1,\ldots,1,\,m_1,m_2,m_3)$",
         r"$\mathbf{K}_{qq}=\mathrm{diag}(\omega_{mn}^2)+\sum_{i}k_i\,\vec\phi_i\vec\phi_i^{\top},\qquad \mathbf{K}_{qu_i}=-k_i\vec\phi_i,\qquad \mathbf{K}_{u_iu_i}=k_i,\qquad \vec\phi_i=[\phi_{mn}(x_i,y_i)]$",
         r"$\mathbf{C}$: the same with $c_i$ in place of $k_i$ and without the $\omega_{mn}^2$ term;$\qquad$ $\mathbf{f}=[F_0\,\phi_{mn}(x_d,y_d),\,0,0,0]^{\top}$",
     ],
     "step4_harmonic_response": [
-        r"$\left(\mathbf{K}+j\omega\,\mathbf{C}-\omega^2\mathbf{M}\right)\hat{\mathbf{x}}(\omega)=\mathbf{f}$",
+        r"$\left(\mathbf{K}+j\omega\,\mathbf{C}-\omega^2\mathbf{M}\right)\hat{\mathbf{w}}(\omega)=\mathbf{f}$",
     ],
     "step5_velocity_power_erp": [
-        r"$\hat w(x,y,\omega)=\sum_{m,n}\hat q_{mn}\,\phi_{mn},\qquad \hat v=j\omega\,\hat w$",
-        r"$P=\dfrac{1}{2}\,\rho_L\,c_L\,|\hat v|^2$",
+        r"$\hat{\mathbf{v}}=j\omega\,\hat{\mathbf{w}}$",
+        r"$P=\dfrac{1}{2}\,\rho_L\,c_L\,|\hat{\mathbf{v}}|^2$",
         r"$\mathrm{ERP}(f)=10\log_{10}\dfrac{P(f)}{P_{\mathrm{ref}}}$",
     ],
 }
