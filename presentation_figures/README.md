@@ -30,3 +30,14 @@ Sources: parameter counts and training settings from the committed checkpoints (
 `erp_inverse/models/100k_2res_grid_18modes`, `erp_invertible_deeponet/models/200k_2res_18modes`) and from
 models built with the code's recommended options (coupling-flow operators); structures from each class's `forward()`.
 Scripts: `*_common_figure.py`, shared helpers in `common_forms_kit.py`.
+
+## Minimal block diagrams (light colours, plate and ERP icons)
+
+| Figure | Content |
+|---|---|
+| `forward_model_block_diagram`, `forward_core_architectures` | forward model and the core operation of each architecture |
+| `idon_block_diagram` | Invertible DeepONet (Q8, Q64): RealNVP and basis blocks, forward and inverse arrows |
+| `ifno_family_block_diagram` | invertible coupling-flow operators (iFNO and variants): lift, coupling stack with gate L, readout |
+
+The icons use one real 2-resonator example (`inverse_example.npz`).  Scripts: `forward_model_block_diagram.py`,
+`forward_core_list_figure.py`, `idon_ifno_block_diagrams.py`.
