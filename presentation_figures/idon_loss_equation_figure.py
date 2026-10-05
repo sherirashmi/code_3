@@ -19,7 +19,7 @@ PAD_X, PAD_Y, GAP = 26.0, 18.0, 16.0  # points
 STEPS = {
     "idon_loss_function": [
         r"$\mathcal{L}_e=\mathcal{L}_{\mathrm{MSE}}+\lambda_s\,\mathcal{L}_{\mathrm{slope}}+\lambda_p(e)\,\mathcal{L}_{\mathrm{peak}}+w(e)\,\mathcal{L}_{\mathrm{inv}}+0.1\,\mathcal{L}_{\mathrm{lat}},\qquad \lambda_s=0.5$",
-        r"$\lambda_p(e)=0.05\ \ \mathrm{for}\ \ e\geq 0.8\,E,\ \ \mathrm{else}\ \ 0,\qquad w(e)=\min\!\left(1,\dfrac{e+1}{10}\right)$",
+        r"$\lambda_p(e)=0.05$ if epoch $e>0.8\times$ total epochs, else $0$,$\qquad$ $w(e)=\min\!\left(1,\dfrac{e+1}{10}\right)$",
         r"$\mathcal{L}_{\mathrm{MSE}},\ \mathcal{L}_{\mathrm{slope}},\ \mathcal{L}_{\mathrm{peak}}$ on the ERP $\hat y=\Psi\,\mathbf{b}(\mathbf{a})+\psi_0$, as in the forward loss",
         r"$\mathcal{L}_{\mathrm{inv}}=\mathrm{Huber}(\hat{\mathbf{a}},\mathbf{a}),\qquad (\hat{\mathbf{a}},\hat{\mathbf{z}})=T^{-1}(\mathbf{b}^{*}),\qquad \mathbf{b}^{*}=\dfrac{1}{F}\,\Psi^{\top}(y-\psi_0)$",
         r"$\mathcal{L}_{\mathrm{lat}}=\mathrm{Huber}(\hat{\mathbf{z}},\mathbf{0})$",
