@@ -48,7 +48,7 @@ The icons use one real 2-resonator example (`inverse_example.npz`).  Scripts: `f
 | Figure | Content |
 |---|---|
 | `plate_three_resonators` | simply supported plate with the driving force and three sprung-mass resonators (positions are illustrative) |
-| `plate_equations` | equations from the plate and resonator PDEs, through the modal expansion, coupled system and harmonic solve, to the ERP |
+| `plate_equation_step1_governing_equations` ... `plate_equation_step5_velocity_power_erp` | the equations from the plate and resonator PDEs, through the modal expansion, coupled system and harmonic solve, to the ERP, one image per step, same font size |
 
 Equations follow `utils/physics.py` and `utils/solver.py` (resonator damping c = 1 N s/m, real plate modal frequencies).
-Scripts: `plate_schematic_figure.py`, `plate_equations_figure.py`.
+Scripts: `plate_schematic_figure.py`, `plate_equation_steps_figure.py`.
