@@ -39,8 +39,8 @@ STEPS = {
     ],
     "step5_velocity_power_erp": [
         r"$\hat{\mathbf{v}}=j\omega\,\hat{\mathbf{w}}$",
-        r"$P=\dfrac{1}{2}\,\rho_L\,c_L\,|\hat{\mathbf{v}}|^2$",
-        r"$\mathrm{ERP}(f)=10\log_{10}\dfrac{P(f)}{P_{\mathrm{ref}}}$",
+        r"$P=\dfrac{1}{2}\,\rho_L\,c_L\int_{A}|\hat{\mathbf{v}}|^2\,dA$",
+        r"$\mathrm{ERP}(f)=10\log_{10}\dfrac{P(f)}{P_{\mathrm{ref}}},\qquad P_{\mathrm{ref}}=10^{-12}\ \mathrm{W}$",
     ],
 }
 
