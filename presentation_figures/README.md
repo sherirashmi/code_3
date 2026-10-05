@@ -106,3 +106,5 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 | `invertible_best16_iFNO`, `..._iLNO`, `..._iSTO`, `..._iGNO`, `invertible_best16_plate` | best of 16 sampled designs on test configuration 3: one ERP graph per model (solver-checked design against the target ERP, true tuning frequencies dashed) and one plate with the true resonators and the best designs of all four models; script `invertible_models_best_of_16_separate.py` |
 
 | `forward_general_block_diagram`, `inverse_general_block_diagram` | general top-to-bottom block diagrams (input, architecture, output): forward is one design to one ERP, inverse is one ERP to several possible designs (many designs share one ERP); script `general_block_diagrams.py` |
+
+| `erp_frequency_band_plot` | ERP distribution at each of the 301 frequency points over the 100k three-resonator dataset (panel (a) of `dataset_analysis/100k/plots/erp_frequency_boxplot.png` alone, no "(a)" and no x-axis label), drawn from `dataset_analysis/100k/stats/erp_frequency_boxplot.csv`; script `erp_frequency_band_plot.py` |
