@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="707.92pt" height="185.36pt" viewBox="0 0 707.92 185.36" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="707.92pt" height="124pt" viewBox="0 0 707.92 124" xmlns="http://www.w3.org/2000/svg" version="1.1">
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-10-05T18:52:26.093077</dc:date>
+    <dc:date>2026-10-05T18:55:07.835655</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -21,8 +21,8 @@
  </defs>
  <g id="figure_1">
   <g id="patch_1">
-   <path d="M 0 185.36 
-L 707.92 185.36 
+   <path d="M 0 124 
+L 707.92 124 
 L 707.92 0 
 L 0 0 
 z
@@ -30,17 +30,17 @@ z
   </g>
   <g id="axes_1">
    <g id="patch_2">
-    <path d="M 15.1 180.26 
-L 692.82 180.26 
-Q 702.82 180.26 702.82 170.26 
+    <path d="M 15.1 118.9 
+L 692.82 118.9 
+Q 702.82 118.9 702.82 108.9 
 L 702.82 15.1 
 Q 702.82 5.1 692.82 5.1 
 L 15.1 5.1 
 Q 5.1 5.1 5.1 15.1 
-L 5.1 170.26 
-Q 5.1 180.26 15.1 180.26 
+L 5.1 108.9 
+Q 5.1 118.9 15.1 118.9 
 z
-" clip-path="url(#p90526fcbcf)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
+" clip-path="url(#p9b1fd233dc)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
     <!-- $D\nabla^4 w+\rho h\,\ddot w=f_d(t)\,\delta(x-x_d)\,\delta(y-y_d)-\sum_{i=1}^{3}\delta(x-x_i)\,\delta(y-y_i)\,\left[k_i(w-u_i)+c_i(\dot w-\dot u_i)\right]$ -->
@@ -1318,183 +1318,11 @@ z
      <use xlink:href="#Cmr10-6e" transform="translate(3049.915318 0)"/>
     </g>
    </g>
-   <g id="text_3">
-    <!-- $D=\dfrac{Eh^3}{12(1-\nu^2)},\qquad k_i=m_i\,(2\pi f_{t,i})^2$ -->
-    <g style="fill: #111111" transform="translate(217.28 144.99) scale(0.17 -0.17)">
-     <defs>
-      <path id="Cmmi10-6f" d="M 300 0 
-Q 238 0 238 84 
-Q 241 100 250 139 
-Q 259 178 276 201 
-Q 294 225 319 225 
-Q 709 225 863 269 
-Q 947 297 984 441 
-L 1863 3956 
-Q 1875 4019 1875 4044 
-Q 1875 4113 1797 4122 
-Q 1678 4147 1338 4147 
-Q 1275 4147 1275 4231 
-Q 1278 4247 1287 4286 
-Q 1297 4325 1314 4348 
-Q 1331 4372 1356 4372 
-L 4825 4372 
-Q 4891 4372 4891 4288 
-L 4738 2963 
-Q 4738 2947 4714 2926 
-Q 4691 2906 4672 2906 
-L 4616 2906 
-Q 4550 2906 4550 2988 
-Q 4588 3300 4588 3450 
-Q 4588 3706 4500 3848 
-Q 4413 3991 4267 4053 
-Q 4122 4116 3945 4131 
-Q 3769 4147 3481 4147 
-L 2753 4147 
-Q 2578 4147 2522 4117 
-Q 2466 4088 2419 3928 
-L 2034 2381 
-L 2534 2381 
-Q 2859 2381 3025 2426 
-Q 3191 2472 3287 2615 
-Q 3384 2759 3463 3072 
-Q 3469 3094 3486 3111 
-Q 3503 3128 3525 3128 
-L 3584 3128 
-Q 3647 3128 3647 3047 
-L 3250 1466 
-Q 3238 1409 3188 1409 
-L 3128 1409 
-Q 3066 1409 3066 1491 
-Q 3128 1747 3128 1869 
-Q 3128 2056 2959 2106 
-Q 2791 2156 2509 2156 
-L 1978 2156 
-L 1544 416 
-Q 1516 338 1516 275 
-Q 1516 225 1734 225 
-L 2509 225 
-Q 2972 225 3259 297 
-Q 3547 369 3736 526 
-Q 3925 684 4062 928 
-Q 4200 1172 4397 1638 
-Q 4409 1678 4453 1678 
-L 4513 1678 
-Q 4538 1678 4556 1656 
-Q 4575 1634 4575 1606 
-Q 4575 1594 4569 1581 
-L 3909 38 
-Q 3897 0 3859 0 
-L 300 0 
-z
-" transform="scale(0.015625)"/>
-      <path id="Cmmi10-22" d="M 403 0 
-Q 325 0 325 84 
-L 872 2259 
-Q 897 2369 903 2431 
-Q 903 2534 488 2534 
-Q 422 2534 422 2619 
-Q 425 2634 436 2675 
-Q 447 2716 464 2737 
-Q 481 2759 513 2759 
-L 1375 2828 
-Q 1453 2828 1453 2747 
-L 825 238 
-Q 1331 406 1757 765 
-Q 2184 1125 2479 1612 
-Q 2775 2100 2906 2625 
-Q 2931 2716 3006 2772 
-Q 3081 2828 3175 2828 
-Q 3259 2828 3312 2778 
-Q 3366 2728 3366 2644 
-Q 3366 2541 3281 2330 
-Q 3197 2119 3116 1953 
-Q 2863 1450 2444 1031 
-Q 2181 769 1879 566 
-Q 1578 363 1250 220 
-Q 922 78 556 0 
-L 403 0 
-z
-" transform="scale(0.015625)"/>
-      <path id="Cmmi10-24" d="M 647 109 
-Q 647 144 672 213 
-Q 850 584 1004 942 
-Q 1159 1300 1282 1639 
-Q 1406 1978 1509 2363 
-L 1100 2363 
-Q 866 2363 662 2216 
-Q 459 2069 325 1844 
-Q 313 1819 288 1819 
-L 213 1819 
-Q 153 1819 153 1881 
-Q 153 1894 166 1919 
-Q 375 2275 614 2517 
-Q 853 2759 1153 2759 
-L 3475 2759 
-Q 3541 2759 3587 2715 
-Q 3634 2672 3634 2597 
-Q 3634 2503 3567 2433 
-Q 3500 2363 3406 2363 
-L 2591 2363 
-Q 2488 1859 2478 1381 
-Q 2478 766 2694 269 
-Q 2713 231 2713 191 
-Q 2713 122 2672 62 
-Q 2631 3 2567 -34 
-Q 2503 -72 2431 -72 
-Q 2263 -72 2200 203 
-Q 2138 478 2138 738 
-Q 2138 1103 2200 1442 
-Q 2263 1781 2400 2363 
-L 1703 2363 
-Q 1197 313 1094 103 
-Q 1003 -72 844 -72 
-Q 766 -72 706 -20 
-Q 647 31 647 109 
-z
-" transform="scale(0.015625)"/>
-     </defs>
-     <use xlink:href="#Cmmi10-3b" transform="translate(0 0.433408)"/>
-     <use xlink:href="#Cmr10-29" transform="translate(102.714901 0.433408)"/>
-     <use xlink:href="#Cmmi10-6f" transform="translate(335.650505 68.084203)"/>
-     <use xlink:href="#Cmmi10-5f" transform="translate(409.429802 68.084203)"/>
-     <use xlink:href="#Cmr10-6e" transform="translate(483.599828 109.373437) scale(0.7)"/>
-     <use xlink:href="#Cmr10-64" transform="translate(206.650505 -84.357388)"/>
-     <use xlink:href="#Cmr10-31" transform="translate(256.650505 -84.357388)"/>
-     <use xlink:href="#Cmr10-77" transform="translate(306.650505 -84.357388)"/>
-     <use xlink:href="#Cmr10-64" transform="translate(345.468864 -84.357388)"/>
-     <use xlink:href="#Cmsy10-11" transform="translate(415.468922 -84.357388)"/>
-     <use xlink:href="#Cmmi10-22" transform="translate(513.154526 -84.357388)"/>
-     <use xlink:href="#Cmr10-31" transform="translate(573.82877 -43.068154) scale(0.7)"/>
-     <use xlink:href="#Cmr10-44" transform="translate(614.549186 -84.357388)"/>
-     <use xlink:href="#Cmmi10-2c" transform="translate(659.617545 0.433408)"/>
-     <use xlink:href="#Cmmi10-3e" transform="translate(907.303721 0.433408)"/>
-     <use xlink:href="#Cmmi10-37" transform="translate(959.305674 -14.566553) scale(0.7)"/>
-     <use xlink:href="#Cmr10-29" transform="translate(1009.122827 0.433408)"/>
-     <use xlink:href="#Cmmi10-45" transform="translate(1106.808431 0.433408)"/>
-     <use xlink:href="#Cmmi10-37" transform="translate(1194.6014 -14.566553) scale(0.7)"/>
-     <use xlink:href="#Cmr10-77" transform="translate(1241.085542 0.433408)"/>
-     <use xlink:href="#Cmr10-31" transform="translate(1279.903902 0.433408)"/>
-     <use xlink:href="#Cmmi10-24" transform="translate(1329.903902 0.433408)"/>
-     <use xlink:href="#Cmmi10-57" transform="translate(1386.886324 0.433408)"/>
-     <use xlink:href="#Cmmi10-30" transform="translate(1435.763277 -14.566553) scale(0.7)"/>
-     <use xlink:href="#Cmmi10-2c" transform="translate(1461.022066 -14.566553) scale(0.7)"/>
-     <use xlink:href="#Cmmi10-37" transform="translate(1494.401989 -14.566553) scale(0.7)"/>
-     <use xlink:href="#Cmr10-44" transform="translate(1524.219084 0.433408)"/>
-     <use xlink:href="#Cmr10-31" transform="translate(1567.041734 41.722643) scale(0.7)"/>
-     <path d="M 206.650505 22.308408 
-L 206.650505 28.558408 
-L 653.367545 28.558408 
-L 653.367545 22.308408 
-L 206.650505 22.308408 
-z
-"/>
-    </g>
-   </g>
   </g>
  </g>
  <defs>
-  <clipPath id="p90526fcbcf">
-   <rect x="3.6" y="3.6" width="700.72" height="178.16"/>
+  <clipPath id="p9b1fd233dc">
+   <rect x="3.6" y="3.6" width="700.72" height="116.8"/>
   </clipPath>
  </defs>
 </svg>

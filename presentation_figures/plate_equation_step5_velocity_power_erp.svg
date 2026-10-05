@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-10-05T18:52:27.817519</dc:date>
+    <dc:date>2026-10-05T18:55:09.278991</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -40,7 +40,7 @@ Q 5.1 5.1 5.1 15.1
 L 5.1 170.26 
 Q 5.1 180.26 15.1 180.26 
 z
-" clip-path="url(#pac79671ab1)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
+" clip-path="url(#pbb8acc62ad)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
     <!-- $\hat w(x,y,\omega)=\sum_{m,n}\hat q_{mn}\,\phi_{mn},\qquad \hat v=j\omega\,\hat w$ -->
@@ -1430,7 +1430,7 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="pac79671ab1">
+  <clipPath id="pbb8acc62ad">
    <rect x="3.6" y="3.6" width="327.04" height="178.16"/>
   </clipPath>
  </defs>

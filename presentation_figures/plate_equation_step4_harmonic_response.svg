@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-10-05T18:52:27.518264</dc:date>
+    <dc:date>2026-10-05T18:55:09.026143</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -40,7 +40,7 @@ Q 5.1 5.1 5.1 15.1
 L 5.1 47.54 
 Q 5.1 57.54 15.1 57.54 
 z
-" clip-path="url(#p3cef8d4965)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
+" clip-path="url(#p41b201696d)" style="fill: #ffffff; stroke: #b8c8da; stroke-width: 1.4; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
     <!-- $\left(\mathbf{K}+j\omega\,\mathbf{C}-\omega^2\mathbf{M}\right)\hat{\mathbf{x}}(\omega)=\mathbf{f}$ -->
@@ -494,7 +494,7 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="p3cef8d4965">
+  <clipPath id="p41b201696d">
    <rect x="3.6" y="3.6" width="246.4" height="55.44"/>
   </clipPath>
  </defs>

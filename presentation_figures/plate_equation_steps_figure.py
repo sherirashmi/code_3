@@ -24,11 +24,10 @@ STEPS = {
     "step1_governing_equations": [
         r"$D\nabla^4 w+\rho h\,\ddot w=f_d(t)\,\delta(x-x_d)\,\delta(y-y_d)-\sum_{i=1}^{3}\delta(x-x_i)\,\delta(y-y_i)\,\left[k_i(w-u_i)+c_i(\dot w-\dot u_i)\right]$",
         r"$m_i\ddot u_i+c_i(\dot u_i-\dot w_i)+k_i(u_i-w_i)=0,\qquad w_i=w(x_i,y_i,t),\qquad i=1,2,3$",
-        r"$D=\dfrac{Eh^3}{12(1-\nu^2)},\qquad k_i=m_i\,(2\pi f_{t,i})^2$",
     ],
     "step2_modal_expansion": [
         r"$w(x,y,t)=\sum_{m,n}q_{mn}(t)\,\phi_{mn}(x,y),\qquad \phi_{mn}=\dfrac{2}{\sqrt{\rho h L_xL_y}}\,\sin\dfrac{m\pi x}{L_x}\,\sin\dfrac{n\pi y}{L_y}$",
-        r"$\omega_{mn}=\sqrt{\dfrac{D}{\rho h}}\left[\left(\dfrac{m\pi}{L_x}\right)^2+\left(\dfrac{n\pi}{L_y}\right)^2\right],\qquad N$ modes ($15\times10$, or $6\times3$ for the 18-mode data)",
+        r"$\omega_{mn}=\sqrt{\dfrac{D}{\rho h}}\left[\left(\dfrac{m\pi}{L_x}\right)^2+\left(\dfrac{n\pi}{L_y}\right)^2\right],\qquad N$ modes",
     ],
     "step3_coupled_modal_system": [
         r"$\mathbf{M}\ddot{\mathbf{x}}+\mathbf{C}\dot{\mathbf{x}}+\mathbf{K}\mathbf{x}=\mathbf{f},\qquad \mathbf{x}=[q_1,\ldots,q_N,\,u_1,u_2,u_3]^{\top},\qquad \mathbf{M}=\mathrm{diag}(1,\ldots,1,\,m_1,m_2,m_3)$",
