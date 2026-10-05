@@ -1,6 +1,7 @@
-"""Inverse-design example of the Invertible DeepONet (Q64 and Q64-ERP): only the title strip of the existing evaluation images
-(erp_invertible_deeponet/plots/models/200k_2res_18modes/<variant>/inverse_example_3.png) is replaced, by the loss equation of the model,
-instead of "... test configuration 3". Curves, positions and legends are the untouched original pixels; the two panels are stacked.
+"""Inverse-design example of the Invertible DeepONet (Q64 and Q64-ERP): in the existing evaluation images
+(erp_invertible_deeponet/plots/models/200k_2res_18modes/<variant>/inverse_example_3.png) the figure title ("... test configuration 3") is
+cropped away and the title of the left plot is replaced by the loss equation of the model. Curves, positions and legends are the untouched
+original pixels; the two panels are stacked.
 """
 import sys
 from pathlib import Path
@@ -26,27 +27,38 @@ TITLES = {
 }
 DPI = 295  # of the evaluation images (15 x 5.2 in -> 4427 x 1509 px)
 OUT_WIDTH = 3000
+TITLE_SIZE = 14
 
 
 def retitled(variant: str) -> Image.Image:
     img = Image.open(BASE / variant / f"inverse_example_{EXAMPLE}.png").convert("RGB")
     ink = np.asarray(img).min(axis=2) < 245
+    W = img.width
     rows = np.where(ink.any(axis=1))[0]
     r = int(rows[0])
-    while ink[r + 1].any():  # end of the old title text line
+    while ink[r + 1].any():  # end of the old figure title ("Invertible DeepONet ...: inverse design of test configuration 3")
         r += 1
     nxt = r + 1
-    while not ink[nxt].any():  # start of the next element (the axes titles)
+    while not ink[nxt].any():  # start of the next element: the axes titles
         nxt += 1
-    band = nxt - 4  # rows 0..band hold only the old title
-    fig = plt.figure(figsize=(img.width / DPI, band / DPI), dpi=DPI)
-    fig.text(0.5, 0.5, TITLES[variant], fontsize=15, ha="center", va="center")
-    fig.canvas.draw()
-    strip = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3]).resize((img.width, band))
-    plt.close(fig)
+    frame = nxt
+    while ink[frame, : W // 2].mean() < 0.4:  # top edge of the left axes
+        frame += 1
+    old = ink[nxt : frame - 3, : W // 2]  # old left title "ERP of the designs (checked with the solver)"
+    cols = np.where(old.any(axis=0))[0]
+    cmin, cmax = int(cols.min()), int(cols.max())
+    h = frame - 3 - nxt
     out = img.copy()
-    out.paste(strip, (0, 0))
-    return out
+    white = Image.new("RGB", (cmax - cmin + 24, h), "white")
+    out.paste(white, (cmin - 12, nxt))
+    fig = plt.figure(figsize=(white.width * 1.6 / DPI, h / DPI), dpi=DPI)
+    fig.text(0.5, 0.5, TITLES[variant], fontsize=TITLE_SIZE, ha="center", va="center")
+    fig.canvas.draw()
+    strip = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3])
+    plt.close(fig)
+    cx = (cmin + cmax) // 2
+    out.paste(strip, (cx - strip.width // 2, nxt))
+    return out.crop((0, nxt - 30, W, img.height))  # the old figure title is cropped away
 
 
 panels = [retitled(v) for v in TITLES]

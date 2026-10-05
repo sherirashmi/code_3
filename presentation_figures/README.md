@@ -85,4 +85,4 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `idon_base_loss_function` | loss of the base Invertible DeepONet (plain MSE variants Q8, Q64): MSE + warm-up-weighted inverse Huber term + latent Huber term; script `idon_base_loss_equation_figure.py` |
 
-| `idon_inverse_q64_vs_q64erp` | inverse design example (test configuration 3) of the Invertible DeepONet Q64 and Q64-ERP; the existing evaluation images with only the title strip replaced by each model's loss equation (script `idon_inverse_example_titles.py`) |
+| `idon_inverse_q64_vs_q64erp` | inverse design example (test configuration 3) of the Invertible DeepONet Q64 and Q64-ERP; the existing evaluation images with the figure title cropped away and the title of the left plot replaced by each model's loss equation (script `idon_inverse_example_titles.py`) |
