@@ -1,4 +1,4 @@
-"""Base Invertible DeepONet loss as short equations with simple symbols (same loss as idon_base_loss_function)."""
+"""Invertible DeepONet loss as short equations with simple symbols and the meaning of every symbol: base loss (Q8, Q64) and ERP loss (Q64-ERP: adds slope and peak terms)."""
 import sys
 from pathlib import Path
 
@@ -21,6 +21,19 @@ STEPS = {
         r"$\mathcal{L}_{\mathrm{ERP}}=\mathrm{mean}\,(\hat y-y)^2$",
         r"$\mathcal{L}_{\mathrm{design}}=\mathrm{Huber}(\hat a,\,a),\qquad \mathcal{L}_{\mathrm{pad}}=\mathrm{Huber}(\hat z,\,0)$",
         r"$w=\min\left(1,\ (e+1)/10\right)$",
+        r"$a$: resonator design $(m,\ f_t,\ x,\ y)$ of each resonator;  $\hat a$: design recovered from the true ERP by the inverse",
+        r"$z$: extra padded values of the design (zero going forward);  $\hat z$: their recovered values",
+        r"$y$: true ERP;  $\hat y$: predicted ERP;  $e$: current epoch;  $E$: total number of epochs",
+    ],
+    "idon_erp_loss_compact": [
+        r"$\mathcal{L}=\mathcal{L}_{\mathrm{ERP}}+0.5\,\mathcal{L}_{\mathrm{slope}}+\lambda_p\,\mathcal{L}_{\mathrm{peak}}+w\,\mathcal{L}_{\mathrm{design}}+0.1\,\mathcal{L}_{\mathrm{pad}}$",
+        r"$\mathcal{L}_{\mathrm{ERP}}=\mathrm{mean}\,(\hat y-y)^2,\qquad \mathcal{L}_{\mathrm{slope}}=\mathrm{mean}\,(\Delta\hat y-\Delta y)^2$",
+        r"$\mathcal{L}_{\mathrm{peak}}=\sum_{\mathrm{peaks}}(\hat y-y)^2,\qquad \lambda_p=0.05$ if $e>0.8\,E$, else $0$",
+        r"$\mathcal{L}_{\mathrm{design}}=\mathrm{Huber}(\hat a,\,a),\qquad \mathcal{L}_{\mathrm{pad}}=\mathrm{Huber}(\hat z,\,0),\qquad w=\min\left(1,\ (e+1)/10\right)$",
+        r"$\Delta$: difference between neighbouring frequencies;  peaks: resonance peaks of the true ERP",
+        r"$a$: resonator design $(m,\ f_t,\ x,\ y)$ of each resonator;  $\hat a$: design recovered from the true ERP by the inverse",
+        r"$z$: extra padded values of the design (zero going forward);  $\hat z$: their recovered values",
+        r"$y$: true ERP;  $\hat y$: predicted ERP;  $e$: current epoch;  $E$: total number of epochs",
     ],
 }
 

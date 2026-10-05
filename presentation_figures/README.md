@@ -89,4 +89,6 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `idon_base_loss_simple` | the base Invertible DeepONet loss in plain words (ERP error + w x design recovery error + 0.1 x padding error); script `idon_base_loss_simple_figure.py` |
 
-| `idon_base_loss_compact` | the base Invertible DeepONet loss as four short equations with simple symbols (L_ERP, L_design, L_pad, w); script `idon_base_loss_compact_figure.py` |
+| `idon_base_loss_compact` | the base Invertible DeepONet loss as four short equations with simple symbols (L_ERP, L_design, L_pad, w) with the meaning of a, z, e; script `idon_loss_compact_figure.py` |
+
+| `idon_erp_loss_compact` | the same with the slope and peak terms added (Q64-ERP), with the meaning of every symbol; script `idon_loss_compact_figure.py` |
