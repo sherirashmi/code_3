@@ -53,8 +53,11 @@ by up to ~25 dB, so mixing bases silently corrupts any solver comparison.)
    iLNO, iSIREN, iSTO: 3-stage training or evaluation; standard /
    recommended / custom options (encoder, design, gate, readout, …).
 4. **Invertible DeepONet** — Q8 (strict Q = D), Q64, Q128 and the trunk
-   variants Q64-FNO/-DCO/-DNO/-WNO/-LNO/-SIREN: train (stops at epoch 50 if
-   the validation loss stopped improving), evaluate, comparison plots.
+   variants Q64-FNO/-DCO/-DNO/-WNO/-LNO/-SIREN, and Q64-ERP (Q64 trained with
+   the forward models' ERP loss: MSE + slope + peak term from 80 % of the
+   epochs; peak error 7.7 vs 16.7 dB, overall forward error 3.65 vs 2.58 dB):
+   train (stops at epoch 50 if the validation loss stopped improving),
+   evaluate, comparison plots.
 5. **Displacement field** — the ten architectures on the field dataset.
 
 ## Folder layout

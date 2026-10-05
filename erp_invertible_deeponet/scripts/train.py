@@ -27,8 +27,9 @@ Usage (from the repository root)::
     python -m erp_invertible_deeponet.scripts.train                       # every variant, 200k_2res_18modes
     python -m erp_invertible_deeponet.scripts.train Q64 --epochs 100
     python -m erp_invertible_deeponet.scripts.train Q64 Q128 --dataset 100k   # 3 resonators
-    python -m erp_invertible_deeponet.scripts.train Q64 --retrain --loss erp  # retrain with the ERP loss
-    (--loss erp, the default: MSE + slope + peak term from 80 % of the epochs; --loss mse: plain MSE)
+    python -m erp_invertible_deeponet.scripts.train Q64-ERP                    # Q64 trained with the ERP loss
+    (Q64-ERP uses MSE + slope + peak term from 80 % of the epochs, every other variant plain MSE;
+     --loss erp/mse overrides, --retrain retrains variants that already have a checkpoint)
 """
 
 from __future__ import annotations
@@ -51,10 +52,12 @@ from utils.paths import IDON_ROOT as PACKAGE_ROOT, idon_model_path, idon_plot_di
 DATASET = "200k_2res_18modes"
 # name -> number of basis functions Q ("D": strict Q = D, no padding)
 VARIANTS = {"Q8": "D", "Q64": 64, "Q128": 128, "Q64-FNO": 64, "Q64-DCO": 64, "Q64-DNO": 64, "Q64-WNO": 64,
-            "Q64-LNO": 64, "Q64-SIREN": 64}
+            "Q64-LNO": 64, "Q64-SIREN": 64, "Q64-ERP": 64}
 # name -> trunk architecture (default: Fourier features + MLP, the DeepONet trunk)
 TRUNKS = {"Q64-FNO": "fno", "Q64-DCO": "dco", "Q64-DNO": "dno", "Q64-WNO": "wno", "Q64-LNO": "lno",
           "Q64-SIREN": "siren"}
+# name -> forward loss ("mse": plain MSE; "erp": MSE + slope + peak term, see below)
+LOSSES = {"Q64-ERP": "erp"}
 INVERSE_WARMUP = 10
 LR = 5e-4
 # Forward ERP loss, as for the forward operators: MSE + SLOPE_WEIGHT * MSE of the
@@ -62,7 +65,8 @@ LR = 5e-4
 # spectrum's peaks; the peak term is switched on after PEAK_START_FRACTION of the
 # epochs (the basis first learns the overall spectra, then sharpens the peaks).
 # Validation always uses the final loss (peak term on), so every epoch is scored
-# with the same objective.  loss="mse": plain MSE (the original iDON loss).
+# with the same objective.  loss="mse": plain MSE (the original iDON loss, every
+# variant except those listed in LOSSES).
 SLOPE_WEIGHT = 0.5
 PEAK_WEIGHT = 0.05
 PEAK_START_FRACTION = 0.8
@@ -140,8 +144,8 @@ def set_noise_variance(model, loader, max_batches: int = 200) -> float:
 
 
 def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epochs: int = 150, seed: int = 727,
-                  early_stop_epoch: int | None = 50, loss: str = "erp"):
-    """Train one variant; stops at ``early_stop_epoch`` if the validation loss has
+                  early_stop_epoch: int | None = 50, loss: str | None = None):
+    """Train one variant (``loss``: None = the variant's own, see LOSSES); stops at ``early_stop_epoch`` if the validation loss has
     stopped improving (None: always run all epochs)."""
     print(f"\n{'#' * 70}\nInvertible DeepONet {name}: D = {4 * dataset.num_res}, Q = {4 * dataset.num_res + padding(name, 4 * dataset.num_res)}"
           f" basis functions, dataset '{dataset_tag}'\n{'#' * 70}")
@@ -149,6 +153,7 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
     print(f"{sum(p.numel() for p in model.parameters()):,} parameters")
     path = model_path(name, dataset_tag)
     resume = path.with_suffix(".resume.pt")
+    loss = loss or LOSSES.get(name, "mse")
     print(f"Loss: {loss_description(epochs, loss)}")
     history = train_one(model, loaders, make_loss_fn(epochs, loss), epochs=epochs, lr=LR, name=f"iDON-{name}", resume_path=resume,
                         early_stop_epoch=early_stop_epoch)
@@ -165,7 +170,7 @@ def train_variant(name: str, dataset, loaders, dataset_tag: str = DATASET, epoch
     resume.unlink(missing_ok=True)
     print(f"Saved {path}")
     plot_loss_curves(history["train"], history["val"], title=f"Invertible DeepONet {name}: training history",
-                     ylabel="Loss (forward MSE + inverse consistency)", log_y=True,
+                     ylabel="Loss (forward + inverse consistency)", log_y=True,
                      save_path=plot_dir(dataset_tag, name) / "loss_curve.png", show=False)
     return model
 
@@ -185,8 +190,9 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default=DATASET, choices=sorted(DATASETS), help="registered dataset tag")
     parser.add_argument("--no-early-stop", action="store_true", help="always train all epochs (default: stop at "
                         "epoch 50 if the validation loss stopped improving)")
-    parser.add_argument("--loss", choices=("erp", "mse"), default="erp",
-                        help="erp: MSE + slope + peak term from 80%% of the epochs (default); mse: plain MSE")
+    parser.add_argument("--loss", choices=("erp", "mse"), default=None,
+                        help="override the variant's loss -- erp: MSE + slope + peak term from 80%% of the epochs; "
+                             "mse: plain MSE (default: Q64-ERP erp, every other variant mse)")
     parser.add_argument("--retrain", action="store_true", help="retrain variants that already have a checkpoint")
     args = parser.parse_args()
     seed_everything(727)

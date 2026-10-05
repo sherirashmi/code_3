@@ -1250,7 +1250,8 @@ def main_invertible_deeponet():
     for i, name in enumerate(names, start=1):
         q = idon.VARIANTS[name]
         trunk = idon.TRUNKS.get(name, "mlp")
-        print(f"{i}. {name:<10s} Q = {'D (strict)' if q == 'D' else q:<10}  trunk: {trunk}")
+        print(f"{i}. {name:<10s} Q = {'D (strict)' if q == 'D' else q:<10}  trunk: {trunk:<6s} loss: "
+              f"{'MSE + slope + peaks' if idon.LOSSES.get(name) == 'erp' else 'MSE'}")
     registry = {str(i): {"short": n, "name": n} for i, n in enumerate(names, start=1)}
     chosen = [registry[k]["short"] for k in _prompt_selection("Which variants (e.g. 2,3 or 'all')", registry)]
     print("\nOperation")
@@ -1264,14 +1265,12 @@ def main_invertible_deeponet():
     if action == "1":
         epochs = _prompt_int("Epochs", default=150, minimum=1)
         batch_size = _prompt_int("Batch size", default=128, minimum=1)
-        loss = "erp" if _prompt_yes_no("ERP loss as for the forward models (MSE + slope + peak term from 80% of "
-                                       "the epochs)? No = plain MSE", default=True) else "mse"
         dataset, loaders = idon.prepare(tag, batch_size=batch_size)
         for name in chosen:
             if idon.model_path(name, tag).exists() and not _prompt_yes_no(
                     f"{name} is already trained on '{tag}' -- retrain it", default=False):
                 continue
-            idon.train_variant(name, dataset, loaders, dataset_tag=tag, epochs=epochs, early_stop_epoch=50, loss=loss)
+            idon.train_variant(name, dataset, loaders, dataset_tag=tag, epochs=epochs, early_stop_epoch=50)
         if _prompt_yes_no("Evaluate the trained variants now (solver-checked)", default=True):
             return idon_evaluate.main(chosen, tag)
         return None

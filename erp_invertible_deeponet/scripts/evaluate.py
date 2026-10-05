@@ -45,7 +45,7 @@ _draw_plate = importlib.import_module("erp_inverse.scripts.fixed_resonator.evalu
 PARAMS = (("m", 0, "Mass $m$ (kg)"), ("k", 1, "Stiffness $k$ (kN/m)"), ("f_t", 2, "Tuning frequency $f_t$ (Hz)"),
           ("x", 3, "Position $x$ (m)"), ("y", 4, "Position $y$ (m)"))
 COLORS = {"Q8": "#eb6834", "Q64": "#2a78d6", "Q128": "#1f9e74", "Q64-FNO": "#8f5bb5", "Q64-DCO": "#c0392b",
-          "Q64-DNO": "#b8860b", "Q64-WNO": "#17becf", "Q64-LNO": "#7f7f7f", "Q64-SIREN": "#e377c2"}
+          "Q64-DNO": "#b8860b", "Q64-WNO": "#17becf", "Q64-LNO": "#7f7f7f", "Q64-SIREN": "#e377c2", "Q64-ERP": "#000080"}
 
 
 def pca_floor(train_db: np.ndarray, test_db: np.ndarray, q: int) -> np.ndarray:
