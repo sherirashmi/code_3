@@ -2,7 +2,7 @@
 (1) displacement field at one frequency, (2) velocity field from that displacement, (3) the ERP sweep.
 
 Solver: utils/solver.py (150 plate modes, 1 N point force at (0.865, 0.309) m, resonator damping 1 N s/m).
-Displacement |w|; velocity |v| = omega |w|; ERP from the velocity as in compute_erp_spectrum.
+Displacement |w| in mm; velocity |v| = omega |w| in mm/s (same length unit); ERP from the velocity as in compute_erp_spectrum.
 """
 import math
 import sys
@@ -31,7 +31,7 @@ BLUE, RED = "#2a78d6", "#c2412c"
 
 w = compute_displacement(RES, frequencies=[F_SHOW])  # (ny, nx, 1), complex, metres for 1 N
 v = compute_velocity(w, frequencies=[F_SHOW])[..., 0]
-w_um = np.abs(w[..., 0]) * 1e6
+w_mm = np.abs(w[..., 0]) * 1e3
 v_mm = np.abs(v) * 1e3
 erp = compute_erp_spectrum(RES)
 
@@ -67,7 +67,7 @@ def field_figure(field, label, name, title):
 
 
 f = f"{F_SHOW:g}"
-field_figure(w_um, r"Displacement magnitude $|w|$ ($\mu$m)", "plate_demo_1_displacement",
+field_figure(w_mm, r"Displacement magnitude $|w|$ (mm)", "plate_demo_1_displacement",
              rf"Displacement field at ${f}$ Hz (force $1$ N, three resonators)")
 field_figure(v_mm, r"Velocity magnitude $|v|=\omega\,|w|$ (mm/s)", "plate_demo_2_velocity",
              rf"Velocity field at ${f}$ Hz")
@@ -90,4 +90,4 @@ for s in ("top", "right"):
 ax.legend(loc="lower right", frameon=False)
 fig.tight_layout()
 save(fig, "plate_demo_3_erp_sweep")
-print("max |w| (um):", w_um.max(), " max |v| (mm/s):", v_mm.max())
+print("max |w| (mm):", w_mm.max(), " max |v| (mm/s):", v_mm.max())

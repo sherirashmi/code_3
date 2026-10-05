@@ -57,8 +57,8 @@ Scripts: `plate_schematic_figure.py`, `plate_equation_steps_figure.py`.
 
 | Figure | Content |
 |---|---|
-| `plate_demo_1_displacement` | displacement magnitude over the plate at 103 Hz (1 N force, three resonators at the schematic positions, $m$ = 0.5, 0.8, 0.6 kg, $f_t$ = 45, 90, 130 Hz) |
-| `plate_demo_2_velocity` | velocity magnitude $\omega|w|$ from that displacement field |
+| `plate_demo_1_displacement` | displacement magnitude (mm) over the plate at 103 Hz (1 N force, three resonators at the schematic positions, $m$ = 0.5, 0.8, 0.6 kg, $f_t$ = 45, 90, 130 Hz) |
+| `plate_demo_2_velocity` | velocity magnitude $\omega|w|$ (mm/s, same length unit) from that displacement field |
 | `plate_demo_3_erp_sweep` | ERP over 10-160 Hz with the frequency of the field plots marked |
 
 Script: `plate_demo_three_pictures.py` (optional argument: the frequency in Hz; solver `utils/solver.py`, 150 modes).
