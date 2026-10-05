@@ -103,4 +103,4 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `invertible_models_idon_style` | inverse design of test configuration 3 by iFNO, iLNO, iSTO and iGNO in the layout of the iDON example: ERP of 16 sampled designs, the point estimate and the best of 16 checked with the solver, plus the plate with true and predicted resonators; script `invertible_models_idon_style.py` |
 
-| `invertible_models_best_of_16` | best of 16 sampled designs of iFNO, iLNO, iSTO and iGNO on test configuration 3, all in one plot: solver-checked ERPs against the target, the plate with the true resonators and the best designs, and a table of the predicted mass and tuning frequency; script `invertible_models_best_of_16.py` |
+| `invertible_best16_iFNO`, `..._iLNO`, `..._iSTO`, `..._iGNO`, `invertible_best16_plate` | best of 16 sampled designs on test configuration 3: one ERP graph per model (solver-checked design against the target ERP, true tuning frequencies dashed) and one plate with the true resonators and the best designs of all four models; script `invertible_models_best_of_16_separate.py` |

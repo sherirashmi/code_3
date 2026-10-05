@@ -1,5 +1,5 @@
-"""Best of 16 sampled designs of iFNO, iLNO, iSTO and iGNO (test configuration 3), all in one plot: the ERPs of the best designs, checked with the
-solver, against the target ERP; the plate with the true resonators and the best designs; table of the predicted mass and tuning frequency.
+"""Best of 16 sampled designs of iFNO, iLNO, iSTO and iGNO (test configuration 3): one ERP graph per model (best design checked with the
+solver against the target ERP) and one plate with the true resonators and the best designs of all four models.
 "best of 16": of 16 designs sampled through the VAE, the one whose solver ERP is closest to the target (needs the solver and the target).
 """
 import importlib
@@ -82,61 +82,56 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from utils.physics import Lx, Ly, xf, yf
 
+OUT = ROOT / "presentation_figures"
 for r in rows:
     r["design"] = r["samples"][r["best"]]
     r["curve"] = r["solved"][r["best"]]
+lo = min(float(target.min()), *(float(r["curve"].min()) for r in rows)) - 3
+hi = max(float(target.max()), *(float(r["curve"].max()) for r in rows)) + 3
 
-fig = plt.figure(figsize=(17.5, 6.6))
-gs = fig.add_gridspec(2, 2, width_ratios=[1.45, 1.0], height_ratios=[1.25, 1.0], wspace=0.18, hspace=0.34)
-ax = fig.add_subplot(gs[:, 0])
-ax.plot(freq, target, color="black", lw=2.8, label="Target ERP")
-for r in rows:
-    ax.plot(freq, r["curve"], color=COLOURS[r["label"]], lw=1.6, ls="--", label=f"{r['label']} (RMSE {r['rmse_best']:.2f} dB)")
-for j, ft in enumerate(true_design[:, 2]):
-    ax.axvline(ft, color="#c2412c", ls="--", lw=1.3, zorder=1, label="True tuning frequencies" if j == 0 else None)
-ax.set_xlabel("Frequency (Hz)")
-ax.set_ylabel("ERP (dB)")
-ax.grid(True, color="#d9d9d4", lw=0.5)
-ax.legend(frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.12))
 
-axp = fig.add_subplot(gs[0, 1])
+def save(fig, name):
+    for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
+        fig.savefig(OUT / f"{name}.{ext}", facecolor="white", **kw)
+    plt.close(fig)
+    print("saved", name)
+
+
+for r in rows:  # one ERP graph per model
+    fig, ax = plt.subplots(figsize=(9.5, 5.0))
+    ax.plot(freq, target, color="black", lw=2.8, label="Target ERP")
+    ax.plot(freq, r["curve"], color=COLOURS[r["label"]], lw=1.9, ls="--", label=f"{r['label']}, best of {NUM_SAMPLES} (RMSE {r['rmse_best']:.2f} dB)")
+    for j, ft in enumerate(true_design[:, 2]):
+        ax.axvline(ft, color="#c2412c", ls="--", lw=1.2, zorder=1, label="True tuning frequencies" if j == 0 else None)
+    ax.set_xlim(freq[0], freq[-1])
+    ax.set_ylim(lo, hi)
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("ERP (dB)")
+    ax.set_title(r["label"], fontsize=14)
+    ax.grid(True, color="#d9d9d4", lw=0.5)
+    ax.legend(frameon=False, loc="lower right", fontsize=10)
+    fig.tight_layout()
+    save(fig, f"invertible_best16_{r['label']}")
+
+fig, axp = plt.subplots(figsize=(9.5, 4.8))  # one plate for all models
 axp.add_patch(Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.6))
 axp.plot([xf], [yf], marker="*", color="#35d0ff", ms=18, mec="black", ls="", zorder=5)
 for r in rows:
     c = COLOURS[r["label"]]
     for i in range(num_res):
         axp.plot([true_design[i, 3], r["design"][i, 3]], [true_design[i, 4], r["design"][i, 4]], color=c, lw=0.9, ls=":", zorder=3)
-    axp.plot(r["design"][:, 3], r["design"][:, 4], "X", color=c, ms=10, mec="black", mew=0.6, ls="", zorder=6)
-axp.plot(true_design[:, 3], true_design[:, 4], "o", color="#dc143c", ms=12, mec="black", ls="", zorder=7)
+    axp.plot(r["design"][:, 3], r["design"][:, 4], "X", color=c, ms=11, mec="black", mew=0.6, ls="", zorder=6)
+axp.plot(true_design[:, 3], true_design[:, 4], "o", color="#dc143c", ms=13, mec="black", ls="", zorder=7)
 for i in range(num_res):
-    axp.annotate(f"R{i + 1}", (true_design[i, 3], true_design[i, 4]), xytext=(-4, 9), textcoords="offset points", fontsize=11, ha="right", zorder=8)
+    axp.annotate(f"R{i + 1}", (true_design[i, 3], true_design[i, 4]), xytext=(-4, 9), textcoords="offset points", fontsize=12, ha="right", zorder=8)
 axp.set_xlim(-0.05, Lx + 0.05)
 axp.set_ylim(-0.05, Ly + 0.05)
 axp.set_aspect("equal")
 axp.set_xlabel("Position $x$ (m)")
 axp.set_ylabel("Position $y$ (m)")
-axp.set_title("Plate configuration: true resonators (circles) and best-of-16 designs (crosses)", fontsize=11)
-handles = [Line2D([], [], marker="*", color="#35d0ff", mec="black", ls="", ms=13, label="Force"),
-           Line2D([], [], marker="o", color="#dc143c", mec="black", ls="", ms=9, label="True resonator")]
-handles += [Line2D([], [], marker="X", color=COLOURS[r["label"]], mec="black", mew=0.6, ls="", ms=9, label=r["label"]) for r in rows]
-axp.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=6, frameon=False, fontsize=9, handletextpad=0.2, columnspacing=1.0)
-
-axt = fig.add_subplot(gs[1, 1])
-axt.axis("off")
-cells = [["True"] + [f"{true_design[i, 0]:.2f} kg, {true_design[i, 2]:.0f} Hz" for i in range(num_res)]]
-for r in rows:
-    cells.append([r["label"]] + [f"{r['design'][i, 0]:.2f} kg, {r['design'][i, 2]:.0f} Hz" for i in range(num_res)])
-table = axt.table(cellText=cells, colLabels=[""] + [f"R{i + 1}: mass, tuning frequency" for i in range(num_res)], loc="center", cellLoc="center")
-table.auto_set_font_size(False)
-table.set_fontsize(11.5)
-table.scale(1.0, 1.7)
-for (ri, ci), cell in table.get_celld().items():
-    cell.set_edgecolor("#c3ccd6")
-    if ri == 0:
-        cell.set_facecolor("#eef2f7")
-    elif ci == 0:
-        cell.set_text_props(color=(["black"] + [COLOURS[r["label"]] for r in rows])[ri - 1])
-fig.subplots_adjust(left=0.05, right=0.99, top=0.93, bottom=0.1)
-for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
-    fig.savefig(ROOT / "presentation_figures" / f"invertible_models_best_of_16.{ext}", facecolor="white", **kw)
-print("saved")
+handles = [Line2D([], [], marker="*", color="#35d0ff", mec="black", ls="", ms=14, label="Force"),
+           Line2D([], [], marker="o", color="#dc143c", mec="black", ls="", ms=10, label="True resonator")]
+handles += [Line2D([], [], marker="X", color=COLOURS[r["label"]], mec="black", mew=0.6, ls="", ms=10, label=r["label"]) for r in rows]
+axp.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=6, frameon=False, fontsize=10, handletextpad=0.2, columnspacing=1.0)
+fig.tight_layout()
+save(fig, "invertible_best16_plate")
