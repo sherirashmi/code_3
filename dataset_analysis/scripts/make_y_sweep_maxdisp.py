@@ -58,7 +58,7 @@ erp_title = ax_erp.set_title("")
 heat = PlateHeatmap(ax_field, cax, fields_um[0], vmax=shared_vmax(fields_um))
 ax_field.axvline(X_FIXED, color="white", lw=1.0, ls=":", alpha=0.8)
 field_title = ax_field.set_title("")
-finish(fig, f"Moving one resonator across the plate width along the maximum-displacement line: "
+finish(fig, f"Moving one resonator across the plate width: "
             f"tuning frequency {TUNING_FREQUENCY:g} Hz, mass {M_RES:g} kg")
 
 
@@ -67,8 +67,7 @@ def update(i):
     erp_line.set_data(freqs, spectra[i])
     erp_title.set_text(f"ERP spectrum, resonator at position ({X_FIXED:.2f} m, {y:.2f} m)")
     heat.update(fields_um[i], [(X_FIXED, y)])
-    field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz ({heat.largest_value_text()})\n"
-                         "dotted line: maximum-displacement line")
+    field_title.set_text(f"Plate displacement at {TUNING_FREQUENCY:g} Hz ({heat.largest_value_text()})")
     return erp_line,
 
 
