@@ -23,9 +23,9 @@ from utils.support import device
 CONFIG = 4  # 1-based test configuration
 FILES = ["datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth", "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth"]
 MODELS = [  # title, checkpoint, colour
-    ("No peak term", "erp_forward/models/legacy/dco.pth", "#7f7f7f"),
-    ("Peak term from the first epoch", "erp_forward/models/100k/dco.pth", "#d62728"),
-    ("Staged peak term (from 80% of the epochs)", "erp_forward/models/100k/dco_sorted_phys.pth", "#2ca02c"),
+    ("Loss equation (MSE + slope)", "erp_forward/models/legacy/dco.pth", "#7f7f7f"),
+    ("Added peak term in the loss", "erp_forward/models/100k/dco.pth", "#d62728"),
+    ("Peak term included from 80% of the epochs", "erp_forward/models/100k/dco_sorted_phys.pth", "#2ca02c"),
 ]
 
 ps = dict(load_operator_checkpoint(MODELS[1][1])["preprocessing_state"])
@@ -51,7 +51,7 @@ for title, path, colour in MODELS:
 
 freq = results[0][2]["frequencies"]
 truth = results[0][2]["ground_truth"]
-NAMES = ["no_peak_term", "peak_term_from_start", "staged_peak_term"]
+NAMES = ["1_mse_slope", "2_peak_term_added", "3_peak_term_from_80_percent"]
 for name, (title, colour, out, mse, mae) in zip(NAMES, results):
     fig, ax = plt.subplots(figsize=(8.5, 4.8))
     ax.plot(freq, truth, color="black", lw=2.6, label="Ground truth (solver)")
