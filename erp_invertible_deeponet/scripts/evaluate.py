@@ -188,11 +188,20 @@ def main(names=None, dataset_tag: str = DATASET, num_targets: int = 500, num_sam
     num_targets = min(int(num_targets), len(loaders["test"].dataset))
     num_forward = min(5000, len(loaders["test"].dataset))
     results = {n: evaluate_variant(n, dataset, loaders, num_targets, num_samples, num_forward, dataset_tag) for n in names}
+    # The comparison table lists every evaluated variant, not only this run's:
+    # the others are read back from their metrics.json (evaluating one variant
+    # must not drop the rest from the table).
+    table = {}
+    for n in VARIANTS:
+        if n in results:
+            table[n] = results[n]
+        elif model_path(n, dataset_tag).exists() and (plot_dir(dataset_tag, n) / "metrics.json").exists():
+            table[n] = json.loads((plot_dir(dataset_tag, n) / "metrics.json").read_text())
     lines = [f"Invertible DeepONet on '{dataset_tag}' (forward on {num_forward:,} and inverse on {num_targets} test configurations)", "",
              f"{'Variant':<9} {'Q':>4} {'fwd RMSE':>9} {'PCA floor':>10} {'peak err':>9} | {'inv own':>8} {'inv best':>9} "
              f"{'f_t r':>6} {'m r':>6} {'x r':>6} {'y r':>6} {'pos err':>8} {'ms/target':>10}",
              f"{'':<9} {'':>4} {'(dB)':>9} {'(dB)':>10} {'(dB)':>9} | {'(dB)':>8} {'(dB)':>9} {'':>6} {'':>6} {'':>6} {'':>6} {'(cm)':>8}"]
-    for n, m in results.items():
+    for n, m in table.items():
         own, best = m["inverse"]["own"], m["inverse"]["oracle"]
         d = own["design"]
         lines.append(f"{n:<9} {m['Q']:>4} {m['forward']['rmse_median_db']:>9.2f} {m['forward']['pca_floor_median_db']:>10.2f} "
