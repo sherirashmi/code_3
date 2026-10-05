@@ -81,4 +81,4 @@ Script: `loss_equation_figure.py`. The committed invertible DeepONet Q8/Q64 chec
 
 Script: `peak_schedule_comparison.py`. The checkpoints were identified by reproducing the errors of the repo's `peak_term_evolution` plots on the first test configuration. The no-peak DCO and GNO models of those plots are not in the repo.
 
-| `peak_schedule_config4` | DCO on test configuration 4 (100k split): no peak term (`legacy/dco.pth`), peak term from the first epoch (`100k/dco.pth`), staged peak term (`100k/dco_sorted_phys.pth`, 200 epochs, also sorted resonators and physical features); script `peak_schedule_config4.py` |
+| `peak_schedule_config4_no_peak_term`, `..._peak_term_from_start`, `..._staged_peak_term` | DCO on test configuration 4 (100k split), one image per model: no peak term (`legacy/dco.pth`), peak term from the first epoch (`100k/dco.pth`), staged peak term (`100k/dco_sorted_phys.pth`, 200 epochs, also sorted resonators and physical features); script `peak_schedule_config4.py` |

@@ -18,7 +18,6 @@ import utils.plot_style  # noqa: F401
 from erp_forward.scripts import dco
 from erp_forward.scripts.neural_operator_utils import (_configuration_features, _split_ids, build_operator_model, load_operator_checkpoint,
                                                        predict_erp_spectrum, prepare_operator_data)
-from utils.physics import Lx, Ly, xf, yf
 from utils.support import device
 
 CONFIG = 4  # 1-based test configuration
@@ -52,30 +51,21 @@ for title, path, colour in MODELS:
 
 freq = results[0][2]["frequencies"]
 truth = results[0][2]["ground_truth"]
-fig = plt.figure(figsize=(21, 4.8))
-gs = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1, 0.75], wspace=0.22)
-for i, (title, colour, out, mse, mae) in enumerate(results):
-    ax = fig.add_subplot(gs[0, i])
+NAMES = ["no_peak_term", "peak_term_from_start", "staged_peak_term"]
+for name, (title, colour, out, mse, mae) in zip(NAMES, results):
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     ax.plot(freq, truth, color="black", lw=2.6, label="Ground truth (solver)")
-    ax.plot(freq, out["prediction"], color=colour, lw=1.8, ls="--", label="Prediction")
+    ax.plot(freq, out["prediction"], color=colour, lw=1.9, ls="--", label="Prediction")
     for ft in configuration[:, 2]:
         ax.axvline(ft, color="#c2412c", ls=":", lw=1.0)
-    ax.set_title(f"{title}\nMSE $={mse:.1f}$ dB$^2$, MAE $={mae:.2f}$ dB", fontsize=12)
+    ax.set_title(title, fontsize=14)
     ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("ERP (dB)")
     ax.grid(True, color="#d9d9d4", lw=0.5)
     ax.set_ylim(58, 133)
-    if i == 0:
-        ax.set_ylabel("ERP (dB)")
-        ax.legend(loc="lower right", frameon=False, fontsize=10)
-ax = fig.add_subplot(gs[0, 3])
-ax.add_patch(plt.Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.6))
-ax.plot([xf], [yf], marker="*", color="#35d0ff", ms=18, mec="black", ls="", label="Force")
-ax.plot(configuration[:, 3], configuration[:, 4], "o", color="#dc143c", ms=11, mec="black", ls="", label="Resonators")
-for m, k, ft, x, y in configuration:
-    ax.annotate(f"{ft:.0f} Hz", (x, y), xytext=(6, 6), textcoords="offset points", fontsize=10)
-ax.set_xlim(-0.05, Lx + 0.05); ax.set_ylim(-0.05, Ly + 0.05); ax.set_aspect("equal")
-ax.set_xlabel("Position $x$ (m)"); ax.set_ylabel("Position $y$ (m)"); ax.set_title(f"Test configuration {CONFIG}", fontsize=12)
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=10)
-for ext, kw in (("png", dict(dpi=200, bbox_inches="tight")), ("pdf", dict(bbox_inches="tight"))):
-    fig.savefig(ROOT / "presentation_figures" / f"peak_schedule_config{CONFIG}.{ext}", facecolor="white", **kw)
+    ax.legend(loc="lower right", frameon=False, fontsize=11)
+    fig.tight_layout()
+    for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
+        fig.savefig(ROOT / "presentation_figures" / f"peak_schedule_config{CONFIG}_{name}.{ext}", facecolor="white", **kw)
+    plt.close(fig)
 print("saved")
