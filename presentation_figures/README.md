@@ -72,3 +72,11 @@ Script: `plate_demo_three_pictures.py` (optional argument: the frequency in Hz; 
 Script: `loss_equation_figure.py`. The committed invertible DeepONet Q8/Q64 checkpoints were trained with plain MSE.
 
 | `idon_loss_function` | Invertible DeepONet loss with the ERP option (Q64-ERP): MSE + 0.5 slope + peak term from 80 % of the epochs + inverse and latent Huber terms; script `idon_loss_equation_figure.py` |
+
+## Peak-term schedule (DCO, 100k test split)
+
+| Figure | Content |
+|---|---|
+| `peak_schedule_comparison` | DCO with the peak term from the first epoch (`erp_forward/models/100k/dco.pth`) vs from 80 % of the epochs (`dco_staged.pth`) on the first 8 test configurations; metrics over all 10,000 test spectra in `peak_schedule_metrics.json` |
+
+Script: `peak_schedule_comparison.py`. The checkpoints were identified by reproducing the errors of the repo's `peak_term_evolution` plots on the first test configuration. The no-peak DCO and GNO models of those plots are not in the repo.

@@ -1,0 +1,16 @@
+{
+  "peak term from the first epoch": {
+    "rmse_db": 3.6755454540252686,
+    "mae_db": 1.7856041193008423,
+    "peak_mae_db": 5.5088043212890625,
+    "top_peak_mae_db": 8.088274955749512,
+    "num_test": 10000
+  },
+  "peak term from 80% of the epochs": {
+    "rmse_db": 3.6863656044006348,
+    "mae_db": 1.8144621849060059,
+    "peak_mae_db": 5.590290069580078,
+    "top_peak_mae_db": 8.235532760620117,
+    "num_test": 10000
+  }
+}
