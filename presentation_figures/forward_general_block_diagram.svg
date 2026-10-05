@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-10-05T23:53:34.275209</dc:date>
+    <dc:date>2026-10-05T23:55:34.816815</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -304,7 +304,7 @@ Q 151.056 68.112 151.056 77.328
 L 151.056 178.704 
 Q 151.056 187.92 160.272 187.92 
 z
-" clip-path="url(#p3c0f1711e2)" style="fill: #dbe8f6; stroke: #8fb4d9; stroke-width: 1.4; stroke-linejoin: miter"/>
+" clip-path="url(#pa2805259f0)" style="fill: #dbe8f6; stroke: #8fb4d9; stroke-width: 1.4; stroke-linejoin: miter"/>
    </g>
    <g id="text_2">
     <!-- Resonator configuration -->
@@ -804,7 +804,7 @@ Q 104.976 353.808 104.976 368.5536
 L 104.976 449.6544 
 Q 104.976 464.4 119.7216 464.4 
 z
-" clip-path="url(#p3c0f1711e2)" style="fill: #ebe2f5; stroke: #b39ad1; stroke-width: 1.8; stroke-linejoin: miter"/>
+" clip-path="url(#pa2805259f0)" style="fill: #ebe2f5; stroke: #b39ad1; stroke-width: 1.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_6">
     <path d="M 160.272 667.152 
@@ -817,7 +817,7 @@ Q 151.056 547.344 151.056 556.56
 L 151.056 657.936 
 Q 151.056 667.152 160.272 667.152 
 z
-" clip-path="url(#p3c0f1711e2)" style="fill: #dbe8f6; stroke: #8fb4d9; stroke-width: 1.4; stroke-linejoin: miter"/>
+" clip-path="url(#pa2805259f0)" style="fill: #dbe8f6; stroke: #8fb4d9; stroke-width: 1.4; stroke-linejoin: miter"/>
    </g>
    <g id="text_4">
     <!-- ERP spectrum -->
@@ -1143,7 +1143,7 @@ L 300.3552 151.714286
 L 300.3552 104.317714 
 L 167.6448 104.317714 
 z
-" clip-path="url(#p3c0f1711e2)" style="fill: #ffffff; stroke: #000000; stroke-width: 2; stroke-linejoin: miter"/>
+" clip-path="url(#pa2805259f0)" style="fill: #ffffff; stroke: #000000; stroke-width: 2; stroke-linejoin: miter"/>
    </g>
    <g id="text_7">
     <!-- Architecture -->
@@ -1283,11 +1283,11 @@ z
     <path d="M 170.96256 559.3248 
 L 170.96256 650.37888 
 L 303.67296 650.37888 
-" clip-path="url(#p3c0f1711e2)" style="fill: none; stroke: #000000; stroke-width: 1.4"/>
+" clip-path="url(#pa2805259f0)" style="fill: none; stroke: #000000; stroke-width: 1.4"/>
    </g>
    <g id="line2d_2">
     <defs>
-     <path id="m151423a461" d="M 0 4 
+     <path id="m4a6f95bfbc" d="M 0 4 
 C 1.060812 4 2.078319 3.578535 2.828427 2.828427 
 C 3.578535 2.078319 4 1.060812 4 0 
 C 4 -1.060812 3.578535 -2.078319 2.828427 -2.828427 
@@ -1299,18 +1299,18 @@ C -2.078319 3.578535 -1.060812 4 0 4
 z
 " style="stroke: #000000"/>
     </defs>
-    <g clip-path="url(#p3c0f1711e2)">
-     <use xlink:href="#m151423a461" x="196.082743" y="137.495314" style="stroke: #000000"/>
+    <g clip-path="url(#pa2805259f0)">
+     <use xlink:href="#m4a6f95bfbc" x="196.082743" y="137.495314" style="stroke: #000000"/>
     </g>
    </g>
    <g id="line2d_3">
-    <g clip-path="url(#p3c0f1711e2)">
-     <use xlink:href="#m151423a461" x="238.739657" y="115.692891" style="stroke: #000000"/>
+    <g clip-path="url(#pa2805259f0)">
+     <use xlink:href="#m4a6f95bfbc" x="238.739657" y="115.692891" style="stroke: #000000"/>
     </g>
    </g>
    <g id="line2d_4">
-    <g clip-path="url(#p3c0f1711e2)">
-     <use xlink:href="#m151423a461" x="276.656914" y="130.859794" style="stroke: #000000"/>
+    <g clip-path="url(#pa2805259f0)">
+     <use xlink:href="#m4a6f95bfbc" x="276.656914" y="130.859794" style="stroke: #000000"/>
     </g>
    </g>
    <g id="line2d_5">
@@ -1444,12 +1444,12 @@ L 296.993203 620.905781
 L 298.674202 622.521457 
 L 300.3552 623.814987 
 L 300.3552 623.814987 
-" clip-path="url(#p3c0f1711e2)" style="fill: none; stroke: #000000; stroke-width: 2.4; stroke-linecap: square"/>
+" clip-path="url(#pa2805259f0)" style="fill: none; stroke: #000000; stroke-width: 2.4; stroke-linecap: square"/>
    </g>
   </g>
  </g>
  <defs>
-  <clipPath id="p3c0f1711e2">
+  <clipPath id="pa2805259f0">
    <rect x="3.6" y="3.6" width="460.8" height="718.848"/>
   </clipPath>
  </defs>
