@@ -43,12 +43,12 @@ def save(fig, name):
     print("saved", name)
 
 
-def field_figure(field, label, name, title):
+def field_figure(field, label, name, title, cmap="magma", star="#35d0ff", dot="#7CFC00"):
     fig, ax = plt.subplots(figsize=(11.5, 5.4))
-    im = ax.imshow(field, extent=[0, Lx, 0, Ly], origin="lower", aspect="equal", cmap="magma", vmin=0.0, interpolation="bicubic")
+    im = ax.imshow(field, extent=[0, Lx, 0, Ly], origin="lower", aspect="equal", cmap=cmap, vmin=0.0, interpolation="bicubic")
     ax.add_patch(Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.2))
-    ax.plot([xf], [yf], marker="*", color="#35d0ff", ms=18, mec="black", mew=0.9, ls="", label="Excitation force", zorder=6)
-    ax.plot([r["x"] for r in RES], [r["y"] for r in RES], marker="o", color="#7CFC00", ms=11, mec="black", mew=1.0, ls="",
+    ax.plot([xf], [yf], marker="*", color=star, ms=18, mec="black", mew=0.9, ls="", label="Excitation force", zorder=6)
+    ax.plot([r["x"] for r in RES], [r["y"] for r in RES], marker="o", color=dot, ms=11, mec="black", mew=1.0, ls="",
             label="Resonators", zorder=7)
     for i, r in enumerate(RES, 1):
         ax.annotate(rf"$m_{i}$", (r["x"], r["y"]), xytext=(8, 7), textcoords="offset points", color="white", fontsize=14, zorder=8)
@@ -70,7 +70,7 @@ f = f"{F_SHOW:g}"
 field_figure(w_mm, r"Displacement magnitude $|w|$ (mm)", "plate_demo_1_displacement",
              rf"Displacement field at ${f}$ Hz (force $1$ N, three resonators)")
 field_figure(v_mm, r"Velocity magnitude $|v|=\omega\,|w|$ (mm/s)", "plate_demo_2_velocity",
-             rf"Velocity field at ${f}$ Hz")
+             rf"Velocity field at ${f}$ Hz", cmap="viridis", star="white", dot="#ff7f2a")
 
 fig, ax = plt.subplots(figsize=(11.5, 5.0))
 ax.plot(freqs, erp, color=BLUE, lw=2.2)
