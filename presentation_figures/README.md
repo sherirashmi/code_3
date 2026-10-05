@@ -107,4 +107,4 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `forward_general_block_diagram`, `inverse_general_block_diagram` | general top-to-bottom block diagrams (input, architecture, output): forward is one design to one ERP, inverse is one ERP to several possible designs (many designs share one ERP); script `general_block_diagrams.py` |
 
-| `erp_frequency_band_plot` | ERP distribution at each of the 301 frequency points over the 100k three-resonator dataset (panel (a) of `dataset_analysis/100k/plots/erp_frequency_boxplot.png` alone, no "(a)" and no x-axis label), drawn from `dataset_analysis/100k/stats/erp_frequency_boxplot.csv`; script `erp_frequency_band_plot.py` |
+| `erp_frequency_band_plot` | ERP distribution at each of the 301 frequency points over the 100k three-resonator dataset (panel (a) of `dataset_analysis/100k/plots/erp_frequency_boxplot.png` alone, without the "(a)"), drawn from `dataset_analysis/100k/stats/erp_frequency_boxplot.csv`; script `erp_frequency_band_plot.py` |
