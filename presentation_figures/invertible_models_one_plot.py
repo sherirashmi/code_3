@@ -71,10 +71,12 @@ ax = fig.add_subplot(gs[:, 0])
 ax.plot(freq, truth, color="black", lw=2.8, label="Ground truth (solver)")
 for (label, _, _, colour) in MODELS:
     ax.plot(freq, curves[label], color=colour, lw=1.6, ls="--", label=label)
+for j, ft in enumerate(config[:, 2]):
+    ax.axvline(ft, color="#c2412c", ls="--", lw=1.3, zorder=1, label="True tuning frequencies" if j == 0 else None)
 ax.set_xlabel("Frequency (Hz)")
 ax.set_ylabel("ERP (dB)")
 ax.grid(True, color="#d9d9d4", lw=0.5)
-ax.legend(frameon=False, ncol=5, loc="upper center", bbox_to_anchor=(0.5, 1.07))
+ax.legend(frameon=False, ncol=6, loc="upper center", bbox_to_anchor=(0.5, 1.07))
 
 axp = fig.add_subplot(gs[0, 1])
 axp.add_patch(Rectangle((0, 0), Lx, Ly, fill=False, ec="black", lw=1.6))
