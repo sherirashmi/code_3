@@ -88,3 +88,5 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 | `idon_inverse_q64_vs_q64erp` | inverse design example (test configuration 3) of the Invertible DeepONet Q64 and Q64-ERP; the existing evaluation images with the figure title cropped away and the title of the left plot replaced by each model's loss equation (script `idon_inverse_example_titles.py`) |
 
 | `idon_base_loss_simple` | the base Invertible DeepONet loss in plain words (ERP error + w x design recovery error + 0.1 x padding error); script `idon_base_loss_simple_figure.py` |
+
+| `idon_base_loss_compact` | the base Invertible DeepONet loss as four short equations with simple symbols (L_ERP, L_design, L_pad, w); script `idon_base_loss_compact_figure.py` |
