@@ -85,32 +85,54 @@ class Canvas:
 
 
 # ============================================================================================================
-# 1. Invertible DeepONet (Q8, Q64): one row of blocks, forward and inverse arrows between the same blocks
+# 1. Invertible DeepONet (Q8, Q64): DeepONet layout, a branch (invertible) and a trunk, combined by a dot product
 # ============================================================================================================
-c = Canvas(124.0, 40.0, "idon_block_diagram")
-cy = 23.0
-c.text(62.0, 37.0, "Invertible DeepONet (Q8, Q64)", size=19, color=TITLE)
-c.icon_plate(2.0, cy - 5.0, 13.0, 10.0)
-c.text(8.5, cy - 8.6, "Design $\\mathbf{a}$\n$(m,f_t,x,y)\\times2$", size=11.5, linespacing=1.3)
-c.block(27.0, 57.0, cy - 7.5, cy + 7.5, "RealNVP $T$", "bijection on $\\mathbb{R}^Q$\npad with $Q-D$ zeros", C_BLUE)
-c.block(70.0, 102.0, cy - 7.5, cy + 7.5, "Basis $\\Psi(f)$", "forward: $\\Psi\\mathbf{b}+\\psi_0$\ninverse: $\\Psi^\\top(y-\\psi_0)/F$", C_GREEN)
-c.icon_erp(109.0, cy - 5.0, 13.0, 10.0)
-c.text(115.5, cy + 8.2, "ERP $\\hat y(f)$", size=13)
-yf, yi = cy + 2.2, cy - 2.2
-for xa, xb in ((15.0, 27.0), (57.0, 70.0), (102.0, 109.0)):
-    c.arrow([(xa, yf), (xb, yf)])
-    c.arrow([(xb, yi), (xa, yi)], color=INV, ls="--")
-c.text(63.5, yf + 1.7, "$\\mathbf{b}$", size=12, color=FWD)
-c.text(63.5, yi - 1.7, "$\\mathbf{b}^*$", size=12, color=INV)
-# frequency enters the basis block
-c.arrow([(86.0, 8.2), (86.0, cy - 7.5)])
-c.text(86.0, 5.6, "Frequency $f$", size=13)
-c.text(42.0, cy - 11.2, "Q8: $Q=D=8$   $|$   Q64: $Q=64$ (56 zeros)", size=11, color=SUB)
+c = Canvas(124.0, 52.0, "idon_block_diagram")
+by, ty = 34.0, 11.0  # branch row, trunk row
+c.text(62.0, 49.0, "Invertible DeepONet (Q8, Q64)", size=19, color=TITLE)
+# group frames
+c.ax.add_patch(FancyBboxPatch((20.0, 24.0), 56.0, 21.0, boxstyle="round,pad=0,rounding_size=1.6", fc="none", ec=C_BLUE[1], lw=2.2, ls="--", zorder=1))
+c.text(48.0, 42.5, "Branch network (invertible)", size=14, color=TITLE)
+c.ax.add_patch(FancyBboxPatch((20.0, 2.5), 56.0, 17.5, boxstyle="round,pad=0,rounding_size=1.6", fc="none", ec=C_GREEN[1], lw=2.2, ls="--", zorder=1))
+c.text(48.0, 17.5, "Trunk network", size=14, color=TITLE)
+# branch row: design -> T -> b
+c.icon_plate(2.0, by - 5.0, 13.0, 10.0)
+c.text(8.5, by - 8.6, "Design $\\mathbf{a}$\n$(m,f_t,x,y)\\times2$", size=11.5, linespacing=1.3)
+c.block(25.0, 52.0, by - 6.0, by + 5.0, "RealNVP $T$", "bijection on $\\mathbb{R}^Q$, pad with zeros", C_BLUE, tsize=16, ssize=9.5)
+c.block(60.0, 71.0, by - 6.0, by + 5.0, "$\\mathbf{b}$", "", C_BLUE, tsize=17)
+c.text(65.5, by - 8.2, "$Q$ coefficients", size=10.5, color=SUB)
+c.text(38.5, by - 8.2, "Q8: $Q=D=8$   $|$   Q64: $Q=64$", size=10, color=SUB)
+# trunk row: f -> trunk -> Psi
+c.text(8.5, ty, "Frequency\n$f$", size=13, linespacing=1.3)
+c.block(25.0, 52.0, ty - 5.0, ty + 4.0, "Trunk net", "dense layers", C_GREEN, tsize=16, ssize=9.5)
+c.block(60.0, 71.0, ty - 5.0, ty + 4.0, "$\\Psi(f)$", "", C_GREEN, tsize=17)
+c.text(65.5, ty - 7.3, "basis, QR-orthonormal", size=10, color=SUB)
+# combine and output
+cx, cr = 88.0, 3.3
+c.ax.add_patch(plt.Circle((cx, by - 0.5), cr, fc="white", ec=TITLE, lw=2.0, zorder=4))
+c.ax.add_patch(plt.Circle((cx, by - 0.5), 0.5, fc=TITLE, ec=TITLE, zorder=5))
+c.text(cx, by + 5.2, "$\\Psi\\mathbf{b}+\\psi_0$", size=13, color=TITLE)
+c.icon_erp(108.0, by - 5.5, 13.0, 10.0)
+c.text(114.5, by + 6.4, "ERP $\\hat y(f)$", size=13)
+yf, yi = by + 0.8, by - 3.0
+c.arrow([(15.0, yf), (25.0, yf)])
+c.arrow([(25.0, yi), (15.0, yi)], color=INV, ls="--")
+c.arrow([(52.0, yf), (60.0, yf)])
+c.arrow([(60.0, yi), (52.0, yi)], color=INV, ls="--")
+c.arrow([(71.0, by - 0.5), (cx - cr, by - 0.5)])
+c.arrow([(cx - cr, by - 3.4), (71.0, by - 3.4)], color=INV, ls="--")
+c.arrow([(cx + cr, by - 0.5), (108.0, by - 0.5)])
+c.arrow([(108.0, by - 3.4), (cx + cr, by - 3.4)], color=INV, ls="--")
+c.arrow([(15.0, ty), (25.0, ty)])
+c.arrow([(52.0, ty), (60.0, ty)])
+c.arrow([(71.0, ty), (cx, ty), (cx, by - 0.5 - cr)])
+c.text(cx + 1.4, 22.0, "$\\Psi$ is shared by both directions", size=10.5, color=SUB, ha="left")
+c.text(98.0, by - 9.2, "inverse: $\\mathbf{b}^*=\\Psi^\\top(y-\\psi_0)/F$", size=11.5, color=INV)
 # key
-c.arrow([(2.5, 5.2), (8.5, 5.2)])
-c.text(9.5, 5.2, "forward: design $\\rightarrow$ ERP", size=11, color=FWD, ha="left")
-c.arrow([(8.5, 2.4), (2.5, 2.4)], color=INV, ls="--")
-c.text(9.5, 2.4, "inverse: ERP $\\rightarrow$ designs", size=11, color=INV, ha="left")
+c.arrow([(88.5, 9.0), (94.5, 9.0)])
+c.text(95.5, 9.0, "forward: design $\\rightarrow$ ERP", size=11, color=FWD, ha="left")
+c.arrow([(94.5, 5.8), (88.5, 5.8)], color=INV, ls="--")
+c.text(95.5, 5.8, "inverse: ERP $\\rightarrow$ designs", size=11, color=INV, ha="left")
 c.save()
 
 # ============================================================================================================

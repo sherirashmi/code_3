@@ -56,7 +56,7 @@ ax.text(80, 144.0, "From the plate-resonator equations to the ERP", fontsize=22,
 y = 139.0
 for num, title, eqs in STEPS:
     h = 10.2 + 7.2 * (len(eqs) - 1) + 4.4
-    ax.add_patch(FancyBboxPatch((3, y - h), 154, h, boxstyle="round,pad=0,rounding_size=1.6", fc="#f4f7fb", ec="#b8c8da", lw=1.4, zorder=1))
+    ax.add_patch(FancyBboxPatch((3, y - h), 154, h, boxstyle="round,pad=0,rounding_size=1.6", fc="white", ec="#b8c8da", lw=1.4, zorder=1))
     ax.add_patch(plt.Circle((8.2, y - 3.6), 2.1, fc="#d9e8f7", ec="#8fb4d9", lw=1.4, zorder=2))
     ax.text(8.2, y - 3.6, num, fontsize=16, ha="center", va="center", color=TITLE, zorder=3)
     ax.text(12.5, y - 3.6, title, fontsize=15.5, ha="left", va="center", color=GRAY, zorder=3)
