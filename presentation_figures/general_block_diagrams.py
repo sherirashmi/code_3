@@ -104,3 +104,42 @@ def make(name, title, input_kind, output_kind, arrow_color, ls, arch_sub, tag):
 
 make("forward_general_block_diagram", "Forward", "plate", "erp", FWD, "-", "design $\\rightarrow$ ERP", "one design gives one ERP  (one-to-one)")
 make("inverse_general_block_diagram", "Inverse", "erp", "plates", INV, "--", "ERP $\\rightarrow$ design", "many designs share one ERP  (many-to-one)")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Invertible: one architecture used in both directions (design <-> ERP), forward arrows down, inverse arrows up
+# ---------------------------------------------------------------------------------------------------------------------
+def make_invertible(name="invertible_general_block_diagram"):
+    W, H = 50.0, 78.0
+    fig = plt.figure(figsize=(6.4, 6.4 * H / W))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, W)
+    ax.set_ylim(0, H)
+    ax.axis("off")
+    cx = W / 2
+    ax.text(cx, H - 3.0, "Invertible", fontsize=18, ha="center", va="center", color=TITLE)
+    y_top, y_arch0, y_arch1, y_bot = H - 19.0, 28.0, 40.0, 6.0
+    icon_plate(ax, cx - 9, y_top, 18, 13, DESIGNS[0])
+    ax.text(cx, y_top - 3.2, "Resonator configuration", fontsize=13, ha="center", va="center", color=TITLE)
+    ax.text(cx + 12, y_top + 11.5, "Input / output", fontsize=12, color=SUB, ha="left", va="center")
+    ax.add_patch(FancyBboxPatch((cx - 14, y_arch0), 28, y_arch1 - y_arch0, boxstyle="round,pad=0,rounding_size=1.6", fc=C_PURPLE[0], ec=C_PURPLE[1], lw=1.8, zorder=3))
+    ax.text(cx, (y_arch0 + y_arch1) / 2 + 1.3, "Architecture", fontsize=18, ha="center", va="center", color=TITLE, zorder=4)
+    ax.text(cx, (y_arch0 + y_arch1) / 2 - 2.4, "design $\\leftrightarrow$ ERP", fontsize=11, ha="center", va="center", color=SUB, zorder=4)
+    icon_erp(ax, cx - 9, y_bot, 18, 13)
+    ax.text(cx, y_bot - 3.2, "ERP spectrum", fontsize=13, ha="center", va="center", color=TITLE)
+    ax.text(cx + 12, y_bot + 11.5, "Input / output", fontsize=12, color=SUB, ha="left", va="center")
+    dx = 3.0
+    arrow(ax, (cx - dx, y_top - 6.0), (cx - dx, y_arch1 + 0.3), FWD)      # forward: design -> architecture
+    arrow(ax, (cx - dx, y_arch0 - 0.3), (cx - dx, y_bot + 13.4), FWD)     # forward: architecture -> ERP
+    arrow(ax, (cx + dx, y_bot + 14.2), (cx + dx, y_arch0 - 0.3), INV, "--")  # inverse: ERP -> architecture
+    arrow(ax, (cx + dx, y_arch1 + 0.3), (cx + dx, y_top - 6.0), INV, "--")   # inverse: architecture -> design
+    ax.text(cx - dx - 1.2, (y_top - 6.0 + y_arch1) / 2, "forward", fontsize=11.5, color=FWD, ha="right", va="center")
+    ax.text(cx + dx + 1.2, (y_top - 6.0 + y_arch1) / 2, "inverse", fontsize=11.5, color=INV, ha="left", va="center")
+    ax.text(W / 2, 0.9, "one architecture, both directions", fontsize=12.5, ha="center", va="center", color=SUB)
+    for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
+        fig.savefig(ROOT / "presentation_figures" / f"{name}.{ext}", facecolor="white", **kw)
+    plt.close(fig)
+    print("saved", name)
+
+
+make_invertible()
