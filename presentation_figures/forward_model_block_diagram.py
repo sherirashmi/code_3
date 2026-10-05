@@ -19,6 +19,16 @@ from matplotlib.patches import FancyBboxPatch
 
 import utils.plot_style  # noqa: F401  (Computer Modern text and maths)
 
+import numpy as np
+
+from utils.support import load_dataset
+
+_payload = load_dataset(str(ROOT / "datasets" / "erp" / "3res" / "10k" / "dataset_erp_ft.pth"))
+SAMPLE = 21  # one real configuration and its ERP, shown as icons
+ERP = np.asarray(_payload["responses"], dtype=np.float64)[SAMPLE, :, 0]
+CFG = np.asarray(_payload["configuration_features"], dtype=np.float64)[SAMPLE]  # (3, 5): m, k, f_t, x, y
+LX, LY = 1.4, 0.5  # plate size (m)
+
 W, H = 133.0, 45.0
 BLUE, ACCENT = "#3d6a94", "#e8632b"        # arrow colour, accent
 TITLE, SUB = "#1c3550", "#4a5a6a"           # text on the light blocks
@@ -39,6 +49,31 @@ def block(x0, x1, y0, y1, title, sub, color, accent=False, tsize=17, ssize=9.6):
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     ax.text(cx, cy + 1.6, title, color=TITLE, fontsize=tsize, ha="center", va="center", zorder=4)
     ax.text(cx, cy - 2.2, sub, color=SUB, fontsize=ssize, ha="center", va="center", zorder=4, linespacing=1.35)
+
+
+ICON_BG = "#dbe8f6"
+
+
+def icon_erp(x0, y0, w, h):
+    """Minimalistic ERP-vs-frequency icon: black curve on two plain axes, light-blue panel."""
+    ax.add_patch(FancyBboxPatch((x0, y0), w, h, boxstyle="round,pad=0,rounding_size=1.0", fc=ICON_BG, ec="#8fb4d9", lw=1.4, zorder=3))
+    ax0, ay0, ax1, ay1 = x0 + 0.12 * w, y0 + 0.14 * h, x0 + 0.92 * w, y0 + 0.90 * h
+    ax.plot([ax0, ax0, ax1], [ay1, ay0, ay0], color="black", lw=1.4, zorder=4, solid_capstyle="butt")
+    t = np.linspace(0.0, 1.0, ERP.size)
+    v = (ERP - ERP.min()) / (ERP.max() - ERP.min())
+    ax.plot(ax0 + 0.02 * w + t * (ax1 - ax0 - 0.04 * w), ay0 + 0.04 * h + v * (ay1 - ay0 - 0.10 * h), color="black", lw=2.6, zorder=5,
+            solid_joinstyle="round")
+
+
+def icon_plate(x0, y0, w, h):
+    """Minimalistic resonator configuration: a plate (outline) with one dot per resonator."""
+    ax.add_patch(FancyBboxPatch((x0, y0), w, h, boxstyle="round,pad=0,rounding_size=1.0", fc=ICON_BG, ec="#8fb4d9", lw=1.4, zorder=3))
+    pw = 0.80 * w
+    ph = pw * LY / LX
+    px0, py0 = x0 + (w - pw) / 2, y0 + (h - ph) / 2
+    ax.add_patch(plt.Rectangle((px0, py0), pw, ph, fc="white", ec="black", lw=2.0, zorder=4))
+    for x, y in CFG[:, 3:5]:
+        ax.plot([px0 + x / LX * pw], [py0 + y / LY * ph], "o", color="black", ms=9, zorder=5)
 
 
 def arrow(pts, color=BLUE, lw=1.8, ls="-", head=True):
@@ -64,7 +99,8 @@ block(*DEC_X, 15.5, 32.5, "Decoder", "local refinement along $f$,\noutput head",
 ax.text((CORE_X[0] + CORE_X[1]) / 2, 37.4, "the only block that changes", color=ACCENT, fontsize=10.5, ha="center", va="center")
 
 # ---- inputs ------------------------------------------------------------------------------------------
-ax.text(0.8, mid(Y_ENC), "Resonators\n$(m,k,f_t,x,y)$\n$i=1,2,3$", fontsize=13, ha="left", va="center", linespacing=1.4)
+icon_plate(0.8, mid(Y_ENC) - 4.0, 10.6, 8.0)
+ax.text(6.1, mid(Y_ENC) - 8.2, "Resonators\n$(m,k,f_t,x,y)$\n$i=1,2,3$", fontsize=12.5, ha="center", va="center", linespacing=1.4)
 ax.text(0.8, mid(Y_F), "Frequency\n$f$\n301 points", fontsize=13, ha="left", va="center", linespacing=1.4)
 arrow([(12.6, mid(Y_ENC)), (ENC_X[0], mid(Y_ENC))])
 arrow([(12.6, mid(Y_F)), (ENC_X[0], mid(Y_F))])
@@ -79,8 +115,9 @@ cy = 24.0
 for y, ty in ((Y_ENC, cy + 4.5), (Y_Q, cy), (Y_F, cy - 4.5)):
     arrow([(ENC_X[1], mid(y)), (CORE_X[0], ty)])
 arrow([(CORE_X[1], cy), (DEC_X[0], cy)])
-arrow([(DEC_X[1], cy), (W - 1.0, cy)])
-ax.text(125.0, cy + 3.4, r"ERP $\hat y(f)$", fontsize=17, ha="center", va="center")
+arrow([(DEC_X[1], cy), (121.0, cy)])
+icon_erp(121.6, cy - 4.5, 10.6, 9.0)
+ax.text(126.9, cy + 7.2, r"ERP $\hat y(f)$", fontsize=15, ha="center", va="center")
 
 # ---- footer ------------------------------------------------------------------------------------------
 ax.text(66.0, 3.0, "Frequency encoder: MLP embedding in DON (trunk), DNO, DCO, GNO and STO; the raw frequency enters FNO, WNO, LNO, SIREN and NN.  "
