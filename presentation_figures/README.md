@@ -96,3 +96,5 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 | `idon_inverse_q64erp` | the Q64-ERP panel of the inverse example alone (test configuration 3), with no title above the plots (same script `idon_inverse_example_titles.py`) |
 
 | `forward_metrics_table` | forward operators: core operation plus RMSE, R^2, correlation (Pearson r over all points) and RMSE at the true resonance peaks of the latest 200-epoch checkpoints in `erp_forward/models/100k` (values read from `erp_forward/plots/models/100k/ALL_MODELS/forward_models_metrics.csv`); script `forward_metrics_table_figure.py` |
+
+| `ifno_loss_function` | training loss of the invertible coupling-flow operators (iFNO and variants) in its three stages, with simple symbols and the meaning of each term (`erp_invertible/scripts/common.py`: `stage1_loss`, `stage2_loss`, `stage3_loss`); script `ifno_loss_figure.py` |
