@@ -20,7 +20,11 @@ from matplotlib.patches import FancyBboxPatch
 import utils.plot_style  # noqa: F401  (Computer Modern text and maths)
 
 W, H = 133.0, 45.0
-BLUE, ACCENT, LIGHT = "#00508f", "#e8632b", "#d8e6f3"
+BLUE, ACCENT = "#3d6a94", "#e8632b"        # arrow colour, accent
+TITLE, SUB = "#1c3550", "#4a5a6a"           # text on the light blocks
+# light block colours: (fill, edge)
+C_ENC, C_QRY, C_FRQ = ("#d9e8f7", "#8fb4d9"), ("#e1f1de", "#97c791"), ("#d6eef0", "#86c3c8")
+C_CORE, C_DEC = ("#fde7d3", ACCENT), ("#ebe2f5", "#b39ad1")
 
 fig = plt.figure(figsize=(16, 16 * H / W))
 ax = fig.add_axes([0, 0, 1, 1])
@@ -29,12 +33,12 @@ ax.set_ylim(0, H)
 ax.axis("off")
 
 
-def block(x0, x1, y0, y1, title, sub, accent=False, tsize=17, ssize=9.6):
-    ax.add_patch(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=1.6", fc=BLUE,
-                                ec=ACCENT if accent else BLUE, lw=3.0 if accent else 1.0, ls="--" if accent else "-", zorder=3))
+def block(x0, x1, y0, y1, title, sub, color, accent=False, tsize=17, ssize=9.6):
+    ax.add_patch(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=1.6", fc=color[0],
+                                ec=color[1], lw=3.0 if accent else 1.6, ls="--" if accent else "-", zorder=3))
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    ax.text(cx, cy + 1.6, title, color="white", fontsize=tsize, ha="center", va="center", zorder=4)
-    ax.text(cx, cy - 2.2, sub, color=LIGHT, fontsize=ssize, ha="center", va="center", zorder=4, linespacing=1.35)
+    ax.text(cx, cy + 1.6, title, color=TITLE, fontsize=tsize, ha="center", va="center", zorder=4)
+    ax.text(cx, cy - 2.2, sub, color=SUB, fontsize=ssize, ha="center", va="center", zorder=4, linespacing=1.35)
 
 
 def arrow(pts, color=BLUE, lw=1.8, ls="-", head=True):
@@ -52,11 +56,11 @@ ENC_X, CORE_X, DEC_X = (17.0, 46.0), (65.0, 90.0), (97.0, 118.0)
 mid = lambda y: (y[0] + y[1]) / 2
 
 # ---- blocks ------------------------------------------------------------------------------------------
-block(*ENC_X, *Y_ENC, "Resonator encoder", "set + $f_t$-sorted encoders\n(GNO: graph nodes, STO: tokens)")
-block(*ENC_X, *Y_Q, "Resonance query", "$\\delta=f-f_t$, $|\\delta|$, $\\delta^2$ per resonator,\npooled over the resonators")
-block(*ENC_X, *Y_F, "Frequency encoder", "MLP embedding of $f$\n(or the frequency itself)")
-block(*CORE_X, 12.0, 36.0, "Core architecture", "architecture-specific:\nDON, DNO, FNO, DCO, GNO,\nSTO, SIREN, WNO, LNO\n(NN: plain MLP)", accent=True, tsize=18, ssize=10.2)
-block(*DEC_X, 15.5, 32.5, "Decoder", "local refinement along $f$,\noutput head")
+block(*ENC_X, *Y_ENC, "Resonator encoder", "set + $f_t$-sorted encoders\n(GNO: graph nodes, STO: tokens)", C_ENC)
+block(*ENC_X, *Y_Q, "Resonance query", "$\\delta=f-f_t$, $|\\delta|$, $\\delta^2$ per resonator,\npooled over the resonators", C_QRY)
+block(*ENC_X, *Y_F, "Frequency encoder", "MLP embedding of $f$\n(or the frequency itself)", C_FRQ)
+block(*CORE_X, 12.0, 36.0, "Core architecture", "architecture-specific:\nDON, DNO, FNO, DCO, GNO,\nSTO, SIREN, WNO, LNO\n(NN: plain MLP)", C_CORE, accent=True, tsize=18, ssize=10.2)
+block(*DEC_X, 15.5, 32.5, "Decoder", "local refinement along $f$,\noutput head", C_DEC)
 ax.text((CORE_X[0] + CORE_X[1]) / 2, 37.4, "the only block that changes", color=ACCENT, fontsize=10.5, ha="center", va="center")
 
 # ---- inputs ------------------------------------------------------------------------------------------
