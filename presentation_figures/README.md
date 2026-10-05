@@ -99,4 +99,4 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `ifno_loss_function` | training loss of the invertible coupling-flow operators (iFNO and variants) in its three stages, with simple symbols and the meaning of each term (`erp_invertible/scripts/common.py`: `stage1_loss`, `stage2_loss`, `stage3_loss`); script `ifno_loss_figure.py` |
 
-| `invertible_models_one_plot` | forward ERP prediction of iFNO, iLNO, iSTO and iGNO (`erp_invertible/models/200k_2res_18modes`) on test configuration 3 in one plot; script `invertible_models_one_plot.py` |
+| `invertible_models_one_plot` | iFNO, iLNO, iSTO and iGNO (`erp_invertible/models/200k_2res_18modes`) on test configuration 3: forward ERP prediction of all four in one plot, the plate with the true resonators and each model's inverse-predicted design (point estimate), and a table of the predicted mass and tuning frequency; script `invertible_models_one_plot.py` |
