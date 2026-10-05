@@ -17,8 +17,9 @@ from matplotlib.patches import FancyBboxPatch
 
 import utils.plot_style  # noqa: F401
 
-COMB, TRANS, REL, PER = ("#dbe8f6", "#8fb4d9"), ("#e1f1de", "#97c791"), ("#fde7d3", "#eba46f"), ("#fdf3c9", "#e0c25a")
-LEFT, CELL = ("#eef2f7", "#9aa9ba"), ("#ffffff", "#c3ccd6")
+COMB, TRANS, REL, PER = ("#dbe8f6", "#8fb4d9"), ("#ebe2f5", "#b39ad1"), ("#fde7d3", "#eba46f"), ("#fdf3c9", "#e0c25a")
+GOOD = ("#e1f1de", "#97c791")
+CELL = ("#ffffff", "#c3ccd6")
 TITLE, SUB = "#1c3550", "#4a5a6a"
 CSV = ROOT / "erp_forward" / "plots" / "models" / "100k" / "ALL_MODELS" / "forward_models_metrics.csv"
 
@@ -41,10 +42,25 @@ COLUMNS = [  # (csv column, header, format, better = lower?)
     ("RMSE at all peaks (dB)", "Peak RMSE (dB)", "{:.2f}", True),
 ]
 data = {r["Model"]: r for r in csv.DictReader(open(CSV))}
+worst = {c: (max if low else min)(float(data[n][c]) for n, *_ in ROWS) for c, _, _, low in COLUMNS}
+
+
+def mix(a, b, t):
+    ca, cb = [int(a[i : i + 2], 16) for i in (1, 3, 5)], [int(b[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(ca, cb))
+
+
+def badness(col, value):
+    """White (good) to red (bad), scaled between the best and the worst value of the column."""
+    t = (value - best[col]) / (worst[col] - best[col])
+    t = max(0.0, min(1.0, t)) ** 1.6  # middle values stay close to white
+    return (mix("#ffffff", "#f6a5a5", t), mix("#c3ccd6", "#d96b6b", t))
+
+
 best = {c: (min if low else max)(float(data[n][c]) for n, *_ in ROWS) for c, _, _, low in COLUMNS}
 
 W, RH, GAP = 134.0, 5.6, 1.4
-H = 8.5 + 1.2 + len(ROWS) * (RH + GAP) + 4.5
+H = 8.5 + 1.2 + len(ROWS) * (RH + GAP) + 6.0
 fig = plt.figure(figsize=(12.6, 12.6 * H / W))
 ax = fig.add_axes([0, 0, 1, 1])
 ax.set_xlim(0, W)
@@ -68,18 +84,18 @@ for i, (key, label, core, color) in enumerate(ROWS):
     y1 = top - i * (RH + GAP)
     y0 = y1 - RH
     ym = (y0 + y1) / 2
-    box(X_ARCH[0], X_ARCH[1], y0, y1, LEFT)
+    box(X_ARCH[0], X_ARCH[1], y0, y1, color)
     box(X_CORE[0], X_CORE[1], y0, y1, color)
     ax.text((X_ARCH[0] + X_ARCH[1]) / 2, ym, label, fontsize=11.6, ha="center", va="center", color=TITLE, zorder=4)
     ax.text((X_CORE[0] + X_CORE[1]) / 2, ym, core, fontsize=13, ha="center", va="center", color=TITLE, zorder=4)
     for j, (col, _, fmt, _) in enumerate(COLUMNS):
         x0 = X_MET + j * (MW + MGAP)
         value = float(data[key][col])
-        box(x0, x0 + MW, y0, y1, TRANS if abs(value - best[col]) < 1e-9 else CELL)
+        box(x0, x0 + MW, y0, y1, GOOD if abs(value - best[col]) < 1e-9 else badness(col, value))
         ax.text(x0 + MW / 2, ym, fmt.format(value), fontsize=13.5, ha="center", va="center", color=TITLE, zorder=4)
-ax.text(W / 2, 2.0, "Latest 200-epoch models, 100k dataset (10,000 test spectra). Correlation: Pearson $r$ over all points. "
-        "Peak RMSE: error at the resonance peaks of the true ERP. Best value of each column in green.",
-        fontsize=9.6, ha="center", va="center", color=SUB)
+ax.text(W / 2, 3.6, "Latest 200-epoch models, 100k dataset (10,000 test spectra). Correlation: Pearson $r$ over all points. "
+        "Peak RMSE: error at the resonance peaks of the true ERP.", fontsize=10, ha="center", va="center", color=SUB)
+ax.text(W / 2, 1.6, "Best value of each column in green; the worse the value, the redder.", fontsize=10, ha="center", va="center", color=SUB)
 for ext, kw in (("png", dict(dpi=220)), ("pdf", {}), ("svg", {})):
     fig.savefig(ROOT / "presentation_figures" / f"forward_metrics_table.{ext}", facecolor="white", **kw)
 print("saved")
