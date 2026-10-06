@@ -1,0 +1,48 @@
+Design-parameter recovery (500 held-out targets x 2 resonators = 1000 points per model/parameter)
+Caveat: the inverse problem is non-unique -- see this file's module docstring.
+==========================================================================================
+
+--- mass $m$ (kg) ---
+Model                 MAE  Pearson r
+MDN_b12            0.1672     0.6015
+cVAE_b12           0.3186    -0.0381
+Flow_b12            0.264     0.3602
+Diffusion_b12         0.1686     0.5743
+BasisFlow_b12         0.3705     0.1669
+PadINN_b12         0.2708     0.1503
+
+--- stiffness $k$ (N/m) ---
+Model                 MAE  Pearson r
+MDN_b12         7.479e+04     0.8035
+cVAE_b12         2.02e+05     0.1579
+Flow_b12        1.439e+05     0.6107
+Diffusion_b12      8.231e+04     0.7738
+BasisFlow_b12      1.508e+05     0.3957
+PadINN_b12      1.837e+05     0.3628
+
+--- tuning frequency $f_t$ (Hz) ---
+Model                 MAE  Pearson r
+MDN_b12             7.675     0.9426
+cVAE_b12            41.58     0.3194
+Flow_b12             15.7     0.8267
+Diffusion_b12          9.568     0.9273
+BasisFlow_b12          35.26     0.5939
+PadINN_b12             24     0.6600
+
+--- position $x$ (m) ---
+Model                 MAE  Pearson r
+MDN_b12            0.2624     0.4330
+cVAE_b12           0.4618    -0.0073
+Flow_b12           0.2868     0.3939
+Diffusion_b12         0.2623     0.4475
+BasisFlow_b12         0.5958     0.0130
+PadINN_b12         0.3205     0.3404
+
+--- position $y$ (m) ---
+Model                 MAE  Pearson r
+MDN_b12            0.1303     0.1185
+cVAE_b12           0.1603    -0.0358
+Flow_b12           0.1536     0.0408
+Diffusion_b12          0.135     0.0914
+BasisFlow_b12         0.1378     0.0567
+PadINN_b12         0.1346     0.1268

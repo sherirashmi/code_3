@@ -3,7 +3,7 @@
 """
 import sys
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 from pathlib import Path
 
@@ -16,10 +16,11 @@ import numpy as np
 from utils.erp_dataset import ERPDataset
 
 DATASET_100K = [
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
 ]
-OUT_DIR = Path("dataset_analysis/plots")
+OUT_DIR = Path("dataset_analysis/100k/plots")
+STATS_DIR = Path("dataset_analysis/100k/stats")
 
 BLUE = "#2a78d6"
 
@@ -61,7 +62,8 @@ def main():
 
     # Companion CSV with the raw per-frequency numbers, for anyone who
     # wants exact values rather than reading them off the plot.
-    csv_path = OUT_DIR / "erp_frequency_statistics.csv"
+    STATS_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path = STATS_DIR / "erp_frequency_statistics.csv"
     header = "frequency_hz,mean_db,std_db,min_db,q25_db,q75_db,max_db"
     rows = np.column_stack([freq_hz, mean, std, vmin, q25, q75, vmax])
     np.savetxt(csv_path, rows, delimiter=",", header=header, comments="", fmt="%.4f")

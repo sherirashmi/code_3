@@ -1,0 +1,17 @@
+method,rmse_db,median_rmse_db,skill_vs_mean_erp,skill_vs_bare_plate
+mean training ERP,7.113,6.949,0.0,0.413
+bare plate,9.286,9.394,-0.704,0.0
+random design (1),10.045,9.96,-0.994,-0.17
+random designs (best of 16),7.651,7.686,-0.157,0.321
+iDON Q64 (point estimate),6.584,6.384,0.143,0.497
+iDON Q64 (best of 16),5.095,4.765,0.487,0.699
+iDON Q64-ERP (point estimate),6.823,6.458,0.08,0.46
+iDON Q64-ERP (best of 16),5.377,5.107,0.429,0.665
+iFNO (point estimate),8.059,7.775,-0.284,0.247
+iFNO (best of 16),7.105,7.062,0.002,0.415
+iLNO (point estimate),8.22,7.952,-0.336,0.216
+iLNO (best of 16),7.21,7.323,-0.027,0.397
+iSTO (point estimate),8.342,8.072,-0.375,0.193
+iSTO (best of 16),7.138,7.174,-0.007,0.409
+iGNO (point estimate),8.279,8.179,-0.355,0.205
+iGNO (best of 16),7.309,7.369,-0.056,0.381

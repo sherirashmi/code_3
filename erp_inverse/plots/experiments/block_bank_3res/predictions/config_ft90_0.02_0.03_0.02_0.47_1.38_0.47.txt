@@ -1,0 +1,11 @@
+Model bank prediction (3 resonators; 7 blocks, f_t = 40, 50, 60, 70, 80, 90, 100 Hz, m = 0.2 kg; 32 samples per block, solver-checked)
+
+NOTE: ambiguous -- block(s) 40 Hz fit within 0.5 dB of the best, so the ERP does not single out one f_t (e.g. resonators where the plate barely moves have almost no effect).
+
+True configuration: f_t = 90 Hz; R1 (0.020, 0.030) m; R2 (0.020, 0.470) m; R3 (1.380, 0.470) m
+
+1. f_t = 50 Hz, m = 0.2 kg, k = 19,739 N/m; R1 (0.003, 0.200) m; R2 (0.642, 0.007) m; R3 (1.363, 0.106) m | ERP error (40-120 Hz) 0.47 dB | position error 17.0, 77.5, 36.4 cm (to y-mirror: 27.1, 62.2, 7.8 cm)
+2. f_t = 40 Hz, m = 0.2 kg, k = 12,633 N/m; R1 (0.078, 0.450) m; R2 (0.218, 0.031) m; R3 (1.356, 0.384) m | ERP error (40-120 Hz) 0.49 dB | position error 42.4, 48.1, 8.9 cm (to y-mirror: 6.1, 19.8, 35.5 cm)
+3. f_t = 50 Hz, m = 0.2 kg, k = 19,739 N/m; R1 (0.010, 0.475) m; R2 (0.720, 0.009) m; R3 (1.310, 0.043) m | ERP error (40-120 Hz) 0.76 dB | position error 44.5, 83.8, 43.3 cm (to y-mirror: 1.1, 70.0, 7.1 cm)
+
+Best ERP error of every block: 40 Hz: 0.49 dB, 50 Hz: 0.47 dB, 60 Hz: 1.54 dB, 70 Hz: 4.14 dB, 80 Hz: 1.61 dB, 90 Hz: 2.88 dB, 100 Hz: 4.43 dB

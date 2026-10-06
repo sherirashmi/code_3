@@ -31,7 +31,7 @@ Typical use from any neural-operator file
     dataset, loaders = prepare_erp_dataset(
         num_samples=500,
         batch_size=64,
-        dataset_file="datasets/dataset_erp_ft.pth",
+        dataset_file="datasets/erp/3res/10k/dataset_erp_ft.pth",
         regenerate_dataset=False,
     )
 
@@ -59,9 +59,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
+import utils.physics as _physics
 from utils.physics import (
     Lx,
     Ly,
+    edge_margin,
     freqs,
     m_max,
     m_min,
@@ -74,7 +76,219 @@ from utils.support import lhs_sampling, load_dataset, save_dataset
 
 FEATURE_NAMES = ("m", "k", "f_t", "x", "y")
 DATASET_SCHEMA_VERSION = 2
-DEFAULT_DATASET_FILE = "datasets/dataset_erp_ft.pth"
+DEFAULT_DATASET_FILE = "datasets/erp/3res/10k/dataset_erp_ft.pth"
+
+
+# ==================================================
+# Dataset registry (raw files + the modal resolution they were solved with)
+# ==================================================
+
+# Every raw ERP dataset in datasets/, keyed by a short tag that is also used
+# as the folder name for that dataset's checkpoints and plots. The modal
+# resolution is part of the dataset's identity: the 18-mode dataset was
+# solved with a 6x3 plate-mode basis, the others with 15x10, and the
+# solver must use the SAME basis whenever it produces a reference spectrum
+# for comparison against data/models built from that dataset.
+DATASETS: dict[str, dict[str, object]] = {
+    "10k": {
+        "label": "10k configurations, 150 plate modes (15x10)",
+        "files": ["datasets/erp/3res/10k/dataset_erp_ft.pth"],
+        "num_configurations": 10_000,
+        "modal_resolution": (15, 10),
+        "num_res": 3,
+    },
+    "100k": {
+        "label": "100k configurations, 150 plate modes (15x10)",
+        "files": [
+            "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+            "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
+        ],
+        "num_configurations": 100_000,
+        "modal_resolution": (15, 10),
+        "num_res": 3,
+    },
+    "200k_18modes": {
+        "label": "200k configurations, 18 plate modes (6x3)",
+        "files": [
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part1.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part2.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part3.pth",
+            "datasets/erp/3res/200k_18modes/dataset_erp_ft_200k_18_modes_part4.pth",
+        ],
+        "num_configurations": 200_000,
+        "modal_resolution": (6, 3),
+        "num_res": 3,
+    },
+}
+DATASETS["100k_2res_grid_18modes"] = {
+    "label": "100k configurations, 2 resonators on a 14x5 position grid, 18 plate modes (6x3)",
+    "files": [f"datasets/erp/2res/100k_2res_grid_18modes/dataset_erp_100k_2res_grid14x5_18modes_part{i}.pth" for i in range(1, 5)],
+    "num_configurations": 100_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+    "position_grid": (14, 5),
+}
+DATASETS["100k_2res_fixed_m0.2_ft72_18modes"] = {
+    "label": "100k configurations, 2 identical resonators (m = 0.2 kg, f_t = 72 Hz), continuous LHS x, y, "
+             "18 plate modes (6x3)",
+    "files": [f"datasets/erp/2res/100k_2res_fixed_m0.2_ft72_18modes/dataset_erp_100k_2res_fixed_m0p2_ft72_18modes_part{i}.pth" for i in range(1, 5)],
+    "num_configurations": 100_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+    "fixed_resonator": (0.2, 72.0),
+}
+DATASETS["200k_2res_18modes"] = {
+    "label": "200k configurations, 2 resonators, m, f_t, x, y all by Latin hypercube (k derived), "
+             "18 plate modes (6x3)",
+    "files": [f"datasets/erp/2res/200k_2res_18modes/dataset_erp_200k_2res_18modes_part{i}.pth" for i in range(1, 9)],
+    "num_configurations": 200_000,
+    "modal_resolution": (6, 3),
+    "num_res": 2,
+}
+# Block datasets for the position-only model bank (erp_inverse/scripts/fixed_resonator/block_bank.py):
+# 10k configurations each, num_res identical resonators (m = 0.2 kg, one f_t per block), LHS x, y.
+FIXED_BLOCK_FREQUENCIES = (40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0)
+FIXED_BLOCK_NUM_RES = (2, 3)
+
+
+def fixed_block_tag(f_t: float, m: float = 0.2, num_res: int = 2) -> str:
+    return f"10k_{int(num_res)}res_fixed_m{m:g}_ft{f_t:g}_18modes"
+
+
+for _nr in FIXED_BLOCK_NUM_RES:
+    for _ft in FIXED_BLOCK_FREQUENCIES:
+        DATASETS[fixed_block_tag(_ft, num_res=_nr)] = {
+            "label": f"10k configurations, {_nr} identical resonators (m = 0.2 kg, f_t = {_ft:g} Hz), continuous LHS x, y, "
+                     "18 plate modes (6x3)",
+            "files": [f"datasets/erp/blocks_{_nr}res/dataset_erp_10k_{_nr}res_fixed_m0p2_ft{_ft:g}_18modes.pth"],
+            "num_configurations": 10_000,
+            "modal_resolution": (6, 3),
+            "num_res": _nr,
+            "fixed_resonator": (0.2, _ft),
+        }
+DEFAULT_DATASET_TAG = "10k"
+
+
+def _repo_relative(path: str | Path) -> str:
+    """Repository-relative posix path (absolute paths inside the repository
+    are made relative, so they match the registry entries)."""
+    p = Path(path)
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(PROJECT_ROOT)
+        except ValueError:
+            pass
+    return p.as_posix()
+
+
+def _as_file_list(dataset_file: str | Path | Sequence[str]) -> list[str]:
+    if isinstance(dataset_file, (str, Path)):
+        return [_repo_relative(dataset_file)]
+    return [_repo_relative(f) for f in dataset_file]
+
+
+def dataset_files(tag: str) -> str | list[str]:
+    """Files for a registry tag: a plain string for single-file datasets
+    (so regeneration stays possible), a list for sharded ones."""
+    files = list(DATASETS[tag]["files"])
+    return files[0] if len(files) == 1 else files
+
+
+def dataset_tag_for(dataset_file: str | Path | Sequence[str]) -> str:
+    """Registry tag for a raw file/shard list, or a filename-derived tag for
+    an unregistered file (e.g. a freshly generated custom dataset)."""
+    files = _as_file_list(dataset_file)
+    for tag, spec in DATASETS.items():
+        if files == list(spec["files"]):
+            return tag
+    stem = Path(files[0]).stem.replace("dataset_erp_ft", "").strip("_")
+    return stem or "custom"
+
+
+def modal_resolution_for(
+    dataset_file: str | Path | Sequence[str],
+    payload: Mapping[str, object] | None = None,
+) -> tuple[int, int]:
+    """Plate-mode basis (Nx, Ny) a raw dataset was solved with.
+
+    Priority: the payload's own ``modal_resolution`` field (written by
+    :meth:`ERPDataset.to_payload` from now on), then the registry, then an
+    "18_modes" filename heuristic, then the 15x10 default.
+    """
+    if payload is not None and payload.get("modal_resolution") is not None:
+        nx, ny = payload["modal_resolution"]
+        return int(nx), int(ny)
+    tag = dataset_tag_for(dataset_file)
+    if tag in DATASETS:
+        nx, ny = DATASETS[tag]["modal_resolution"]
+        return int(nx), int(ny)
+    if any("18_modes" in f for f in _as_file_list(dataset_file)):
+        return 6, 3
+    return _physics.DEFAULT_NX, _physics.DEFAULT_NY
+
+
+def apply_dataset_modal_resolution(
+    dataset_file: str | Path | Sequence[str],
+    payload: Mapping[str, object] | None = None,
+    *,
+    verbose: bool = True,
+) -> tuple[int, int]:
+    """Switch the solver to the modal basis ``dataset_file`` was generated with."""
+    nx, ny = modal_resolution_for(dataset_file, payload)
+    _physics.set_modal_resolution(nx, ny, verbose=verbose)
+    return nx, ny
+
+
+def select_dataset_modal_resolution(tag: str) -> tuple[int, int]:
+    """Set the solver's (Nx, Ny) for a registry dataset at the moment it is
+    chosen (15 x 10 for the 150-mode datasets, 6 x 3 for the 18-mode one), so
+    every later calculation in the session uses that basis."""
+    nx, ny = (int(v) for v in DATASETS[tag]["modal_resolution"])
+    _physics.set_modal_resolution(nx, ny, verbose=False)
+    print(f"Modal resolution for dataset '{tag}': Nx = {nx}, Ny = {ny} ({nx * ny} plate modes)")
+    return nx, ny
+
+
+def recorded_modal_resolution(checkpoint: Mapping[str, object]) -> tuple[int, int] | None:
+    """(Nx, Ny) a trained model's checkpoint was trained with, or None for
+    checkpoints saved before this was recorded."""
+    value = checkpoint.get("modal_resolution")
+    if value is None and isinstance(checkpoint.get("preprocessing_state"), Mapping):
+        value = checkpoint["preprocessing_state"].get("modal_resolution")
+    if value is None:
+        return None
+    nx, ny = value
+    return int(nx), int(ny)
+
+
+def apply_model_modal_resolution(
+    checkpoint: Mapping[str, object],
+    dataset_file: str | Path | Sequence[str],
+    *,
+    model_name: str = "model",
+) -> tuple[int, int]:
+    """Use the (Nx, Ny) a trained model was trained with for every following
+    solver calculation made with it.
+
+    The model's own recorded resolution wins; older checkpoints without one
+    fall back to their dataset's resolution. A model whose recorded
+    resolution differs from the selected dataset's is rejected -- comparing
+    it against solver spectra from a different modal basis is meaningless.
+    """
+    dataset_resolution = modal_resolution_for(dataset_file)
+    resolution = recorded_modal_resolution(checkpoint)
+    if resolution is None:
+        resolution = dataset_resolution
+    elif resolution != dataset_resolution:
+        raise ValueError(
+            f"{model_name} was trained with Nx x Ny = {resolution[0]} x {resolution[1]} plate modes, but the "
+            f"selected dataset ({dataset_tag_for(dataset_file)}) uses {dataset_resolution[0]} x "
+            f"{dataset_resolution[1]}. Select the dataset the model was trained on."
+        )
+    _physics.set_modal_resolution(*resolution, verbose=False)
+    print(f"{model_name}: using its training modal resolution Nx = {resolution[0]}, Ny = {resolution[1]} "
+          f"({resolution[0] * resolution[1]} plate modes)")
+    return resolution
 
 
 # ==================================================
@@ -211,6 +425,44 @@ def configuration_to_resonators(
 # ==================================================
 
 
+def grid_positions(nx: int, ny: int) -> np.ndarray:
+    """``(nx*ny, 2)`` equidistant plate points [x, y], inside the edge margin.
+
+    14 x 5 on the 1.4 m x 0.5 m plate gives x = 0.05, 0.15, ..., 1.35 m and
+    y = 0.05, 0.15, ..., 0.45 m (0.1 m spacing, cell centres of a 14 x 5
+    tiling). Cell index = ix * ny + iy.
+    """
+    xs = np.linspace(edge_margin, Lx - edge_margin, int(nx))
+    ys = np.linspace(edge_margin, Ly - edge_margin, int(ny))
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")
+    return np.stack([gx.ravel(), gy.ravel()], axis=1)
+
+
+def balanced_grid_cells(num_samples: int, num_res: int, nx: int, ny: int, seed: int = 727) -> np.ndarray:
+    """``(num_samples, num_res)`` grid-cell indices: distinct cells within a
+    configuration, every unordered cell combination used (as near as
+    possible) equally often, resonator order randomised.
+
+    The grid analogue of LHS's stratification: with 2 resonators on 70
+    cells, the 2,415 cell pairs each appear 41-42 times in 100k samples.
+    """
+    import itertools
+    import math
+
+    rng = np.random.default_rng(seed)
+    num_cells = int(nx) * int(ny)
+    if num_res > num_cells:
+        raise ValueError(f"{num_res} resonators do not fit on {num_cells} distinct grid cells.")
+    if math.comb(num_cells, num_res) <= 2_000_000:
+        combos = np.array(list(itertools.combinations(range(num_cells), num_res)), dtype=np.int64)
+        reps = -(-num_samples // len(combos))
+        order = np.concatenate([rng.permutation(len(combos)) for _ in range(reps)])[:num_samples]
+        cells = combos[order]
+    else:  # too many combinations to enumerate: uniform distinct draws
+        cells = np.stack([rng.choice(num_cells, size=num_res, replace=False) for _ in range(num_samples)])
+    return rng.permuted(cells, axis=1)
+
+
 class ERPDataset(Dataset):
     """Shared configuration-frequency ERP dataset.
 
@@ -228,8 +480,16 @@ class ERPDataset(Dataset):
         num_samples: int = 100,
         num_res: int = default_num_res,
         seed: int = 727,
+        position_grid: tuple[int, int] | None = None,
+        fixed_resonator: tuple[float, float] | None = None,
     ) -> None:
         super().__init__()
+        # (m, f_t): every resonator gets this mass [kg] and tuning frequency
+        # [Hz] (k derived); only x, y are sampled. None = m, f_t by LHS.
+        self.fixed_resonator = tuple(float(v) for v in fixed_resonator) if fixed_resonator else None
+        # (nx, ny): resonators only on an nx x ny grid of equidistant plate
+        # points (see grid_positions); None = continuous LHS positions.
+        self.position_grid = tuple(int(v) for v in position_grid) if position_grid else None
         if num_samples <= 0:
             raise ValueError("num_samples must be positive.")
         if num_res <= 0:
@@ -276,13 +536,42 @@ class ERPDataset(Dataset):
         save: bool = True,
         filename: str | None = None,
         verbose: bool = True,
+        grid_cells: np.ndarray | None = None,
+        samples: np.ndarray | None = None,
     ) -> dict[str, object]:
-        """Generate ERP spectra for ``self.num_samples`` resonator configurations."""
-        samples = lhs_sampling(
-            self.num_samples,
-            bounds=resonator_bounds(self.num_res),
-            seed=self.seed,
-        )
+        """Generate ERP spectra for ``self.num_samples`` resonator configurations.
+
+        ``grid_cells`` (grid datasets only): precomputed ``(num_samples,
+        num_res)`` cell indices, so a dataset generated in shards keeps the
+        cell-combination balance of the whole dataset. ``samples``: precomputed
+        ``(num_samples, 4*num_res)`` LHS rows ``[x, y, f_t, m]*N`` (one Latin
+        hypercube over all shards), instead of drawing them here.
+        """
+        if samples is not None:
+            samples = np.array(samples, dtype=np.float64, copy=True).reshape(self.num_samples, self.num_res * 4)
+        else:
+            samples = lhs_sampling(
+                self.num_samples,
+                bounds=resonator_bounds(self.num_res),
+                seed=self.seed,
+            )
+        if self.position_grid is not None:
+            # m and f_t stay LHS; x, y are replaced by balanced grid cells.
+            cells = (
+                np.asarray(grid_cells, dtype=np.int64) if grid_cells is not None
+                else balanced_grid_cells(self.num_samples, self.num_res, *self.position_grid, seed=self.seed)
+            )
+            points = grid_positions(*self.position_grid)
+            quads = samples.reshape(self.num_samples, self.num_res, 4)
+            quads[..., 0:2] = points[cells]
+            samples = quads.reshape(self.num_samples, self.num_res * 4)
+        if self.fixed_resonator is not None:
+            # x, y stay LHS (or grid); f_t and m are the same for every resonator.
+            fixed_m, fixed_ft = self.fixed_resonator
+            quads = samples.reshape(self.num_samples, self.num_res, 4)
+            quads[..., 2] = fixed_ft
+            quads[..., 3] = fixed_m
+            samples = quads.reshape(self.num_samples, self.num_res * 4)
 
         n_freqs = self.frequency_values.size
         configuration_features = np.empty(
@@ -296,7 +585,15 @@ class ERPDataset(Dataset):
                 f"Generating ERP dataset: {self.num_samples} configurations, "
                 f"{n_freqs} frequencies/configuration"
             )
-            print("Sampled variables : x, y, f_t, m  (independent LHS)")
+            if self.fixed_resonator is not None:
+                print(f"Fixed resonators  : m = {self.fixed_resonator[0]} kg, f_t = {self.fixed_resonator[1]} Hz; "
+                      "x, y sampled")
+            elif self.position_grid is None:
+                print("Sampled variables : x, y, f_t, m  (independent LHS)")
+            else:
+                nx, ny = self.position_grid
+                print(f"Sampled variables : f_t, m (LHS); x, y on a {nx} x {ny} grid "
+                      "(distinct cells, every cell combination equally often)")
             print("Stored features   : [m, k, f_t, x, y]")
             print(f"m range            : [{m_min}, {m_max}] kg")
             print("Derived stiffness  : k = m * (2*pi*f_t)^2")
@@ -324,6 +621,7 @@ class ERPDataset(Dataset):
 
         self.configuration_features = configuration_features
         self.responses = responses
+        self.modal_resolution = _physics.get_modal_resolution()
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
         self.norm_params = None
@@ -348,7 +646,10 @@ class ERPDataset(Dataset):
             "configuration_features": self.configuration_features,
             "responses": self.responses,
             "plate_geometry": {"Lx": float(Lx), "Ly": float(Ly)},
+            "modal_resolution": [int(_physics.Nx), int(_physics.Ny)],
             "resonator_mass_bounds": {"m_min": float(m_min), "m_max": float(m_max)},
+            "position_grid": list(self.position_grid) if self.position_grid else None,
+            "fixed_resonator": list(self.fixed_resonator) if self.fixed_resonator else None,
         }
 
     def load(self, filename: str) -> "ERPDataset":
@@ -366,6 +667,10 @@ class ERPDataset(Dataset):
 
         self.num_samples = int(payload["num_samples"])
         self.num_res = int(payload["num_res"])
+        grid = payload.get("position_grid")
+        self.position_grid = tuple(int(v) for v in grid) if grid else None
+        fixed = payload.get("fixed_resonator")
+        self.fixed_resonator = tuple(float(v) for v in fixed) if fixed else None
         self.seed = int(payload.get("seed", self.seed))
         self.frequency_values = np.asarray(
             payload["frequency_values"], dtype=np.float32
@@ -392,6 +697,7 @@ class ERPDataset(Dataset):
                 f"expected {expected_response_shape}."
             )
 
+        self.modal_resolution = apply_dataset_modal_resolution(filename, payload)
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
         self.norm_params = None
@@ -436,6 +742,8 @@ class ERPDataset(Dataset):
                 raise ValueError(f"{filename} has different frequency_values than {filenames[0]}.")
 
         self.num_res = num_res
+        grid = first.get("position_grid")
+        self.position_grid = tuple(int(v) for v in grid) if grid else None
         self.seed = int(first.get("seed", self.seed))
         self.frequency_values = frequency_values
         self.configuration_features = np.concatenate(
@@ -445,6 +753,10 @@ class ERPDataset(Dataset):
             [np.asarray(p["responses"], dtype=np.float32) for p in payloads], axis=0
         )
         self.num_samples = self.configuration_features.shape[0]
+        resolutions = {modal_resolution_for(filenames, p) for p in payloads}
+        if len(resolutions) > 1 and any(p.get("modal_resolution") is not None for p in payloads):
+            raise ValueError(f"Shards {list(filenames)} were generated with different modal resolutions.")
+        self.modal_resolution = apply_dataset_modal_resolution(filenames, first)
 
         self.selected_source_ids = np.arange(self.num_samples, dtype=np.int64)
         self.split_configuration_ids = None
@@ -735,6 +1047,9 @@ class ERPDataset(Dataset):
             # field existed -- those fall back to whatever dataset_file the
             # caller passes, same as always.
             "dataset_file": getattr(self, "raw_dataset_file", None),
+            # Plate-mode basis of the raw data; restored by evaluate/predict
+            # so solver reference spectra use the same physics.
+            "modal_resolution": list(getattr(self, "modal_resolution", _physics.get_modal_resolution())),
         }
 
     # --------------------------------------------------
@@ -823,7 +1138,7 @@ def prepare_erp_dataset(
     num_samples: int = 100,
     *,
     batch_size: int = 64,
-    num_res: int = default_num_res,
+    num_res: int | None = None,
     dataset_file: str | Sequence[str] = DEFAULT_DATASET_FILE,
     regenerate_dataset: bool = False,
     num_generate: int | None = None,
@@ -846,7 +1161,9 @@ def prepare_erp_dataset(
     batch_size:
         Number of configuration-frequency pairs per mini-batch.
     num_res:
-        Number of resonators per configuration.
+        Number of resonators per configuration. ``None`` (default) accepts
+        whatever the loaded file contains (and generates the project
+        default, 3, when creating a new file); an integer is enforced.
     dataset_file:
         Shared raw ERP dataset file. Pass a list/tuple of filenames instead
         of one string to load a dataset stored as multiple same-schema
@@ -881,16 +1198,22 @@ def prepare_erp_dataset(
             raise ValueError("regenerate_dataset is not supported with a sharded dataset_file.")
         if verbose:
             print(f"Loading sharded raw ERP dataset ({len(dataset_file)} files): {list(dataset_file)}")
-        dataset = ERPDataset(num_samples=max(num_samples, 3), num_res=num_res, seed=seed)
+        dataset = ERPDataset(num_samples=max(num_samples, 3), num_res=num_res if num_res is not None else default_num_res, seed=seed)
         dataset.load_shards(list(dataset_file))
 
-        if dataset.num_res != int(num_res):
+        if num_res is not None and dataset.num_res != int(num_res):
             raise ValueError(
                 f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                 "was requested. Use a matching dataset file or regenerate it."
             )
     else:
         path = Path(dataset_file)
+        if not path.is_absolute() and not path.exists():
+            # repository-relative path (datasets/erp/...): resolve against the
+            # repository root, so a run from another folder loads the file
+            # instead of silently regenerating it
+            path = PROJECT_ROOT / path
+            dataset_file = str(path)
         should_generate = regenerate_dataset or not path.exists()
 
         if should_generate:
@@ -900,25 +1223,28 @@ def prepare_erp_dataset(
             if n_generate < num_samples and preprocessing_state is None:
                 raise ValueError("num_generate cannot be smaller than num_samples.")
 
+            # Generate with the basis this file is registered with (15x10
+            # unless it is a registered reduced-mode dataset).
+            apply_dataset_modal_resolution(dataset_file, verbose=verbose)
             if verbose:
                 reason = "regenerate_dataset=True" if regenerate_dataset else "file missing"
                 print(f"Creating raw ERP dataset ({reason}): {dataset_file}")
 
             dataset = ERPDataset(
                 num_samples=n_generate,
-                num_res=num_res,
+                num_res=num_res if num_res is not None else default_num_res,
                 seed=seed,
             )
             dataset.generate(save=True, filename=dataset_file, verbose=verbose)
         else:
             dataset = ERPDataset(
                 num_samples=max(num_samples, 3),
-                num_res=num_res,
+                num_res=num_res if num_res is not None else default_num_res,
                 seed=seed,
             )
             dataset.load(dataset_file)
 
-            if dataset.num_res != int(num_res):
+            if num_res is not None and dataset.num_res != int(num_res):
                 raise ValueError(
                     f"Loaded dataset has num_res={dataset.num_res}, but num_res={num_res} "
                     "was requested. Use a matching dataset file or regenerate it."
@@ -974,6 +1300,8 @@ def prepare_erp_dataset(
         print(f"Configurations used          : {info['num_configurations']}")
         print(f"Resonators/configuration     : {info['num_res']}")
         print(f"Frequencies/configuration    : {info['num_frequencies']}")
+        nx, ny = getattr(dataset, "modal_resolution", _physics.get_modal_resolution())
+        print(f"Plate modes (solver)  : {nx} x {ny} = {nx * ny}")
         print(f"Model input shape     : {info['model_input_shape']}")
         print(f"Target                : ERP, shape {info['target_shape']}")
         print(
@@ -999,6 +1327,15 @@ __all__ = [
     "configuration_to_resonators",
     "FEATURE_NAMES",
     "DEFAULT_DATASET_FILE",
+    "DATASETS",
+    "DEFAULT_DATASET_TAG",
+    "dataset_files",
+    "dataset_tag_for",
+    "modal_resolution_for",
+    "apply_dataset_modal_resolution",
+    "select_dataset_modal_resolution",
+    "recorded_modal_resolution",
+    "apply_model_modal_resolution",
 ]
 
 
@@ -1020,8 +1357,9 @@ if __name__ == "__main__":
         filename=DEFAULT_DATASET_FILE,
         verbose=True,
     )
-    print(f"Dataset size: {Path('datasets/dataset_erp_ft.pth').stat().st_size / (1024**2):.2f} MB")
-    data = torch.load("datasets/dataset_erp_ft.pth", map_location="cpu", weights_only=False)
+    _demo_file = PROJECT_ROOT / "datasets/erp/3res/10k/dataset_erp_ft.pth"
+    print(f"Dataset size: {_demo_file.stat().st_size / (1024**2):.2f} MB")
+    data = torch.load(_demo_file, map_location="cpu", weights_only=False)
     print("Configurations:", data["num_samples"])
     print("Frequencies per configuration:", len(data["frequency_values"]))
     print("Total samples:", data["num_samples"] * len(data["frequency_values"]))

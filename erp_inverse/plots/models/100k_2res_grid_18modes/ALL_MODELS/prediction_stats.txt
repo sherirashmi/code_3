@@ -1,0 +1,25 @@
+Inverse-design prediction quality (150 held-out target spectra, 8 samples per target, every design scored with the actual coupled plate-resonator solver)
+Selection rules: random = first i.i.d. sample (no selection); own = the model's own target-blind rule
+(highest log p for MDN/cVAE/Flow/BasisFlow -- cVAE via importance-sampled marginal; point estimate for
+Surrogate; n/a for Diffusion/PadINN); oracle = best of N by solver error against the TARGET (upper bound).
+==============================================================================================================
+Model              Rule       MAE (dB)  RMSE (dB)  Pearson r  Mean spec. r      R^2
+--------------------------------------------------------------------------------------------------------------
+MDN_b12            random        3.483      6.774     0.7773        0.7736   0.5551
+MDN_b12            own           3.042      6.246     0.8111        0.8083   0.6218
+MDN_b12            oracle        2.164      4.845     0.8862        0.8831   0.7724
+cVAE_b12           random        6.036      9.692     0.5424        0.5455   0.0894
+cVAE_b12           own           6.162      9.849     0.5280        0.5321   0.0596
+cVAE_b12           oracle        4.093      7.434     0.7323        0.7321   0.4643
+Flow_b12           random        3.889      7.381     0.7354        0.7319   0.4718
+Flow_b12           own           3.603      7.074     0.7578        0.7544   0.5149
+Flow_b12           oracle        2.387      5.187     0.8694        0.8662   0.7392
+Diffusion_b12      random        3.234      6.619     0.7883        0.7857   0.5753
+Diffusion_b12      own             n/a
+Diffusion_b12      oracle        2.109      4.769     0.8897        0.8867   0.7795
+BasisFlow_b12      random        4.665      8.295     0.6672        0.6674   0.3329
+BasisFlow_b12      own           4.767      8.507     0.6544        0.6542   0.2984
+BasisFlow_b12      oracle        3.374      6.528     0.7930        0.7915   0.5868
+PadINN_b12         random        5.232      8.931     0.6123        0.6092   0.2268
+PadINN_b12         own             n/a
+PadINN_b12         oracle        3.337      6.427     0.8003        0.7981   0.5996

@@ -14,26 +14,29 @@ import numpy as np
 import torch
 from scipy.signal import find_peaks
 
+import utils.physics as _physics
 from utils.physics import (
     F0,
-    N,
     P_ref,
     X_grid,
     Y_grid,
     c_L,
     dA,
     freqs,
-    mode_shapes,
-    omega_n,
     rho_L,
     xf,
     yf,
 )
 
+# NOTE: the modal basis (N, omega_n, mode_shapes) is read from the
+# ``utils.physics`` module at call time rather than imported by value, so
+# ``utils.physics.set_modal_resolution`` (e.g. 6x3 for the 18-mode dataset)
+# takes effect here without reloading this module.
 
-# Cached full-grid modal basis and its spatial Gram matrix.
-_FULL_GRID_PHI: np.ndarray | None = None
-_FULL_GRID_GRAM: np.ndarray | None = None
+# Cached full-grid modal basis and its spatial Gram matrix, keyed on the
+# modal resolution they were built for.
+_FULL_GRID_PHI: dict[tuple[int, int], np.ndarray] = {}
+_FULL_GRID_GRAM: dict[tuple[int, int], np.ndarray] = {}
 
 
 # ==================================================
@@ -44,6 +47,9 @@ def compute_coupled_matrices(
     resonators: Sequence[dict[str, float]],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct modal mass, damping, stiffness and forcing arrays."""
+    N = _physics.N
+    omega_n = _physics.omega_n
+    mode_shapes = _physics.mode_shapes
     n_res = len(resonators)
     n_dofs = N + n_res
 
@@ -106,6 +112,7 @@ def solve_modal_response(
     omega = 2.0 * np.pi * frequencies_arr
 
     M, C, K, rhs = compute_coupled_matrices(resonators)
+    N = _physics.N
     q_plate = np.empty((frequencies_arr.size, N), dtype=np.complex128)
 
     # Frequency-by-frequency solve keeps memory bounded and is typically
@@ -122,10 +129,10 @@ def solve_modal_response(
 # ==================================================
 
 def _get_full_grid_phi() -> np.ndarray:
-    global _FULL_GRID_PHI
-    if _FULL_GRID_PHI is None:
-        _FULL_GRID_PHI = mode_shapes(X_grid.ravel(), Y_grid.ravel())
-    return _FULL_GRID_PHI
+    key = _physics.get_modal_resolution()
+    if key not in _FULL_GRID_PHI:
+        _FULL_GRID_PHI[key] = _physics.mode_shapes(X_grid.ravel(), Y_grid.ravel())
+    return _FULL_GRID_PHI[key]
 
 
 def compute_displacement(
@@ -168,7 +175,7 @@ def compute_displacement(
 
     scalar_point = x_arr.ndim == 0
     original_shape = x_arr.shape
-    phi_eval = mode_shapes(x_arr.ravel(), y_arr.ravel())
+    phi_eval = _physics.mode_shapes(x_arr.ravel(), y_arr.ravel())
     displacement = q_plate @ phi_eval
 
     if scalar_point:
@@ -220,11 +227,11 @@ def compute_erp(velocity_field: np.ndarray) -> np.ndarray:
 
 def _get_full_grid_gram() -> np.ndarray:
     """Return cached Phi Phi^T dA used for direct ERP evaluation."""
-    global _FULL_GRID_GRAM
-    if _FULL_GRID_GRAM is None:
+    key = _physics.get_modal_resolution()
+    if key not in _FULL_GRID_GRAM:
         phi_grid = _get_full_grid_phi()
-        _FULL_GRID_GRAM = (phi_grid @ phi_grid.T) * dA
-    return _FULL_GRID_GRAM
+        _FULL_GRID_GRAM[key] = (phi_grid @ phi_grid.T) * dA
+    return _FULL_GRID_GRAM[key]
 
 
 def compute_erp_spectrum(

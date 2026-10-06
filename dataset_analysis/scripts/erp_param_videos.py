@@ -1,16 +1,15 @@
 import sys
-sys.path.insert(0, "/home/user/code_3")
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
+import matplotlib.pyplot as plt
 
+from gif_common import ERP_COLOR, ERP_LABEL, FREQ_LABEL, GIF_DPI, OUT_DIR, TUNING_COLOR, position_text, style_axes
 from utils.solver import compute_erp_spectrum
 from utils.physics import freqs, fmin, fmax, m_min, m_max, Lx, Ly, edge_margin
-
-OUT_DIR = "dataset_analysis/videos"
 
 # Fixed position for every resonator in every case/video, well inside plate bounds.
 X0, Y0 = 0.70, 0.25
@@ -43,30 +42,31 @@ def make_video(
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
     fig.suptitle(title, fontsize=13)
+    fig.text(0.5, 0.905, f"One resonator, {position_text(X0, Y0)}", ha="center", fontsize=10, color="#3d3c39")
 
     lines = []
     ft_lines = []
     texts = []
     for ax, label in zip((ax1, ax2), (case_a_label, case_b_label)):
-        (line,) = ax.plot([], [], lw=2.2, color="#4C72B0")
-        ft_line = ax.axvline(0, color="red", ls=":", lw=1.5)
+        style_axes(ax)
+        (line,) = ax.plot([], [], lw=2.0, color=ERP_COLOR)
+        ft_line = ax.axvline(0, color=TUNING_COLOR, ls="--", lw=1.5, label="Resonator tuning frequency")
         ax.set_xlim(fmin, fmax)
         ax.set_ylim(y_lo, y_hi)
-        ax.set_xlabel("Frequency (Hz)")
-        ax.set_ylabel("ERP (dB)")
+        ax.set_xlabel(FREQ_LABEL)
+        ax.set_ylabel(ERP_LABEL)
         ax.set_title(label, fontsize=11)
-        ax.grid(True, alpha=0.3)
         txt = ax.text(
-            0.02, 0.97, "", transform=ax.transAxes, va="top", ha="left",
-            fontsize=9.5, family="monospace",
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="gray"),
+            0.02, 0.97, "", transform=ax.transAxes, va="top", ha="left", fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="#b5b5ae"),
         )
+        ax.legend(loc="lower right", fontsize=9)
         lines.append(line)
         ft_lines.append(ft_line)
         texts.append(txt)
 
     def fmt(m, k, f_t):
-        return f"m = {m:.3f} kg\nk = {k:,.1f} N/m\nf_t = {f_t:.1f} Hz\nx = {X0:.2f} m, y = {Y0:.2f} m"
+        return (f"Mass: {m:.3f} kg\nStiffness: {k:,.0f} N/m\nTuning frequency: {f_t:.1f} Hz")
 
     def init():
         for line in lines:
@@ -85,10 +85,10 @@ def make_video(
         return lines + ft_lines + texts
 
     anim = FuncAnimation(fig, update, frames=n, init_func=init, blit=False, interval=120)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout(rect=[0, 0, 1, 0.9])
     writer = PillowWriter(fps=8)
-    path = f"{OUT_DIR}/{filename}"
-    anim.save(path, writer=writer)
+    path = OUT_DIR / filename
+    anim.save(path, writer=writer, dpi=GIF_DPI)
     plt.close(fig)
     print(f"Saved {path}")
 
@@ -105,9 +105,9 @@ series_a = [(m_a, m_a * (2 * np.pi * f) ** 2, f) for f in f_t_sweep]
 series_b = [(m_b, m_b * (2 * np.pi * f) ** 2, f) for f in f_t_sweep]
 make_video(
     "video1_fixed_mass_sweep_ft.gif",
-    "Fixed mass, sweeping f_t (10-160 Hz) -- k derived = m*(2*pi*f_t)^2",
-    f"Case A: m = {m_a:.2f} kg (light)",
-    f"Case B: m = {m_b:.2f} kg (heavy)",
+    r"Sweeping the tuning frequency ($10$ to $160$ Hz) at fixed mass; stiffness follows $k = m\,(2\pi f_t)^2$",
+    f"Case A: light resonator, mass {m_a:.2f} kg",
+    f"Case B: heavy resonator, mass {m_b:.2f} kg",
     series_a, series_b, "f_t",
 )
 
@@ -119,9 +119,9 @@ series_a = [(k_a / (2 * np.pi * f) ** 2, k_a, f) for f in f_t_sweep]
 series_b = [(k_b / (2 * np.pi * f) ** 2, k_b, f) for f in f_t_sweep]
 make_video(
     "video2_fixed_k_sweep_ft.gif",
-    "Fixed stiffness, sweeping f_t (10-160 Hz) -- m derived = k/(2*pi*f_t)^2",
-    f"Case A: k = {k_a:,.0f} N/m",
-    f"Case B: k = {k_b:,.0f} N/m",
+    r"Sweeping the tuning frequency ($10$ to $160$ Hz) at fixed stiffness; mass follows $m = k\,/\,(2\pi f_t)^2$",
+    f"Case A: stiffness {k_a:,.0f} N/m",
+    f"Case B: stiffness {k_b:,.0f} N/m",
     series_a, series_b, "f_t",
 )
 
@@ -133,9 +133,10 @@ series_a = [(m, m * (2 * np.pi * ft_a) ** 2, ft_a) for m in m_sweep]
 series_b = [(m, m * (2 * np.pi * ft_b) ** 2, ft_b) for m in m_sweep]
 make_video(
     "video3_fixed_ft_sweep_mass.gif",
-    f"Fixed f_t, sweeping mass ({m_min:g}-{m_max:g} kg) -- k derived = m*(2*pi*f_t)^2",
-    f"Case A: f_t = {ft_a:.0f} Hz",
-    f"Case B: f_t = {ft_b:.0f} Hz",
+    f"Sweeping the resonator mass (${m_min:g}$ to ${m_max:g}$ kg) at fixed tuning frequency; "
+    r"stiffness follows $k = m\,(2\pi f_t)^2$",
+    f"Case A: tuning frequency {ft_a:.0f} Hz",
+    f"Case B: tuning frequency {ft_b:.0f} Hz",
     series_a, series_b, "m",
 )
 
@@ -146,9 +147,10 @@ series_a = [(k / (2 * np.pi * ft_a) ** 2, k, ft_a) for k in k_sweep]
 series_b = [(k / (2 * np.pi * ft_b) ** 2, k, ft_b) for k in k_sweep]
 make_video(
     "video4_fixed_ft_sweep_k.gif",
-    f"Fixed f_t, sweeping stiffness ({K_PRACTICAL_LOW:g}-{K_PRACTICAL_HIGH:g} N/m) -- m derived = k/(2*pi*f_t)^2",
-    f"Case A: f_t = {ft_a:.0f} Hz",
-    f"Case B: f_t = {ft_b:.0f} Hz",
+    f"Sweeping the resonator stiffness (${K_PRACTICAL_LOW:g}$ to ${K_PRACTICAL_HIGH:,.0f}$ N/m) at fixed tuning frequency; "
+    r"mass follows $m = k\,/\,(2\pi f_t)^2$",
+    f"Case A: tuning frequency {ft_a:.0f} Hz",
+    f"Case B: tuning frequency {ft_b:.0f} Hz",
     series_a, series_b, "k",
 )
 

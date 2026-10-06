@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import sys
 
-sys.path.insert(0, "/home/user/code_3")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import matplotlib
@@ -45,10 +45,10 @@ import matplotlib.cm as cm
 
 from utils.erp_dataset import ERPDataset
 from utils.physics import Lx, Ly, xf, yf
-from erp_inverse_operators.common import canonicalize_by_ft
+from erp_inverse.scripts.common import canonicalize_by_ft
 
-PAIRS_OUT = "dataset_analysis/plots/similar_erp_pairs.png"
-CLUSTERS_OUT = "dataset_analysis/plots/similar_erp_clusters.png"
+PAIRS_OUT = "dataset_analysis/100k/plots/similar_erp_pairs.png"
+CLUSTERS_OUT = "dataset_analysis/100k/plots/similar_erp_clusters.png"
 
 MSE_EDGE_THRESHOLD = 0.5  # dB^2, "near-identical" edge for building clusters
 N_TOP_PAIRS = 5
@@ -60,8 +60,8 @@ N_CLUSTERS_TO_PLOT = 6
 # ---------------------------------------------------------
 print("Loading full 100k dataset...")
 dataset = ERPDataset().load_shards([
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part1.pth",
+    "datasets/erp/3res/100k/dataset_erp_ft_100k_part2.pth",
 ])
 N = dataset.num_samples
 freqs = np.asarray(dataset.frequency_values, dtype=np.float64)

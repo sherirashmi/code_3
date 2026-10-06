@@ -1,0 +1,39 @@
+Position-only inverse models on hand-picked configurations (32 samples each, solver-checked)
+Fixed resonators: m = 0.2 kg, f_t = 72 Hz; model input: ERP 40-120 Hz
+
+Configuration 1: Ordinary positions, not in the dataset
+  true: R1 (0.30, 0.12) m; R2 (1.10, 0.38) m
+  Flow      own      : R1 (0.33, 0.40) m; R2 (1.10, 0.38) m | error 27.9, 0.5 cm (to y-mirror: 3.9, 26.4 cm) | band ERP RMSE 2.87 dB
+  Flow      best of N: R1 (0.30, 0.12) m; R2 (1.10, 0.38) m | error 0.5, 0.2 cm (to y-mirror: 25.9, 26.0 cm) | band ERP RMSE 0.17 dB
+  MDN       own      : R1 (0.30, 0.38) m; R2 (1.11, 0.38) m | error 25.9, 0.6 cm (to y-mirror: 0.4, 26.0 cm) | band ERP RMSE 0.26 dB
+  MDN       best of N: R1 (0.30, 0.12) m; R2 (1.10, 0.38) m | error 0.1, 0.1 cm (to y-mirror: 25.9, 26.1 cm) | band ERP RMSE 0.03 dB
+  Diffusion own      : R1 (0.29, 0.38) m; R2 (1.11, 0.38) m | error 25.8, 0.7 cm (to y-mirror: 0.6, 26.0 cm) | band ERP RMSE 0.71 dB
+  Diffusion best of N: R1 (0.30, 0.38) m; R2 (1.10, 0.38) m | error 26.1, 0.4 cm (to y-mirror: 0.1, 25.9 cm) | band ERP RMSE 0.28 dB
+
+Configuration 2: Two resonators almost on top of each other
+  true: R1 (0.70, 0.20) m; R2 (0.74, 0.22) m
+  Flow      own      : R1 (0.69, 0.25) m; R2 (0.73, 0.33) m | error 5.2, 11.4 cm (to y-mirror: 5.2, 5.4 cm) | band ERP RMSE 2.04 dB
+  Flow      best of N: R1 (0.70, 0.19) m; R2 (0.74, 0.25) m | error 0.6, 3.3 cm (to y-mirror: 10.5, 2.8 cm) | band ERP RMSE 0.67 dB
+  MDN       own      : R1 (0.69, 0.20) m; R2 (0.73, 0.27) m | error 1.1, 5.1 cm (to y-mirror: 10.4, 1.6 cm) | band ERP RMSE 1.19 dB
+  MDN       best of N: R1 (0.69, 0.30) m; R2 (0.73, 0.25) m | error 10.5, 3.5 cm (to y-mirror: 1.3, 2.7 cm) | band ERP RMSE 1.18 dB
+  Diffusion own      : R1 (0.69, 0.20) m; R2 (0.72, 0.24) m | error 1.1, 2.9 cm (to y-mirror: 10.1, 4.0 cm) | band ERP RMSE 1.50 dB
+  Diffusion best of N: R1 (0.69, 0.20) m; R2 (0.73, 0.26) m | error 0.8, 4.0 cm (to y-mirror: 10.3, 2.4 cm) | band ERP RMSE 1.10 dB
+
+Configuration 3: One resonator next to the excitation force
+  true: R1 (0.20, 0.42) m; R2 (0.88, 0.31) m
+  Flow      own      : R1 (0.16, 0.10) m; R2 (0.88, 0.31) m | error 32.5, 0.3 cm (to y-mirror: 4.4, 11.8 cm) | band ERP RMSE 0.89 dB
+  Flow      best of N: R1 (0.17, 0.09) m; R2 (0.88, 0.31) m | error 33.1, 0.4 cm (to y-mirror: 3.1, 11.7 cm) | band ERP RMSE 0.65 dB
+  MDN       own      : R1 (0.14, 0.24) m; R2 (0.88, 0.31) m | error 18.6, 0.2 cm (to y-mirror: 17.2, 12.2 cm) | band ERP RMSE 4.94 dB
+  MDN       best of N: R1 (0.11, 0.14) m; R2 (0.88, 0.31) m | error 29.7, 0.1 cm (to y-mirror: 10.8, 12.0 cm) | band ERP RMSE 0.96 dB
+  Diffusion own      : R1 (0.23, 0.07) m; R2 (0.89, 0.30) m | error 34.7, 1.0 cm (to y-mirror: 3.0, 11.2 cm) | band ERP RMSE 1.73 dB
+  Diffusion best of N: R1 (0.16, 0.09) m; R2 (0.88, 0.31) m | error 32.9, 0.1 cm (to y-mirror: 4.5, 11.9 cm) | band ERP RMSE 0.63 dB
+
+Configuration 4: Near the corners, outside the sampled region
+  true: R1 (0.02, 0.03) m; R2 (1.38, 0.47) m
+  Flow      own      : R1 (0.22, 0.06) m; R2 (1.25, 0.05) m | error 20.3, 43.5 cm (to y-mirror: 45.5, 12.9 cm) | band ERP RMSE 6.02 dB
+  Flow      best of N: R1 (0.04, 0.13) m; R2 (0.56, 0.04) m | error 10.3, 92.1 cm (to y-mirror: 33.9, 81.7 cm) | band ERP RMSE 4.62 dB
+  MDN       own      : R1 (0.09, 0.08) m; R2 (0.36, 0.00) m | error 8.0, 112.4 cm (to y-mirror: 39.9, 102.2 cm) | band ERP RMSE 3.69 dB
+  MDN       best of N: R1 (0.73, 0.49) m; R2 (1.39, 0.39) m | error 84.7, 7.7 cm (to y-mirror: 71.1, 36.3 cm) | band ERP RMSE 0.41 dB
+  Diffusion own      : R1 (0.89, 0.41) m; R2 (1.36, 0.45) m | error 94.8, 2.5 cm (to y-mirror: 87.1, 42.2 cm) | band ERP RMSE 7.87 dB
+  Diffusion best of N: R1 (0.73, 0.46) m; R2 (0.78, 0.45) m | error 82.9, 60.2 cm (to y-mirror: 70.7, 73.2 cm) | band ERP RMSE 4.20 dB
+

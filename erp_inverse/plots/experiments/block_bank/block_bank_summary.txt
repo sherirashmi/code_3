@@ -1,0 +1,23 @@
+Model bank: 7 blocks (Flow per block; m = 0.2 kg; f_t = 40, 50, 60, 70, 80, 90, 100 Hz)
+700 test targets (100 from the TEST split of every block), 16 samples per block,
+every candidate design checked with the solver; the lowest 40-120 Hz ERP error wins.
+
+Correct block chosen: 99.1 % (694 / 700)
+  wrong blocks are off by: 10 Hz: 4, 20 Hz: 2
+Winning design's band ERP error: median 0.70 dB, 95th percentile 2.58 dB
+Gap to the second-best block: median 4.87 dB (below 0.5 dB for 2.0 % of targets)
+Position error of the winning design: median 4.1 cm, mean 10.8 cm (counting y-mirror images as correct: median 2.2 cm, mean 5.2 cm)
+Position error if the true block were known: median 4.0 cm, mean 10.7 cm
+
+Per true block: accuracy, winning band error (median), position error (median)
+  f_t =    40 Hz: 100.0 %   0.32 dB    9.4 cm
+  f_t =    50 Hz: 100.0 %   0.29 dB    2.8 cm
+  f_t =    60 Hz: 100.0 %   0.43 dB    3.9 cm
+  f_t =    70 Hz: 100.0 %   0.85 dB    3.6 cm
+  f_t =    80 Hz:  97.0 %   0.99 dB    3.2 cm
+  f_t =    90 Hz:  99.0 %   1.16 dB    4.4 cm
+  f_t =   100 Hz:  98.0 %   1.48 dB    3.9 cm
+
+Targets with f_t BETWEEN the blocks (no block matches exactly):
+  f_t = 45 Hz: chosen blocks 40 Hz x36, 50 Hz x4; winning band error median 5.14 dB (in-block targets: 0.70 dB)
+  f_t = 75 Hz: chosen blocks 60 Hz x2, 70 Hz x14, 80 Hz x23, 100 Hz x1; winning band error median 5.15 dB (in-block targets: 0.70 dB)

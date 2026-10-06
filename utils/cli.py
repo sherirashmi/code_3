@@ -1,75 +1,89 @@
 """Interactive CLI for this project's neural-operator problems.
 
 ``main.py`` at the repo root is a thin entry point; every prompt, menu, and
-orchestration function lives here. Three top-level problems, each dispatched
-from ``main()``:
+orchestration function lives here. Three top-level problems:
 
-- **ERP** (resonator configuration <-> ERP spectrum, a scalar function of
-  frequency): forward and inverse sub-workflows.
-    - **Forward** (configuration -> ERP spectrum): any single operator from
-      ``erp_forward_operators.operator_registry.OPERATORS``, or all at once.
-    - **Inverse** (ERP spectrum -> resonator configuration): any single model
-      from ``erp_inverse_operators.registry.INVERSE_MODELS``, or all at once
-      (which also offers the solver-scored aggregate evaluations built in
-      ``erp_inverse_operators/evaluate.py`` and ``evaluate_design.py``).
-    Single inverse models only support "train" here, not "evaluate" --
-    ``evaluate.py``/``evaluate_design.py`` are whole-cohort comparisons by
-    design (every candidate design is scored via the actual physics solver
-    against the *other* models' candidates too), not a per-model action, so
-    they only appear under "train ALL inverse models" below.
-- **Displacement field** (configuration, frequency, position -> the complex
-  velocity field, plus a physics-informed PDE residual): any single
-  architecture from ``displacement_forward_operators.operator_registry.OPERATORS``,
-  or all at once, via that package's own fixed train+evaluate+plot pipeline
-  (``displacement_forward_operators.train_all.run_one``).
-- **iFNO** (joint forward+inverse invertible Fourier operator on the ERP
-  problem): one architecture, one fixed 3-step training schedule
-  (``ifno.train.main``) -- no per-model selection needed.
+- **ERP** (resonator configuration <-> ERP spectrum):
+    - **Forward** (configuration -> ERP spectrum):
+        1. general train / evaluate / predict for any operator in
+           ``erp_forward.scripts.operator_registry.OPERATORS`` (or all), or
+        2. the frequency-holdout generalisation experiment.
+    - **Inverse** (ERP spectrum -> configuration): train / evaluate / predict
+      for any model in ``erp_inverse.scripts.registry.INVERSE_MODELS``, or
+      train all of them (+ solver-scored cohort evaluation).
+- **Displacement field**: ``disp_forward.scripts.train_all.run_one``.
+- **Invertible** (iFNO / iDCO / iGNO, joint forward + inverse): train or
+  evaluate, see ``erp_invertible/scripts/train.py``.
+
+Every ERP workflow first asks WHICH DATASET to use (``utils.erp_dataset.
+DATASETS``). The choice fixes (a) the plate-mode basis the solver uses for
+every reference spectrum (15x10 = 150 modes, or 6x3 = 18 modes for the
+18-mode dataset -- applied automatically when the dataset is loaded), and
+(b) the dataset sub-folder all checkpoints and plots go into, see
+``utils/paths.py``:
+
+    erp_forward/plots/models/<dataset>/<MODEL>/
+        loss_curve.png, erp_spectrum_test_config_01..05.png,
+        prediction_vs_ground_truth.png, prediction_spectrum.png
+    erp_forward/plots/models/<dataset>/ALL_MODELS/
+        all_training_loss.png, all_validation_loss.png, all_models_loss.png, ...
 """
 
 from __future__ import annotations
 
 import gc
+import traceback
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from utils.erp_dataset import DEFAULT_DATASET_FILE
-from erp_forward_operators.operator_registry import OPERATORS
+from utils.erp_dataset import (
+    DATASETS,
+    DEFAULT_DATASET_TAG,
+    dataset_files,
+    dataset_tag_for,
+    select_dataset_modal_resolution,
+)
+from utils.paths import (
+    ALL_MODELS,
+    FREQ_HOLDOUT,
+    GENERAL,
+    INVERSE_ROOT,
+    INVERTIBLE_ROOT,
+    fixed_resonator_model_path,
+    forward_model_path,
+    forward_plot_dir,
+    forward_plot_root,
+    inverse_model_path,
+    inverse_plot_dir,
+    project_path,
+)
+from erp_forward.scripts.operator_registry import (
+    OPERATORS,
+    PADDING_MODE_OPERATORS,
+    PERMUTATION_AUGMENT_OPERATORS,
+    PHYSICAL_FEATURE_OPERATORS,
+    forward_variant,
+)
+from erp_forward.scripts.frequency_holdout import run_frequency_holdout
 from utils.physics import Lx, Ly, fmin, fmax, m_min, m_max, num_res as default_num_res
 from utils.plotting import (
     save_all_model_comparison_plots,
     save_operator_experiment_plots,
 )
 
-from erp_inverse_operators.registry import INVERSE_MODELS
-from erp_inverse_operators.train_all import train_one_inverse_model
-from erp_inverse_operators import evaluate as inverse_evaluate
-from erp_inverse_operators import evaluate_design as inverse_evaluate_design
+from erp_inverse.scripts.registry import INVERSE_MODELS
+from erp_inverse.scripts.train_all import train_one_inverse_model
+from erp_inverse.scripts import evaluate as inverse_evaluate
+from erp_inverse.scripts import evaluate_design as inverse_evaluate_design
 
-from displacement_forward_operators.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
+from disp_forward.scripts.operator_registry import OPERATORS as DISPLACEMENT_OPERATORS
 
-from erp_forward_inverse_operators.registry import INVERTIBLE_OPERATORS
+from erp_invertible.scripts.registry import INVERTIBLE_OPERATORS
 
 
-DATASET_FILE = DEFAULT_DATASET_FILE
-
-# All 10 checkpoints in erp_forward_operators/models/ (the 100k-trained set)
-# self-describe which raw dataset file they were trained on via
-# ERPDataset.preprocessing_state() (see run_operator_experiment's "evaluate"/
-# "predict" branches), so evaluate/predict always recover the correct file
-# from the checkpoint itself -- no per-operator override needed.
-_HUNDRED_K_DATASET_FILES = [
-    "datasets/dataset_erp_ft_100k_part1.pth",
-    "datasets/dataset_erp_ft_100k_part2.pth",
-]
 SEED = 727
-PLOTS_DIR = Path("erp_forward_operators/plots")
-PLOT_PIPELINE_VERSION = "main-direct-save-v5"
-# Always create the top-level plot folder beside main.py at startup.
-# Per-operator subfolders are created automatically when their plots are saved.
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 ACTIONS = {
     "1": "train",
@@ -91,18 +105,19 @@ def _prompt_choice(prompt: str, choices: dict[str, object]) -> str:
         print(f"Please choose one of: {', '.join(choices)}")
 
 
-def _prompt_int(prompt: str, default: int, minimum: int = 1) -> int:
+def _prompt_int(prompt: str, default: int, minimum: int = 1, maximum: int | None = None) -> int:
     while True:
         raw = input(f"{prompt} [{default}]: ").strip()
         if not raw:
             return int(default)
         try:
             value = int(raw)
-            if value >= minimum:
+            if value >= minimum and (maximum is None or value <= maximum):
                 return value
         except ValueError:
             pass
-        print(f"Please enter an integer >= {minimum}.")
+        bound = f" and <= {maximum}" if maximum is not None else ""
+        print(f"Please enter an integer >= {minimum}{bound}.")
 
 
 def _prompt_optional_int(prompt: str, minimum: int = 1) -> int | None:
@@ -120,18 +135,20 @@ def _prompt_optional_int(prompt: str, minimum: int = 1) -> int | None:
         print(f"Please enter an integer >= {minimum}, or leave blank.")
 
 
-def _prompt_float(prompt: str, default: float, minimum: float = 0.0) -> float:
+def _prompt_float(prompt: str, default: float, minimum: float = 0.0, maximum: float | None = None) -> float:
+    """Value must be > minimum (and <= maximum if given)."""
     while True:
         raw = input(f"{prompt} [{default:g}]: ").strip()
         if not raw:
             return float(default)
         try:
             value = float(raw)
-            if value > minimum:
+            if value > minimum and (maximum is None or value <= maximum):
                 return value
         except ValueError:
             pass
-        print(f"Please enter a number > {minimum}.")
+        bound = f" and <= {maximum:g}" if maximum is not None else ""
+        print(f"Please enter a number > {minimum:g}{bound}.")
 
 
 def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
@@ -147,25 +164,44 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
         print("Please enter y or n.")
 
 
-def _prompt_dataset_file() -> str | list[str]:
-    """Ask which raw dataset to train against.
+def _dataset_available(tag: str) -> bool:
+    return all(project_path(f).exists() for f in DATASETS[tag]["files"])
 
-    Training has no existing checkpoint to recover a dataset file from (that
-    self-describing recovery only applies to evaluate/predict, see
-    run_operator_experiment), so it must be chosen explicitly -- otherwise
-    it silently defaults to the small 10k dataset even when the user asks
-    for more configurations than that file contains.
+
+def _dataset_num_res(tag: str) -> int:
+    return int(DATASETS[tag].get("num_res", default_num_res))
+
+
+def _dataset_kind(tag: str) -> str:
+    """"fixed": m and f_t fixed (position-only data, model-bank blocks); "general": everything varies."""
+    return "fixed" if "fixed_resonator" in DATASETS[tag] else "general"
+
+
+def _prompt_dataset(default_tag: str = DEFAULT_DATASET_TAG, kind: str = "general") -> tuple[str, str | list[str]]:
+    """Ask which raw dataset to use -> (tag, file or shard list).
+
+    ``kind``: "general" (m, k, f_t, x, y all vary -- forward, inverse,
+    invertible models), "fixed" (m and f_t fixed -- position-only models,
+    model-bank blocks) or "any". The tag decides the solver's plate-mode basis
+    (applied automatically when the data is loaded), the number of resonators
+    and the dataset sub-folder for checkpoints and plots.
     """
-    print("\nWhich dataset to train on?")
-    print(f"1. Default {DEFAULT_DATASET_FILE} (10,000 configurations)")
-    print(f"2. 100k-configuration dataset (sharded: {', '.join(_HUNDRED_K_DATASET_FILES)})")
+    tags = [t for t in DATASETS if kind == "any" or _dataset_kind(t) == kind]
+    print("\nWhich dataset?")
+    for i, tag in enumerate(tags, start=1):
+        missing = "" if _dataset_available(tag) else "   [files missing]"
+        print(f"{i:>2}. {tag:<34s} {_dataset_num_res(tag)} res.  {DATASETS[tag]['label']}{missing}")
+    default_index = tags.index(default_tag) + 1 if default_tag in tags else 1
     while True:
-        raw = input("Select dataset [1]: ").strip()
-        if raw in ("", "1"):
-            return DATASET_FILE
-        if raw == "2":
-            return _HUNDRED_K_DATASET_FILES
-        print("Please enter 1 or 2.")
+        index = _prompt_int("Select dataset", default=default_index, minimum=1, maximum=len(tags))
+        tag = tags[index - 1]
+        if _dataset_available(tag) or tag == "10k":  # the 10k file can be (re)generated
+            # Fix Nx/Ny now (15 x 10 for 150 modes, 6 x 3 for 18 modes) so every
+            # calculation in this run -- training, solver references, and any
+            # model trained on this dataset -- uses the dataset's modal basis.
+            select_dataset_modal_resolution(tag)
+            return tag, dataset_files(tag)
+        print(f"Dataset '{tag}' is missing files: {DATASETS[tag]['files']}")
 
 
 def _prompt_lbfgs_epochs() -> int:
@@ -182,71 +218,52 @@ def _prompt_lbfgs_epochs() -> int:
     )
 
 
-def _parse_operator_selection(raw: str) -> list[dict[str, object]] | None:
-    """Parse a comma/space-separated operator-number string, e.g. "2,4,5".
+def _parse_selection(raw: str, registry: dict) -> list[str] | None:
+    """Parse "2,4,5" / "2 4 5" into registry keys (order kept, repeats dropped).
 
-    Blank input means "all operators" (returns None, so callers can fall
-    back to the full registry). Order and duplicates in ``raw`` are
-    preserved as given (minus exact repeats) so "5,2,5" trains STO then
-    DON, not DON then STO twice. Returns None on any invalid token so the
-    caller can re-prompt; never raises.
+    Blank -> None (= all). Any invalid token -> None too, so the caller can
+    distinguish via ``raw.strip()`` and re-prompt; never raises.
     """
     raw = raw.strip()
     if not raw:
         return None
     tokens = [t for t in raw.replace(",", " ").split() if t]
-    invalid = [t for t in tokens if t not in OPERATORS]
-    if invalid:
-        return None
-    seen: set[str] = set()
-    ordered_keys = [t for t in tokens if not (t in seen or seen.add(t))]
-    return [OPERATORS[key] for key in ordered_keys]
-
-
-def _prompt_operator_selection(prompt: str) -> list[dict[str, object]]:
-    """Prompt for which operators to include; blank selects every operator."""
-    menu = ", ".join(f"{key}={spec['short']}" for key, spec in OPERATORS.items())
-    while True:
-        raw = input(f"{prompt} [blank = all -- {menu}]: ")
-        selected = _parse_operator_selection(raw)
-        if raw.strip() and selected is None:
-            valid = ", ".join(OPERATORS)
-            print(f"Unrecognized operator number(s) in '{raw.strip()}'. Valid keys: {valid}")
-            continue
-        return selected if selected is not None else list(OPERATORS.values())
-
-
-def _parse_inverse_selection(raw: str) -> list[str] | None:
-    """Same as ``_parse_operator_selection`` but for INVERSE_MODELS keys."""
-    raw = raw.strip()
-    if not raw:
-        return None
-    tokens = [t for t in raw.replace(",", " ").split() if t]
-    invalid = [t for t in tokens if t not in INVERSE_MODELS]
-    if invalid:
+    if any(t not in registry for t in tokens):
         return None
     seen: set[str] = set()
     return [t for t in tokens if not (t in seen or seen.add(t))]
 
 
-def _prompt_inverse_selection(prompt: str) -> list[str]:
-    menu = ", ".join(f"{key}={spec['short']}" for key, spec in INVERSE_MODELS.items())
+def _parse_operator_selection(raw: str) -> list[dict[str, object]] | None:
+    keys = _parse_selection(raw, OPERATORS)
+    return None if keys is None else [OPERATORS[k] for k in keys]
+
+
+def _prompt_selection(prompt: str, registry: dict) -> list[str]:
+    menu = ", ".join(f"{key}={spec['short']}" for key, spec in registry.items())
     while True:
         raw = input(f"{prompt} [blank = all -- {menu}]: ")
-        selected = _parse_inverse_selection(raw)
+        selected = _parse_selection(raw, registry)
         if raw.strip() and selected is None:
-            valid = ", ".join(INVERSE_MODELS)
-            print(f"Unrecognized model number(s) in '{raw.strip()}'. Valid keys: {valid}")
+            print(f"Unrecognized number(s) in '{raw.strip()}'. Valid keys: {', '.join(registry)}")
             continue
-        return selected if selected is not None else list(INVERSE_MODELS.keys())
+        return selected if selected is not None else list(registry)
+
+
+def _prompt_operator_selection(prompt: str) -> list[dict[str, object]]:
+    return [OPERATORS[k] for k in _prompt_selection(prompt, OPERATORS)]
+
+
+def _prompt_num_configurations(tag: str, prompt: str = "Number of configurations to use") -> int:
+    total = int(DATASETS[tag]["num_configurations"])
+    return _prompt_int(f"{prompt} (dataset has {total:,})", default=total, minimum=3, maximum=total)
 
 
 def _prompt_configuration(num_res: int) -> np.ndarray:
     """Read one raw configuration in [m, k, f_t, x, y] order.
 
-    ``m`` and ``f_t`` are the two quantities actually entered (mass and
-    tuning frequency); stiffness ``k = m*(2*pi*f_t)**2`` is derived, matching
-    how the dataset itself is generated (see utils/erp_dataset.py).
+    ``m`` and ``f_t`` are entered; stiffness ``k = m*(2*pi*f_t)**2`` is
+    derived, matching how the dataset itself is generated.
     """
     configuration = np.empty((num_res, 5), dtype=np.float32)
 
@@ -266,12 +283,18 @@ def _prompt_configuration(num_res: int) -> np.ndarray:
                 print("Please enter numeric values.")
                 continue
 
+            if not np.isfinite([m, f_t, x, y]).all() or m <= 0.0:
+                print("Mass must be a positive, finite number.")
+                continue
             if not (fmin <= f_t <= fmax):
                 print(f"f_t must be between {fmin:g} and {fmax:g} Hz.")
                 continue
             if not (0.0 <= x <= Lx and 0.0 <= y <= Ly):
                 print(f"Position must satisfy 0 <= x <= {Lx:g}, 0 <= y <= {Ly:g}.")
                 continue
+            if not (m_min <= m <= m_max):
+                print(f"Note: m={m:g} kg is outside the training range [{m_min:g}, {m_max:g}] kg "
+                      "-- the prediction will be an extrapolation.")
 
             k_val = m * (2.0 * np.pi * f_t) ** 2
             configuration[i] = [m, k_val, f_t, x, y]
@@ -281,6 +304,68 @@ def _prompt_configuration(num_res: int) -> np.ndarray:
     print("\nConfiguration used ([m, k, f_t, x, y] per resonator):")
     print(configuration)
     return configuration
+
+
+def _variant(spec, options) -> tuple[str, dict[str, object]]:
+    """(model name, model_config overrides) for the chosen forward variant.
+
+    ``options`` comes from :func:`_prompt_forward_options` (a bool is read
+    as the sorted-branch choice). Every variant gets its own name suffix,
+    e.g. ``DCO_sorted``, ``DNO_phys``, ``NN_perm``, ``FNO_reflect``, so it
+    never overwrites the standard model. Options an architecture does not
+    support are ignored for it.
+    """
+    return forward_variant(spec, options)
+
+
+def _prompt_encoder_variant(names_supported: list[str]) -> bool:
+    """Ask for the resonator-encoder variant; False = set encoder only."""
+    if not names_supported:
+        return False
+    print("\nResonator encoder")
+    print("1. Set encoder (mean + max pooling)  [standard]")
+    print("2. Set encoder + f_t-sorted branch   (DCO_sorted design; saved as <MODEL>_sorted)")
+    print(f"   (available for: {', '.join(names_supported)})")
+    return _prompt_choice("Select encoder: ", {"1": None, "2": None}) == "2"
+
+
+def _prompt_forward_options(specs) -> dict[str, object]:
+    """All opt-in forward variants for the selected operators.
+
+    Only the questions that apply to at least one selected architecture are
+    asked; the defaults reproduce the existing (standard) models.
+    """
+    shorts = [str(s["short"]) for s in specs]
+    options: dict[str, object] = {
+        "sorted": _prompt_encoder_variant([s["short"] for s in specs if s.get("supports_sorted_branch")])
+    }
+    phys = [n for n in shorts if n in PHYSICAL_FEATURE_OPERATORS]
+    if phys:
+        print("\nResonator feature scaling")
+        print("1. z-scored x, y and f_t   [standard, all existing models]")
+        print("2. Physical                (sin(m*pi*x/Lx), sin(n*pi*y/Ly) plate-mode features and")
+        print("                            one detuning scale (f - f_t)/std(f); saved as <MODEL>_phys)")
+        print(f"   (available for: {', '.join(phys)})")
+        options["physical"] = _prompt_choice("Select feature scaling: ", {"1": None, "2": None}) == "2"
+    if any(n in PERMUTATION_AUGMENT_OPERATORS for n in shorts):
+        options["permutation"] = _prompt_yes_no(
+            "NN: shuffle the resonator order every training batch (saved as NN_perm)", default=False
+        )
+    if any(n in PADDING_MODE_OPERATORS for n in shorts):
+        print("\nFNO frequency-axis padding before the FFT layers")
+        print("1. replicate  [standard]")
+        print("2. reflect    (saved as FNO_reflect)")
+        print("3. zero       (saved as FNO_zpad)")
+        options["padding_mode"] = {"1": "replicate", "2": "reflect", "3": "zero"}[
+            _prompt_choice("Select padding: ", {"1": None, "2": None, "3": None})
+        ]
+    return options
+
+
+def _release_memory() -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 # ==================================================
@@ -293,7 +378,7 @@ def _print_operator_menu() -> None:
     print("=" * 52)
     for key, spec in OPERATORS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
-    print(f"{len(OPERATORS) + 1}. Train and evaluate ALL forward operators")
+    print(f"{len(OPERATORS) + 1}. Train and evaluate ALL (or a selection of) forward operators")
     print("=" * 52)
 
 
@@ -302,60 +387,132 @@ def _print_inverse_menu() -> None:
     print("=" * 52)
     for key, spec in INVERSE_MODELS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
-    print(f"{len(INVERSE_MODELS) + 1}. Train ALL inverse models "
+    print(f"{len(INVERSE_MODELS) + 1}. Train ALL (or a selection of) inverse models "
           "(+ optional solver-scored evaluation)")
+    print(f"{len(INVERSE_MODELS) + 2}. Fixed-resonator position models (MDN / Flow / Diffusion; m and f_t fixed,")
+    print("    predict x, y only)")
+    print(f"{len(INVERSE_MODELS) + 3}. Model bank (one position Flow per f_t block + solver check)")
     print("=" * 52)
 
 
 def _print_action_menu() -> None:
     print("\nOperation")
-    print("1. Train")
-    print("2. Evaluate")
-    print("3. Predict")
+    print("1. Train    (then evaluate on the test split and save all plots)")
+    print("2. Evaluate (saved checkpoint, test split)")
+    print("3. Predict  (one configuration, compared with the solver)")
 
 
-def _print_comparison_table(rows: list[dict[str, object]]) -> None:
-    """Print a dependency-free final comparison table for all operators."""
-    columns = [
-        ("Model", "model", None),
-        ("Final Train Loss", "final_train_loss", ".6e"),
-        ("Final Val Loss", "final_val_loss", ".6e"),
-        ("Best Val Loss", "best_val_loss", ".6e"),
-        ("Test MSE", "mse", ".6f"),
-        ("Test RMSE (dB)", "rmse", ".6f"),
-        ("Test MAE (dB)", "mae", ".6f"),
-        ("Pearson r", "pearson_global", ".6f"),
-        ("Mean Spectrum r", "pearson_mean", ".6f"),
-        ("R^2", "r2", ".6f"),
-        ("Peak Freq MAE (Hz)", "peak_frequency_mae_hz", ".4f"),
-        ("Peak Amp MAE (dB)", "peak_amplitude_mae_db", ".6f"),
+_TABLE_COLUMNS = [
+    ("Model", "model", None),
+    ("Final Train Loss", "final_train_loss", ".6e"),
+    ("Final Val Loss", "final_val_loss", ".6e"),
+    ("Best Val Loss", "best_val_loss", ".6e"),
+    ("Test MSE", "mse", ".6f"),
+    ("Test RMSE (dB)", "rmse", ".6f"),
+    ("Test MAE (dB)", "mae", ".6f"),
+    ("Pearson r", "pearson_global", ".6f"),
+    ("Mean Spectrum r", "pearson_mean", ".6f"),
+    ("R^2", "r2", ".6f"),
+    ("Peak Freq MAE (Hz)", "peak_frequency_mae_hz", ".4f"),
+    ("Peak Amp MAE (dB)", "peak_amplitude_mae_db", ".6f"),
+    # spectrum_error_diagnostics: where the error sits (RMSE, dB)
+    ("Low 5% f", "rmse_low_band_db", ".3f"),
+    ("High 5% f", "rmse_high_band_db", ".3f"),
+    ("At Peaks", "rmse_at_peaks_db", ".3f"),
+    ("Close f_t", "rmse_close_ft_db", ".3f"),
+    ("Near Edge", "rmse_near_edge_db", ".3f"),
+]
+
+
+def _format_comparison_table(rows: list[dict[str, object]]) -> str:
+    formatted_rows = [
+        [
+            str(row[key]) if fmt is None else format(float(row.get(key, float("nan"))), fmt)
+            for _, key, fmt in _TABLE_COLUMNS
+        ]
+        for row in rows
     ]
-
-    formatted_rows: list[list[str]] = []
-    for row in rows:
-        formatted = []
-        for _, key, fmt in columns:
-            value = row[key]
-            formatted.append(str(value) if fmt is None else format(float(value), fmt))
-        formatted_rows.append(formatted)
-
     widths = [
-        max(len(header), *(len(row[idx]) for row in formatted_rows))
-        for idx, (header, _, _) in enumerate(columns)
+        max(len(header), *(len(r[idx]) for r in formatted_rows))
+        for idx, (header, _, _) in enumerate(_TABLE_COLUMNS)
     ]
-    header_line = " | ".join(
-        header.ljust(widths[idx]) for idx, (header, _, _) in enumerate(columns)
-    )
-    separator = "-+-".join("-" * width for width in widths)
+    lines = [
+        " | ".join(header.ljust(widths[i]) for i, (header, _, _) in enumerate(_TABLE_COLUMNS)),
+        "-+-".join("-" * w for w in widths),
+    ]
+    lines += [" | ".join(v.ljust(widths[i]) for i, v in enumerate(r)) for r in formatted_rows]
+    return "\n".join(lines)
 
-    print("\n" + "=" * len(header_line))
+
+def _print_comparison_table(rows: list[dict[str, object]]) -> str:
+    """Print (and return) a dependency-free final comparison table."""
+    table = _format_comparison_table(rows)
+    width = len(table.splitlines()[0])
+    print("\n" + "=" * width)
     print("FINAL ALL-MODEL COMPARISON")
-    print("=" * len(header_line))
-    print(header_line)
-    print(separator)
-    for row in formatted_rows:
-        print(" | ".join(value.ljust(widths[idx]) for idx, value in enumerate(row)))
-    print("=" * len(header_line))
+    print("=" * width)
+    print(table)
+    print("=" * width)
+    return table
+
+
+# ==================================================
+# Forward: shared helpers
+# ==================================================
+
+
+def _comparison_entry(name, history, metrics, frequency_values):
+    """Summary row + compact per-spectrum arrays for the ALL_MODELS plots."""
+    row = {
+        "model": name,
+        "final_train_loss": history["train"][-1],
+        "final_val_loss": history["val"][-1],
+        "best_val_loss": min(history["val"]),
+        "mse": metrics["mse"],
+        "rmse": metrics["rmse"],
+        "mae": metrics["mae"],
+        "pearson_global": metrics["pearson_correlation"],
+        "pearson_mean": metrics["mean_spectrum_pearson_correlation"],
+        "r2": metrics["r2_score"],
+        "peak_frequency_mae_hz": metrics["peak_frequency_mae_hz"],
+        "peak_amplitude_mae_db": metrics["peak_amplitude_mae_db"],
+        **dict(metrics.get("diagnostics") or {}),
+    }
+
+    pred = np.asarray(metrics["predictions"], dtype=np.float64)
+    true = np.asarray(metrics["targets"], dtype=np.float64)
+    error = pred - true
+    true_centered = true - true.mean(axis=1, keepdims=True)
+    pred_centered = pred - pred.mean(axis=1, keepdims=True)
+    corr_num = np.sum(true_centered * pred_centered, axis=1)
+    corr_den = np.sqrt(np.sum(true_centered**2, axis=1) * np.sum(pred_centered**2, axis=1))
+    freq = np.asarray(frequency_values, dtype=np.float64)
+    true_peak_idx = np.argmax(true, axis=1)
+    pred_peak_idx = np.argmax(pred, axis=1)
+    rows = np.arange(pred.shape[0])
+    data = {
+        "train_loss": np.asarray(history["train"], dtype=np.float64),
+        "val_loss": np.asarray(history["val"], dtype=np.float64),
+        "spectrum_rmse": np.sqrt(np.mean(error**2, axis=1)),
+        "spectrum_mae": np.mean(np.abs(error), axis=1),
+        "spectrum_pearson": np.divide(
+            corr_num, corr_den, out=np.full(corr_num.shape, np.nan), where=corr_den > 0.0
+        ),
+        "peak_frequency_abs_error": np.abs(freq[pred_peak_idx] - freq[true_peak_idx]),
+        "peak_amplitude_abs_error": np.abs(pred[rows, true_peak_idx] - true[rows, true_peak_idx]),
+    }
+    return row, data
+
+
+def _require_checkpoint(name: str, tag: str) -> Path | None:
+    path = forward_model_path(name, tag)
+    if path.exists():
+        return path
+    general_dir = path.parent.parent
+    available = sorted(p.parent.name for p in general_dir.glob(f"*/{path.name}"))
+    print(f"\nNo {name} checkpoint for dataset '{tag}' ({path}).")
+    print(f"Datasets {name} has been trained on: {', '.join(available) or 'none'} -- train it first.")
+    return None
 
 
 # ==================================================
@@ -368,40 +525,50 @@ def train_all_models(
     operator_specs: list[dict[str, object]] | None = None,
     num_configurations: int = 500,
     batch_size: int = 16,
-    dataset_file: str | list[str] = DATASET_FILE,
+    dataset_file: str | list[str] = DATASETS[DEFAULT_DATASET_TAG]["files"][0],
     regenerate_dataset: bool = False,
     seed: int = SEED,
     lbfgs_epochs: int = 0,
     epochs_override: int | None = None,
+    use_sorted_branch: bool = False,
+    forward_options: dict[str, object] | None = None,
+    skip_existing: bool = False,
 ) -> dict[str, object]:
-    """Train and evaluate the given operators sequentially (default: all of them).
+    """Train and evaluate the given operators sequentially (default: all).
 
-    ``operator_specs`` is a list of registry spec dicts (``OPERATORS[key]``
-    values); pass e.g. ``[OPERATORS["2"], OPERATORS["4"], OPERATORS["5"]]``
-    to train only DNO/GNO/STO instead of the full lineup. Defaults to every
-    registered operator when omitted, matching the previous "always train
-    all" behavior.
+    ``skip_existing=True`` (for restarting an interrupted run): a model
+    whose final checkpoint already exists is evaluated from it instead of
+    retrained. A model interrupted mid-training continues from its
+    ``.resume.pt`` state either way.
 
-    ``epochs_override``, when given, applies to every selected operator
-    instead of each one's own ``DEFAULT_MODEL_CONFIG``-adjacent default
-    (``None`` preserves the original per-operator-default behavior).
+    ``use_sorted_branch=True`` trains the set-encoder architectures with the
+    extra f_t-sorted resonator branch, saved as ``<MODEL>_sorted``;
+    ``forward_options`` selects the other opt-in variants (see
+    :func:`_prompt_forward_options`).
 
-    This workflow is deliberately non-interactive for Matplotlib: every plot is
-    saved to ``plots/<operator>/`` and immediately closed. No ``plt.show()`` is
-    called, so training proceeds continuously without waiting for plot windows.
+    For every operator, saves into ``erp_forward/plots/models/<dataset>/<MODEL>/`` its
+    loss curve, 5 test-spectrum comparisons and the predicted-vs-true parity
+    plot; then the cross-model figures (incl. all models' training and
+    validation loss) into ``erp_forward/plots/models/<dataset>/ALL_MODELS/``.
+
+    A failure in one operator (e.g. out of memory) is reported and the
+    remaining operators still run, so an overnight run is not lost.
     """
     specs = operator_specs if operator_specs is not None else list(OPERATORS.values())
     if not specs:
         raise ValueError("operator_specs must not be empty.")
+    tag = dataset_tag_for(dataset_file)
+    plot_root = forward_plot_root(tag, GENERAL)
+    options = {"sorted": use_sorted_branch, **dict(forward_options or {})}
 
     comparison_rows: list[dict[str, object]] = []
     all_model_plot_data: dict[str, dict[str, np.ndarray]] = {}
-    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    failures: dict[str, str] = {}
 
     print("\n" + "=" * 76)
     print("TRAIN + EVALUATE SELECTED ERP NEURAL OPERATORS")
-    print(f"Operators      : {', '.join(spec['short'] for spec in specs)}")
-    print(f"Dataset        : {dataset_file}")
+    print(f"Operators      : {', '.join(_variant(spec, options)[0] for spec in specs)}")
+    print(f"Dataset        : {tag} ({dataset_file})")
     print(f"Configurations : {num_configurations}")
     print(f"Batch size     : {batch_size}")
     print(f"Seed           : {seed}")
@@ -411,192 +578,136 @@ def train_all_models(
         print(f"Epochs         : {epochs_override} (override, applied to every operator)")
     else:
         print("Epochs         : each operator's own default (see per-operator lines below)")
-    print(f"Plots folder   : {PLOTS_DIR.resolve()}")
-    print(f"Plot pipeline  : {PLOT_PIPELINE_VERSION}")
-    print("Interactive plots: disabled for uninterrupted batch training")
+    print(f"Plots folder   : {plot_root}/<MODEL>/ and {plot_root}/{ALL_MODELS}/")
     print("=" * 76)
 
     for model_index, spec in enumerate(specs):
         epochs = int(epochs_override) if epochs_override is not None else int(spec["epochs"])
         learning_rate = float(spec["lr"])
         regenerate_this_model = bool(regenerate_dataset and model_index == 0)
+        name, overrides = _variant(spec, options)
 
         print("\n" + "#" * 76)
-        print(f"Training {spec['name']} ({spec['short']})")
+        print(f"[{model_index + 1}/{len(specs)}] Training {spec['name']} ({name})")
         print(f"epochs={epochs} | lr={learning_rate:g}")
         print("#" * 76)
 
-        result = spec["runner"](
-            action="train",
-            num_configurations=num_configurations,
-            batch_size=batch_size,
-            epochs=epochs,
-            learning_rate=learning_rate,
-            lbfgs_epochs=lbfgs_epochs,
-            dataset_file=dataset_file,
-            regenerate_dataset=regenerate_this_model,
-            seed=seed,
-            plot=False,
-            save_plots=False,           # cli.py saves explicitly below
-            plots_dir=PLOTS_DIR,
-            num_evaluation_plots=5,
-            evaluate_after_training=True,
-        )
+        try:
+            checkpoint = forward_model_path(name, tag)
+            if skip_existing and checkpoint.exists():
+                print(f"{checkpoint} already exists -- evaluating it instead of retraining.")
+                result = spec["runner"](
+                    action="evaluate",
+                    batch_size=batch_size,
+                    dataset_file=dataset_file,
+                    seed=seed,
+                    plot=False,
+                    save_plots=False,
+                    num_evaluation_plots=5,
+                    checkpoint_file=checkpoint,
+                )
+                history = result.get("history") or {}
+                if not history.get("train"):
+                    history = {"train": [float("nan")], "val": [float("nan")]}
+                result["history"] = history
+            else:
+                result = spec["runner"](
+                    action="train",
+                    num_configurations=num_configurations,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    learning_rate=learning_rate,
+                    lbfgs_epochs=lbfgs_epochs,
+                    dataset_file=dataset_file,
+                    regenerate_dataset=regenerate_this_model,
+                    seed=seed,
+                    plot=False,
+                    save_plots=False,           # saved explicitly below
+                    num_evaluation_plots=5,
+                    evaluate_after_training=True,
+                    checkpoint_file=forward_model_path(name, tag),
+                    model_config_overrides=overrides,
+                )
+            history, metrics = result["history"], result["metrics"]
+            save_operator_experiment_plots(
+                name,
+                history=history,
+                metrics=metrics,
+                frequency_values=result["dataset"].frequency_values,
+                plot_dir=forward_plot_dir(name, tag),
+                num_configurations=5,
+                show=False,
+            )
+            row, data = _comparison_entry(name, history, metrics, result["dataset"].frequency_values)
+            comparison_rows.append(row)
+            all_model_plot_data[name] = data
+            del history, metrics, result
+        except Exception as exc:  # keep going with the other operators
+            failures[name] = f"{type(exc).__name__}: {exc}"
+            print(f"\n!!! {name} FAILED -- continuing with the remaining operators.")
+            traceback.print_exc()
+        _release_memory()
 
-        history = result["history"]
-        metrics = result["metrics"]
-
-        # Explicit cli -> plotting.py call.  This is intentionally outside the
-        # training utility so plot saving cannot be skipped by an internal flag.
-        saved_plot_dir = save_operator_experiment_plots(
-            spec["short"],
-            history=history,
-            metrics=metrics,
-            frequency_values=result["dataset"].frequency_values,
-            plots_dir=PLOTS_DIR,
-            num_configurations=5,
+    comparison_plot_dir = None
+    if comparison_rows:
+        table = _print_comparison_table(comparison_rows)
+        out_dir = plot_root / ALL_MODELS
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "comparison_table.txt").write_text(table + "\n")
+        comparison_plot_dir = save_all_model_comparison_plots(
+            all_model_plot_data,
+            comparison_rows,
+            out_dir=out_dir,
+            title_suffix=f" ({tag})",
             show=False,
         )
-        expected_plot_count = 2 + min(5, int(np.asarray(metrics["targets"]).shape[0]))
-        actual_plot_count = sum(
-            1 for path in saved_plot_dir.glob("*.png") if path.stat().st_size > 0
-        )
-        if actual_plot_count < expected_plot_count:
-            raise RuntimeError(
-                f"{spec['short']} plot verification failed: expected at least "
-                f"{expected_plot_count} PNG files in {saved_plot_dir}, "
-                f"found {actual_plot_count}."
-            )
-        print(
-            f"{spec['short']} plot verification passed: "
-            f"{actual_plot_count} PNG file(s) in {saved_plot_dir.resolve()}"
-        )
-        comparison_rows.append(
-            {
-                "model": spec["short"],
-                "final_train_loss": history["train"][-1],
-                "final_val_loss": history["val"][-1],
-                "best_val_loss": min(history["val"]),
-                "mse": metrics["mse"],
-                "rmse": metrics["rmse"],
-                "mae": metrics["mae"],
-                # evaluate_operator() uses these metric names:
-                "pearson_global": metrics["pearson_correlation"],
-                "pearson_mean": metrics["mean_spectrum_pearson_correlation"],
-                "r2": metrics["r2_score"],
-                "peak_frequency_mae_hz": metrics["peak_frequency_mae_hz"],
-                "peak_amplitude_mae_db": metrics["peak_amplitude_mae_db"],
-            }
-        )
-
-        # Keep only compact arrays needed for cross-architecture plots.
-        # This avoids retaining the trained model or complete experiment object.
-        pred = np.asarray(metrics["predictions"], dtype=np.float64)
-        true = np.asarray(metrics["targets"], dtype=np.float64)
-        error = pred - true
-
-        spectrum_rmse = np.sqrt(np.mean(error**2, axis=1))
-        spectrum_mae = np.mean(np.abs(error), axis=1)
-
-        true_centered = true - np.mean(true, axis=1, keepdims=True)
-        pred_centered = pred - np.mean(pred, axis=1, keepdims=True)
-        corr_num = np.sum(true_centered * pred_centered, axis=1)
-        corr_den = np.sqrt(
-            np.sum(true_centered**2, axis=1)
-            * np.sum(pred_centered**2, axis=1)
-        )
-        spectrum_pearson = np.divide(
-            corr_num,
-            corr_den,
-            out=np.full(corr_num.shape, np.nan, dtype=np.float64),
-            where=corr_den > 0.0,
-        )
-
-        freq = np.asarray(result["dataset"].frequency_values, dtype=np.float64)
-        true_peak_idx = np.argmax(true, axis=1)
-        pred_peak_idx = np.argmax(pred, axis=1)
-        peak_frequency_abs_error = np.abs(
-            freq[pred_peak_idx] - freq[true_peak_idx]
-        )
-        peak_amplitude_abs_error = np.abs(
-            pred[np.arange(pred.shape[0]), true_peak_idx]
-            - true[np.arange(true.shape[0]), true_peak_idx]
-        )
-
-        all_model_plot_data[spec["short"]] = {
-            "train_loss": np.asarray(history["train"], dtype=np.float64),
-            "val_loss": np.asarray(history["val"], dtype=np.float64),
-            "spectrum_rmse": spectrum_rmse,
-            "spectrum_mae": spectrum_mae,
-            "spectrum_pearson": spectrum_pearson,
-            "peak_frequency_abs_error": peak_frequency_abs_error,
-            "peak_amplitude_abs_error": peak_amplitude_abs_error,
-        }
-
-        # Release the complete experiment result before the next architecture.
-        del history, metrics, result
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-    _print_comparison_table(comparison_rows)
-
-    comparison_plot_dir = save_all_model_comparison_plots(
-        all_model_plot_data,
-        comparison_rows,
-        plots_dir=PLOTS_DIR,
-        show=False,
-    )
+    if failures:
+        print("\nOperators that failed:")
+        for name, message in failures.items():
+            print(f"  {name}: {message}")
 
     return {
         "action": "train_all",
         "comparison": comparison_rows,
-        "plots_dir": str(PLOTS_DIR),
-        "comparison_plots_dir": str(comparison_plot_dir),
+        "failures": failures,
+        "plots_dir": str(plot_root),
+        "comparison_plots_dir": str(comparison_plot_dir) if comparison_plot_dir else None,
     }
 
 
 def main_all_models():
     """Interactive input collection for the non-blocking all-model workflow."""
-    print("\nAll-model training parameters")
-    print("Per-model defaults come from each operator's DEFAULT_TRAINING_CONFIG.")
+    print("\nAll-model training parameters (per-model defaults):")
     for spec in OPERATORS.values():
-        print(
-            f"  {spec['short']:>5s}: epochs={int(spec['epochs'])}, "
-            f"lr={float(spec['lr']):g}"
-        )
+        print(f"  {spec['short']:>5s}: epochs={int(spec['epochs'])}, lr={float(spec['lr']):g}")
 
-    operator_specs = _prompt_operator_selection(
-        "Which operators to train (e.g. 2,4,5)"
-    )
-    dataset_file = _prompt_dataset_file()
-    is_sharded = isinstance(dataset_file, list)
-    num_configurations = _prompt_int(
-        "Number of configurations to use for every model",
-        default=100000 if is_sharded else 5000,
-        minimum=3,
-    )
-    batch_size = _prompt_int(
-        "Batch size (complete ERP spectra per batch)",
-        default=64,
-        minimum=1,
-    )
+    operator_specs = _prompt_operator_selection("Which operators to train (e.g. 2,4,5)")
+    forward_options = _prompt_forward_options(operator_specs)
+    tag, dataset_file = _prompt_dataset()
+    num_configurations = _prompt_num_configurations(tag, "Number of configurations to use for every model")
+    batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=64, minimum=1)
     epochs_override = _prompt_optional_int(
-        "Epochs to use for every selected operator (overrides each one's own default)",
-        minimum=1,
+        "Epochs to use for every selected operator (overrides each one's own default)", minimum=1
     )
-    if is_sharded:
+    if isinstance(dataset_file, list):
         regenerate_dataset = False
-        print("(Regenerate is not supported for the sharded 100k dataset -- skipped.)")
     else:
         regenerate_dataset = _prompt_yes_no(
-            "Regenerate and overwrite the ERP dataset before training",
-            default=False,
+            "Regenerate and overwrite the ERP dataset before training", default=False
         )
     lbfgs_epochs = _prompt_lbfgs_epochs()
 
-    print(f"All figures will be saved under: {PLOTS_DIR}")
-    print("No figures will be displayed during all-model training.")
+    # Restarting after an interruption: offer to keep already-finished models.
+    finished = [
+        name for name in (_variant(spec, forward_options)[0] for spec in operator_specs)
+        if forward_model_path(name, tag).exists()
+    ]
+    skip_existing = False
+    if finished:
+        print(f"\nAlready trained on '{tag}': {', '.join(finished)}")
+        skip_existing = _prompt_yes_no(
+            "Skip these (evaluate their saved checkpoints instead of retraining)", default=True
+        )
 
     return train_all_models(
         operator_specs=operator_specs,
@@ -607,6 +718,8 @@ def main_all_models():
         seed=SEED,
         lbfgs_epochs=lbfgs_epochs,
         epochs_override=epochs_override,
+        forward_options=forward_options,
+        skip_existing=skip_existing,
     )
 
 
@@ -615,13 +728,30 @@ def main_all_models():
 # ==================================================
 
 
+def _print_forward_method_menu() -> None:
+    print("\nWhich method?")
+    print("1. General training  (train/evaluate/predict on the full frequency range)")
+    print("2. Frequency-holdout generalization experiment  (mask a contiguous band of "
+          "frequencies out of training entirely, then score seen vs. unseen frequencies)")
+    print("3. Error diagnostics of the trained models  (no training: RMSE by frequency band, at the "
+          "resonance peaks, and on close-f_t / near-edge configurations)")
+
+
 def main_forward():
     """Interactive entry point for the forward (configuration -> ERP) workflow."""
+    _print_forward_method_menu()
+    method = _prompt_choice("Select method: ", {"1": None, "2": None, "3": None})
+    if method == "2":
+        return main_frequency_holdout()
+    if method == "3":
+        from erp_forward.scripts import diagnose
+
+        tag, _dataset_file = _prompt_dataset("100k")
+        return diagnose.main(tag)
+
     _print_operator_menu()
     all_models_key = str(len(OPERATORS) + 1)
-    operator_choices = {**OPERATORS, all_models_key: None}
-    operator_key = _prompt_choice("Select operator/workflow: ", operator_choices)
-
+    operator_key = _prompt_choice("Select operator/workflow: ", {**OPERATORS, all_models_key: None})
     if operator_key == all_models_key:
         return main_all_models()
 
@@ -629,47 +759,31 @@ def main_forward():
     _print_action_menu()
     action = ACTIONS[_prompt_choice("Select operation: ", ACTIONS)]
     runner = spec["runner"]
+    name, overrides = _variant(spec, _prompt_forward_options([spec]))
+    tag, dataset_file = _prompt_dataset("100k" if action != "train" else DEFAULT_DATASET_TAG)
+    plot_dir = forward_plot_root(tag, GENERAL) / name  # created when plots are saved
+    checkpoint = forward_model_path(name, tag)
 
     print("\n" + "=" * 68)
-    print(f"Operator : {spec['name']} ({spec['short']})")
-    print(f"Action   : {action}")
-    print(f"Dataset  : {DATASET_FILE}")
-    print(f"Seed     : {SEED}")
-    print(f"Plots    : {PLOTS_DIR}")
+    print(f"Operator   : {spec['name']} ({name})")
+    print(f"Action     : {action}")
+    print(f"Dataset    : {tag}")
+    print(f"Checkpoint : {checkpoint}")
+    print(f"Plots      : {plot_dir}")
     print("=" * 68)
 
     if action == "train":
-        dataset_file = _prompt_dataset_file()
-        is_sharded = isinstance(dataset_file, list)
-        num_configurations = _prompt_int(
-            "Number of configurations to use",
-            default=100000 if is_sharded else 5000,
-            minimum=3,
+        num_configurations = _prompt_num_configurations(tag)
+        batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=16, minimum=1)
+        epochs = _prompt_int("Number of epochs", default=int(spec["epochs"]), minimum=1)
+        learning_rate = _prompt_float("Learning rate", default=float(spec["lr"]), minimum=0.0)
+        regenerate_dataset = (
+            False if isinstance(dataset_file, list)
+            else _prompt_yes_no("Regenerate and overwrite the ERP dataset before training", default=False)
         )
-        batch_size = _prompt_int(
-            "Batch size (complete ERP spectra per batch)", default=16, minimum=1
-        )
-        epochs = _prompt_int(
-            "Number of epochs", default=int(spec["epochs"]), minimum=1
-        )
-        learning_rate = _prompt_float(
-            "Learning rate", default=float(spec["lr"]), minimum=0.0
-        )
-        if is_sharded:
-            regenerate_dataset = False
-            print("(Regenerate is not supported for the sharded 100k dataset -- skipped.)")
-        else:
-            regenerate_dataset = _prompt_yes_no(
-                "Regenerate and overwrite the ERP dataset before training", default=False
-            )
         lbfgs_epochs = _prompt_lbfgs_epochs()
-        show_plot = _prompt_yes_no(
-            "Also display the saved training and evaluation plots", default=False
-        )
+        show_plot = _prompt_yes_no("Also display the saved plots", default=False)
 
-        # Train one operator and evaluate it immediately afterwards so a
-        # standalone model run saves the same diagnostic plots as the
-        # all-model workflow. Plot creation is kept in cli.py explicitly.
         result = runner(
             action="train",
             num_configurations=num_configurations,
@@ -682,82 +796,130 @@ def main_forward():
             seed=SEED,
             plot=False,
             save_plots=False,
-            plots_dir=PLOTS_DIR,
             num_evaluation_plots=5,
             evaluate_after_training=True,
+            checkpoint_file=checkpoint,
+            model_config_overrides=overrides,
         )
-
-        saved_plot_dir = save_operator_experiment_plots(
-            spec["short"],
+        save_operator_experiment_plots(
+            name,
             history=result["history"],
             metrics=result["metrics"],
             frequency_values=result["dataset"].frequency_values,
-            plots_dir=PLOTS_DIR,
+            plot_dir=plot_dir,
             num_configurations=5,
             show=show_plot,
         )
-        print(f"Saved {spec['short']} training/evaluation plots to: {saved_plot_dir.resolve()}")
         return result
 
-    if action == "evaluate":
-        batch_size = _prompt_int("Evaluation batch size", default=16, minimum=1)
-        show_plot = _prompt_yes_no(
-            "Also display the saved test ERP and parity plots", default=False
-        )
+    if _require_checkpoint(name, tag) is None:
+        return None
 
+    if action == "evaluate":
+        batch_size = _prompt_int("Evaluation batch size", default=64, minimum=1)
+        show_plot = _prompt_yes_no("Also display the saved plots", default=False)
         result = runner(
             action="evaluate",
             batch_size=batch_size,
-            dataset_file=DATASET_FILE,
+            dataset_file=dataset_file,
             seed=SEED,
             plot=False,
             save_plots=False,
-            plots_dir=PLOTS_DIR,
             num_evaluation_plots=5,
+            checkpoint_file=checkpoint,
         )
-        saved_plot_dir = save_operator_experiment_plots(
-            spec["short"],
+        history = result.get("history")
+        save_operator_experiment_plots(
+            name,
+            history=history if history and history.get("train") else None,
             metrics=result["metrics"],
             frequency_values=result["frequency_values"],
-            plots_dir=PLOTS_DIR,
+            plot_dir=plot_dir,
             num_configurations=5,
             show=show_plot,
         )
-        print(f"Saved {spec['short']} evaluation plots to: {saved_plot_dir.resolve()}")
         return result
 
     print("\nPrediction configuration")
     print("1. Enter a new configuration manually")
     print("2. Use the first configuration from the saved test split")
     prediction_choice = _prompt_choice("Select prediction input: ", {"1": None, "2": None})
-    configuration = (
-        _prompt_configuration(default_num_res) if prediction_choice == "1" else None
-    )
-    show_plot = _prompt_yes_no(
-        "Also display the saved solver vs neural-operator ERP spectrum", default=False
-    )
+    configuration = _prompt_configuration(int(DATASETS[tag].get("num_res", default_num_res))) if prediction_choice == "1" else None
+    show_plot = _prompt_yes_no("Also display the saved solver vs neural-operator ERP spectrum", default=False)
 
+    # The dataset load inside the runner switches the solver to that
+    # dataset's plate-mode basis, so the "ground truth" curve is computed
+    # with the same physics the model was trained on.
     result = runner(
         action="predict",
-        dataset_file=DATASET_FILE,
+        dataset_file=dataset_file,
         seed=SEED,
         configuration=configuration,
         plot=False,
         save_plots=False,
-        plots_dir=PLOTS_DIR,
+        checkpoint_file=checkpoint,
     )
-    saved_plot_dir = save_operator_experiment_plots(
-        spec["short"],
+    save_operator_experiment_plots(
+        name,
         prediction=result["prediction"],
-        plots_dir=PLOTS_DIR,
+        plot_dir=plot_dir,
         show=show_plot,
     )
-    print(f"Saved {spec['short']} prediction plot to: {saved_plot_dir.resolve()}")
     return result
 
 
 # ==================================================
-# Inverse: all-models workflow
+# Forward: frequency-holdout generalization experiment
+# ==================================================
+
+
+def main_frequency_holdout():
+    """Interactive entry point for the frequency-holdout experiment."""
+    operator_specs = _prompt_operator_selection(
+        "Which operators to run the frequency-holdout experiment on (e.g. 2,4,5)"
+    )
+    forward_options = _prompt_forward_options(operator_specs)
+    tag, dataset_file = _prompt_dataset()
+    num_configurations = _prompt_num_configurations(tag)
+    batch_size = _prompt_int("Batch size (complete ERP spectra per batch)", default=16, minimum=1)
+    epochs = _prompt_int("Number of epochs (applied to every selected operator)", default=200, minimum=1)
+    print(
+        "\nThe held-out band is a contiguous slice of the frequency axis, given as "
+        "fractions of the full range (default: the middle 20%, i.e. 0.40-0.60)."
+    )
+    while True:
+        holdout_start_frac = _prompt_float("Holdout band start fraction", default=0.40, minimum=-1e-12, maximum=0.99)
+        holdout_end_frac = _prompt_float("Holdout band end fraction", default=0.60, minimum=holdout_start_frac, maximum=1.0)
+        if holdout_end_frac - holdout_start_frac >= 0.01:
+            break
+        print("The band must cover at least 1% of the frequency range.")
+    num_plot = _prompt_int("Example test spectra to plot per operator", default=5, minimum=1)
+
+    root = forward_plot_root(tag, FREQ_HOLDOUT)
+    print("\n" + "=" * 68)
+    print(f"Operators : {', '.join(spec['short'] for spec in operator_specs)}")
+    print(f"Dataset   : {tag}")
+    print(f"Holdout   : [{holdout_start_frac:.2f}, {holdout_end_frac:.2f}) of the frequency range")
+    print(f"Plots     : {root}/<MODEL>/ and {root}/{ALL_MODELS}/")
+    print(f"Models    : {forward_model_path('<model>', tag, FREQ_HOLDOUT)}")
+    print("=" * 68)
+
+    return run_frequency_holdout(
+        operator_specs=operator_specs,
+        num_configurations=num_configurations,
+        epochs=epochs,
+        batch_size=batch_size,
+        dataset_file=dataset_file,
+        holdout_start_frac=holdout_start_frac,
+        holdout_end_frac=holdout_end_frac,
+        num_plot=num_plot,
+        seed=SEED,
+        forward_options=forward_options,
+    )
+
+
+# ==================================================
+# Inverse
 # ==================================================
 
 
@@ -766,86 +928,94 @@ def _as_dataset_tuple(dataset_file) -> tuple:
     return tuple(dataset_file) if isinstance(dataset_file, (list, tuple)) else (dataset_file,)
 
 
+def _run_inverse_evaluations(model_names, tag, dataset_file, num_configurations, *, ask: bool):
+    dataset_tuple = _as_dataset_tuple(dataset_file)
+    results = {}
+    if not ask or _prompt_yes_no(
+        "\nRun the solver-scored prediction-quality evaluation "
+        "(MAE/RMSE/Pearson r/R^2 + predicted-vs-true ERP)?", default=True,
+    ):
+        num_test_examples = _prompt_int("Held-out target spectra to evaluate", default=150, minimum=1)
+        num_samples = _prompt_int("Samples per target (solver calls scale as examples x samples)", default=8, minimum=1)
+        results["stats"] = inverse_evaluate.main(
+            num_test_examples=num_test_examples, num_samples=num_samples,
+            num_configurations=num_configurations, dataset_file=dataset_tuple, model_names=model_names,
+        )
+        if not ask or _prompt_yes_no(
+            "\nAlso run design-parameter recovery (predicted vs. true m, k, f_t, x, y)?", default=True,
+        ):
+            results["design_stats"] = inverse_evaluate_design.main(
+                num_test_examples=num_test_examples, num_samples=num_samples,
+                num_configurations=num_configurations, dataset_file=dataset_tuple, model_names=model_names,
+            )
+    return results
+
+
+def _prompt_inverse_variant() -> tuple[str, str]:
+    """(spectrum_encoder, design_param) for the inverse models."""
+    print("\nSpectrum encoder (how the target ERP spectrum is embedded)")
+    print("1. Pooled      (conv + global mean/max pooling)  [standard, all existing models]")
+    print("2. Positional  (keeps frequency position: positional channel + ordered frequency bins)  -> saved as <MODEL>_pos")
+    spectrum_encoder = "positional" if _prompt_choice("Select spectrum encoder: ", {"1": None, "2": None}) == "2" else "pooled"
+    print("\nDesign parameterisation")
+    print("1. Full      [m, k, f_t, x, y] per resonator (5 x num_res), z-scored  [standard, all existing models]")
+    print("2. Bounded   [m, f_t, x, y] per resonator (4 x num_res), logit-bounded, k = m(2 pi f_t)^2 derived (exact densities, no clipping)")
+    print("               -> saved as <MODEL>_b12")
+    design_param = "bounded12" if _prompt_choice("Select design parameterisation: ", {"1": None, "2": None}) == "2" else "full15"
+    return spectrum_encoder, design_param
+
+
+def _inverse_name(key: str, spectrum_encoder: str, design_param: str) -> str:
+    from erp_inverse.scripts.train_all import resolve_variant
+
+    return resolve_variant(key, spectrum_encoder, design_param)[0]
+
+
 def main_all_inverse_models():
-    """Train every inverse model, then optionally run the solver-scored evaluations."""
-    print("\nAll-inverse-model training parameters")
-    print("Per-model defaults come from erp_inverse_operators.registry.INVERSE_MODELS.")
+    """Train every (or a selection of) inverse model(s), then optionally evaluate."""
+    print("\nAll-inverse-model training parameters (per-model defaults):")
     for spec in INVERSE_MODELS.values():
         print(f"  {spec['short']:>10s}: epochs={spec['epochs']}, lr={spec['lr']:g}")
 
-    dataset_file = _prompt_dataset_file()
-    is_sharded = isinstance(dataset_file, list)
-    num_configurations = _prompt_int(
-        "Number of configurations to use",
-        default=100000 if is_sharded else 10000,
-        minimum=3,
-    )
-    batch_size = _prompt_int(
-        "Batch size (target spectra per batch)", default=64, minimum=1
-    )
-    epochs = _prompt_int(
-        "Epochs (applied to every inverse model)", default=150, minimum=1
-    )
+    keys = _prompt_selection("Which inverse models to train (e.g. 1,3,7)", INVERSE_MODELS)
+    spectrum_encoder, design_param = _prompt_inverse_variant()
+    tag, dataset_file = _prompt_dataset()
+    num_configurations = _prompt_num_configurations(tag)
+    batch_size = _prompt_int("Batch size (target spectra per batch)", default=64, minimum=1)
+    epochs = _prompt_optional_int("Epochs for every selected model (overrides each one's own default)")
 
-    from erp_inverse_operators.train_all import main as train_all_inverse
+    # Restarting after an interruption: offer to keep already-finished models.
+    finished = [
+        name for name in (_inverse_name(k, spectrum_encoder, design_param) for k in keys)
+        if inverse_model_path(name, tag).exists()
+    ]
+    skip_existing = False
+    if finished:
+        print(f"\nAlready trained on '{tag}': {', '.join(finished)}")
+        skip_existing = _prompt_yes_no(
+            "Skip these (reuse their saved checkpoints instead of retraining)", default=True
+        )
 
-    print(f"\nTraining all {len(INVERSE_MODELS)} inverse models, then building the "
-          "solver-scored validation figure + per-sample report ...")
+    from erp_inverse.scripts.train_all import main as train_all_inverse
+
+    print(f"\nTraining {len(keys)} inverse model(s); per-model loss curves -> "
+          f"{INVERSE_ROOT / 'plots' / 'models' / tag}/<MODEL>/, comparison figures -> {INVERSE_ROOT / 'plots' / 'models' / tag / ALL_MODELS}")
     train_all_inverse(
         num_configurations=num_configurations,
         epochs=epochs,
         batch_size=batch_size,
         dataset_file=dataset_file,
+        keys=keys,
+        seed=SEED,
+        spectrum_encoder=spectrum_encoder,
+        design_param=design_param,
+        skip_existing=skip_existing,
     )
-
-    if _prompt_yes_no(
-        "\nAlso run the aggregate prediction-quality evaluation "
-        "(MAE/RMSE/Pearson r/R^2 + prediction-vs-ground-truth, scored with "
-        "the actual solver)?",
-        default=True,
-    ):
-        num_test_examples = _prompt_int(
-            "Held-out target spectra to evaluate", default=150, minimum=1
-        )
-        num_samples = _prompt_int(
-            "Samples per target (solver calls scale as examples x samples)",
-            default=8, minimum=1,
-        )
-        inverse_evaluate.main(
-            num_test_examples=num_test_examples,
-            num_samples=num_samples,
-            num_configurations=num_configurations,
-            dataset_file=_as_dataset_tuple(dataset_file),
-        )
-
-    if _prompt_yes_no(
-        "\nAlso run design-parameter recovery evaluation "
-        "(predicted vs. true m, k, x, y)?",
-        default=True,
-    ):
-        num_test_examples = _prompt_int(
-            "Held-out target spectra to evaluate", default=150, minimum=1
-        )
-        num_samples = _prompt_int(
-            "Samples per target", default=8, minimum=1
-        )
-        inverse_evaluate_design.main(
-            num_test_examples=num_test_examples,
-            num_samples=num_samples,
-            num_configurations=num_configurations,
-            dataset_file=_as_dataset_tuple(dataset_file),
-        )
+    names = [_inverse_name(k, spectrum_encoder, design_param) for k in keys]
+    return _run_inverse_evaluations(names, tag, dataset_file, num_configurations, ask=True)
 
 
-# ==================================================
-# Inverse: single-model workflow
-# ==================================================
-
-INVERSE_ACTIONS = {
-    "1": "train",
-    "2": "evaluate",
-    "3": "predict",
-}
+INVERSE_ACTIONS = {"1": "train", "2": "evaluate", "3": "predict"}
 
 
 def _print_inverse_action_menu() -> None:
@@ -859,116 +1029,79 @@ def main_inverse():
     """Interactive entry point for the inverse (ERP -> configuration) workflow."""
     _print_inverse_menu()
     all_models_key = str(len(INVERSE_MODELS) + 1)
-    choices = {**INVERSE_MODELS, all_models_key: None}
-    key = _prompt_choice("Select inverse model/workflow: ", choices)
-
+    fixed_key, bank_key = str(len(INVERSE_MODELS) + 2), str(len(INVERSE_MODELS) + 3)
+    key = _prompt_choice("Select inverse model/workflow: ",
+                         {**INVERSE_MODELS, all_models_key: None, fixed_key: None, bank_key: None})
     if key == all_models_key:
         return main_all_inverse_models()
+    if key == fixed_key:
+        return main_fixed_resonator()
+    if key == bank_key:
+        return main_block_bank()
 
     spec = INVERSE_MODELS[key]
     _print_inverse_action_menu()
     action = INVERSE_ACTIONS[_prompt_choice("Select operation: ", INVERSE_ACTIONS)]
+    spectrum_encoder, design_param = _prompt_inverse_variant()
+    name = _inverse_name(key, spectrum_encoder, design_param)
+    tag, dataset_file = _prompt_dataset("100k" if action != "train" else DEFAULT_DATASET_TAG)
 
     print("\n" + "=" * 68)
-    print(f"Model    : {spec['name']} ({spec['short']})")
-    print(f"Action   : {action}")
-    print(f"Seed     : {SEED}")
+    print(f"Model      : {spec['name']} ({name})")
+    print(f"Action     : {action}")
+    print(f"Dataset    : {tag}")
+    print(f"Checkpoint : {inverse_model_path(name, tag)}")
+    print(f"Plots      : {INVERSE_ROOT / 'plots' / 'models' / tag / name}")
     print("=" * 68)
 
     if action == "train":
-        dataset_file = _prompt_dataset_file()
-        is_sharded = isinstance(dataset_file, list)
-        num_configurations = _prompt_int(
-            "Number of configurations to use",
-            default=100000 if is_sharded else 10000,
-            minimum=3,
-        )
-        batch_size = _prompt_int(
-            "Batch size (target spectra per batch)", default=64, minimum=1
-        )
-        epochs = _prompt_int(
-            "Number of epochs", default=int(spec["epochs"]), minimum=1
-        )
-
+        num_configurations = _prompt_num_configurations(tag)
+        batch_size = _prompt_int("Batch size (target spectra per batch)", default=64, minimum=1)
+        epochs = _prompt_int("Number of epochs", default=int(spec["epochs"]), minimum=1)
         model, history, dataset = train_one_inverse_model(
-            key,
-            num_configurations=num_configurations,
-            epochs=epochs,
-            batch_size=batch_size,
-            dataset_file=dataset_file,
-            seed=SEED,
+            key, num_configurations=num_configurations, epochs=epochs,
+            batch_size=batch_size, dataset_file=dataset_file, seed=SEED,
+            spectrum_encoder=spectrum_encoder, design_param=design_param,
         )
-        print(
-            f"\n{spec['short']} trained: final val loss={history['val'][-1]:.4f}, "
-            f"best val loss={min(history['val']):.4f}"
-        )
-        print(f"Checkpoint saved to erp_inverse_operators/models/inverse_{spec['short'].lower()}.pth")
-        return {"model": model, "history": history, "dataset": dataset}
+        print(f"\n{name} trained: final val loss={history['val'][-1]:.4f}, "
+              f"best val loss={min(history['val']):.4f}")
+        result = {"model": model, "history": history, "dataset": dataset}
+        if _prompt_yes_no("Evaluate it now (solver-scored)?", default=True):
+            result.update(_run_inverse_evaluations([name], tag, dataset_file, num_configurations, ask=False))
+        return result
+
+    if not inverse_model_path(name, tag).exists():
+        print(f"\nNo checkpoint {inverse_model_path(name, tag)} -- train {name} on '{tag}' first.")
+        return None
+    recorded = inverse_evaluate.checkpoint_num_configurations(name, tag)
+    default_n = recorded or int(DATASETS[tag]["num_configurations"])
+    num_configurations = _prompt_int(
+        "Number of configurations backing the test split (must match training)",
+        default=default_n, minimum=3, maximum=int(DATASETS[tag]["num_configurations"]),
+    )
 
     if action == "evaluate":
-        dataset_file = _prompt_dataset_file()
-        is_sharded = isinstance(dataset_file, list)
-        num_configurations = _prompt_int(
-            "Number of configurations backing the test split",
-            default=100000 if is_sharded else 10000,
-            minimum=3,
-        )
-        num_test_examples = _prompt_int(
-            "Held-out target spectra to evaluate", default=150, minimum=1
-        )
-        num_samples = _prompt_int(
-            "Samples per target (solver calls scale as examples x samples)",
-            default=8, minimum=1,
-        )
-        dataset_tuple = _as_dataset_tuple(dataset_file)
-        stats = inverse_evaluate.main(
-            num_test_examples=num_test_examples,
-            num_samples=num_samples,
-            num_configurations=num_configurations,
-            dataset_file=dataset_tuple,
-            model_names=[spec["short"]],
-        )
-        design_stats = inverse_evaluate_design.main(
-            num_test_examples=num_test_examples,
-            num_samples=num_samples,
-            num_configurations=num_configurations,
-            dataset_file=dataset_tuple,
-            model_names=[spec["short"]],
-        )
-        return {"stats": stats, "design_stats": design_stats}
+        return _run_inverse_evaluations([name], tag, dataset_file, num_configurations, ask=False)
 
-    # predict
-    dataset_file = _prompt_dataset_file()
-    is_sharded = isinstance(dataset_file, list)
-    num_configurations = _prompt_int(
-        "Number of configurations backing the test split (used for "
-        "normalization stats and, if chosen below, the test-split target)",
-        default=100000 if is_sharded else 10000,
-        minimum=3,
-    )
     print("\nPrediction target")
     print("1. Enter a resonator configuration manually (its real solver-computed "
           "ERP spectrum becomes the target to invert)")
     print("2. Use the first spectrum from the saved test split")
     target_choice = _prompt_choice("Select target input: ", {"1": None, "2": None})
-    configuration = (
-        _prompt_configuration(default_num_res) if target_choice == "1" else None
-    )
-    num_samples = _prompt_int(
-        "Number of candidate designs to sample", default=6, minimum=1
-    )
+    configuration = _prompt_configuration(int(DATASETS[tag].get("num_res", default_num_res))) if target_choice == "1" else None
+    num_samples = _prompt_int("Number of candidate designs to sample", default=6, minimum=1)
 
-    from erp_inverse_operators.predict import predict_one, print_report
+    from erp_inverse.scripts.predict import predict_one, print_report
 
     result = predict_one(
-        spec["short"],
+        name,
         configuration=configuration,
         num_samples=num_samples,
         num_configurations=num_configurations,
         dataset_file=dataset_file,
         seed=SEED,
     )
-    print_report(spec["short"], result)
+    print_report(name, result)
     return result
 
 
@@ -978,35 +1111,181 @@ def main_inverse():
 
 
 def main():
-    """Interactive entry point: choose the problem, then dispatch.
-
-    ERP and Displacement field are the two physical problems this project
-    solves; the invertible operators (iFNO/iDCO/iGNO) are a separate
-    architecture family that answers the ERP problem's forward AND inverse
-    directions from one set of weights, so they get their own top-level
-    slot instead of living inside the ERP submenu's single-optimizer
-    forward/inverse machinery (see erp_forward_inverse_operators/__init__.py's
-    docstring for why they can't share that training loop).
-    """
-    print("\nWhich problem would you like to work on?")
-    print("1. ERP           (resonator configuration <-> ERP spectrum)")
-    print("2. Displacement  (configuration, frequency, position -> velocity field)")
-    print("3. Invertible    (joint forward+inverse operator, ERP problem: iFNO/iDCO/iGNO)")
-    problem = _prompt_choice("Select problem: ", {"1": None, "2": None, "3": None})
-    if problem == "1":
-        return main_erp()
-    if problem == "2":
-        return main_displacement()
-    return main_invertible_operators()
+    """Interactive entry point: choose the model family, then dispatch."""
+    print("\nWhich model family?")
+    print("1. ERP forward operators   (resonator configuration -> ERP spectrum)")
+    print("2. ERP inverse models      (ERP spectrum -> resonator configuration; incl. fixed-resonator")
+    print("                            position models and the model bank)")
+    print("3. Invertible operators    (coupling flow, forward + inverse: " +
+          ", ".join(spec["short"] for spec in INVERTIBLE_OPERATORS.values()) + ")")
+    print("4. Invertible DeepONet     (Kaltenbach et al.: exact inverse; Q8, Q64, Q128, trunk variants)")
+    print("5. Displacement field      (configuration, frequency, position -> velocity field)")
+    family = _prompt_choice("Select model family: ", {str(i): None for i in range(1, 6)})
+    return {"1": main_forward, "2": main_inverse, "3": main_invertible_operators, "4": main_invertible_deeponet,
+            "5": main_displacement}[family]()
 
 
 def main_erp():
-    """ERP problem: choose forward or inverse, then dispatch."""
+    """ERP problem: choose forward or inverse, then dispatch (kept for scripts that call it)."""
     print("\nWhat would you like to run?")
     print("1. Forward  (resonator configuration -> ERP spectrum)")
     print("2. Inverse  (ERP spectrum -> resonator configuration)")
     mode = _prompt_choice("Select workflow: ", {"1": None, "2": None})
     return main_forward() if mode == "1" else main_inverse()
+
+
+def _prompt_positions(num_res: int) -> list[tuple[float, float]]:
+    """x, y of every resonator (m and f_t are fixed by the dataset/block)."""
+    positions = []
+    for i in range(num_res):
+        while True:
+            try:
+                x = float(input(f"Resonator {i + 1} x position (m, 0 to {Lx:g}): ").strip())
+                y = float(input(f"Resonator {i + 1} y position (m, 0 to {Ly:g}): ").strip())
+            except ValueError:
+                print("Please enter numeric values.")
+                continue
+            if 0.0 <= x <= Lx and 0.0 <= y <= Ly:
+                positions.append((x, y))
+                break
+            print(f"Position must satisfy 0 <= x <= {Lx:g}, 0 <= y <= {Ly:g}.")
+    return positions
+
+
+def main_fixed_resonator():
+    """Position-only inverse models (erp_inverse/scripts/fixed_resonator): m and f_t
+    fixed by the dataset, the models predict every resonator's x, y."""
+    from erp_inverse.scripts.fixed_resonator import evaluate as fr_evaluate
+    from erp_inverse.scripts.fixed_resonator import predict_custom as fr_custom
+    from erp_inverse.scripts.fixed_resonator import train_all as fr_train
+    from erp_inverse.scripts.fixed_resonator.common import plot_dir as fr_plot_dir, prepare_data as fr_prepare
+    from erp_inverse.scripts.fixed_resonator.registry import INVERSE_MODELS as FR_MODELS
+
+    print("\nFixed-resonator position models")
+    for key, spec in FR_MODELS.items():
+        print(f"{key}. {spec['name']} ({spec['short']})")
+    keys = _prompt_selection("Which models (e.g. 1,2 or 'all')", FR_MODELS)
+    names = [FR_MODELS[k]["short"] for k in keys]
+    print("\nOperation")
+    print("1. Train (then solver-scored evaluation)")
+    print("2. Evaluate saved checkpoints")
+    print("3. Predict your own resonator positions")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    tag, _files = _prompt_dataset("100k_2res_fixed_m0.2_ft72_18modes", kind="fixed")
+    print(f"Checkpoints: {fixed_resonator_model_path('<model>', tag)}   Plots: {fr_plot_dir(tag).parent}/")
+
+    if action == "1":
+        epochs = _prompt_optional_int("Epochs (empty = each model's default)")
+        n_test = _prompt_int("Held-out targets for the solver-scored evaluation", default=200, minimum=1)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        return fr_train.main(dataset_tag=tag, models=names, epochs=epochs, skip_existing=False,
+                             num_test_examples=n_test, num_samples=n_samples)
+    trained = [n for n in names if fixed_resonator_model_path(n, tag).exists()]
+    if not trained:
+        print(f"No trained models among {names} on '{tag}' -- train them first.")
+        return None
+    if action == "2":
+        n_test = _prompt_int("Held-out targets for the solver-scored evaluation", default=200, minimum=1)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        data = fr_prepare(tag)
+        for name in trained:
+            fr_evaluate.evaluate_model(name, tag, data=data, num_test_examples=n_test, num_samples=n_samples)
+        return fr_evaluate.compare_models(tag, trained)
+    num_res = _dataset_num_res(tag)
+    print(f"\nEnter the {num_res} resonator positions (m and f_t are fixed by '{tag}').")
+    configurations = [("Your configuration", _prompt_positions(num_res))]
+    n_samples = _prompt_int("Candidate designs to sample per model", default=16, minimum=1)
+    return fr_custom.main(dataset_tag=tag, configurations=configurations, models=tuple(trained), num_samples=n_samples)
+
+
+def main_block_bank():
+    """Model bank: one position Flow per f_t block (fixed m), the solver picks the block."""
+    from erp_inverse.scripts.fixed_resonator import block_bank, predict_bank
+    from erp_inverse.scripts.fixed_resonator import train_all as fr_train
+    from utils.erp_dataset import FIXED_BLOCK_FREQUENCIES, FIXED_BLOCK_NUM_RES, fixed_block_tag
+
+    print("\nResonators per configuration: " + ", ".join(str(n) for n in FIXED_BLOCK_NUM_RES))
+    num_res = _prompt_int("Number of resonators", default=FIXED_BLOCK_NUM_RES[0],
+                          minimum=min(FIXED_BLOCK_NUM_RES), maximum=max(FIXED_BLOCK_NUM_RES))
+    tags = [fixed_block_tag(f, num_res=num_res) for f in FIXED_BLOCK_FREQUENCIES]
+    print("Block datasets: " + ", ".join(tags))
+    missing = [t for t in tags if not _dataset_available(t)]
+    if missing:
+        print(f"Missing block datasets: {missing} -- generate them with "
+              f"python datasets/scripts/generate_fixed_blocks.py --num-res {num_res}")
+        return None
+    print("\nOperation")
+    print("1. Train the block models (one Flow per block)")
+    print("2. Evaluate the bank on held-out targets of every block")
+    print("3. Predict designs for your own configuration")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    if action == "1":
+        epochs = _prompt_optional_int("Epochs per block (empty = default)")
+        retrain = _prompt_yes_no("Retrain blocks that already have a checkpoint", default=False)
+        for tag in tags:
+            select_dataset_modal_resolution(tag)
+            fr_train.main(dataset_tag=tag, models=["Flow"], epochs=epochs, skip_existing=not retrain,
+                          evaluate_models=False)
+        return None
+    if action == "2":
+        per_block = _prompt_int("Held-out targets per block", default=100, minimum=1)
+        n_samples = _prompt_int("Samples per block and target", default=16, minimum=1)
+        return block_bank.main(per_block=per_block, num_samples=n_samples, num_res=num_res)
+    f_t = _prompt_float("Tuning frequency f_t of all resonators (Hz)", default=72.0, minimum=1.0)
+    xy = [v for pos in _prompt_positions(num_res) for v in pos]
+    n_samples = _prompt_int("Samples per block", default=32, minimum=1)
+    return predict_bank.main(true_design=predict_bank.design_from_config(f_t, *xy), name="config_cli", num_samples=n_samples,
+                             num_res=num_res)
+
+
+def main_invertible_deeponet():
+    """Invertible DeepONet (erp_invertible_deeponet): RealNVP branch x fixed trunk
+    basis, exact projection inverse."""
+    from erp_invertible_deeponet.scripts import collage_examples, plot_best_of_samples
+    from erp_invertible_deeponet.scripts import evaluate as idon_evaluate
+    from erp_invertible_deeponet.scripts import train as idon
+
+    names = list(idon.VARIANTS)
+    print("\nInvertible DeepONet variants (Q = number of basis functions; D = 4 x resonators)")
+    for i, name in enumerate(names, start=1):
+        q = idon.VARIANTS[name]
+        trunk = idon.TRUNKS.get(name, "mlp")
+        print(f"{i}. {name:<10s} Q = {'D (strict)' if q == 'D' else q:<10}  trunk: {trunk:<6s} loss: "
+              f"{'MSE + slope + peaks' if idon.LOSSES.get(name) == 'erp' else 'MSE'}")
+    registry = {str(i): {"short": n, "name": n} for i, n in enumerate(names, start=1)}
+    chosen = [registry[k]["short"] for k in _prompt_selection("Which variants (e.g. 2,3 or 'all')", registry)]
+    print("\nOperation")
+    print("1. Train (stops early at epoch 50 if the validation loss has not improved since epoch 40)")
+    print("2. Evaluate (solver-checked inverse; comparison table)")
+    print("3. Comparison plots (target ERP + best of 16 per variant; example collages)")
+    action = _prompt_choice("Select operation: ", {"1": None, "2": None, "3": None})
+    tag, _files = _prompt_dataset(idon.DATASET if idon.DATASET in DATASETS else "100k")
+    print(f"Checkpoints: {idon.model_path('<variant>', tag)}   Plots: {idon.PACKAGE_ROOT / 'plots' / 'models' / tag}/")
+
+    if action == "1":
+        epochs = _prompt_int("Epochs", default=150, minimum=1)
+        batch_size = _prompt_int("Batch size", default=128, minimum=1)
+        dataset, loaders = idon.prepare(tag, batch_size=batch_size)
+        for name in chosen:
+            if idon.model_path(name, tag).exists() and not _prompt_yes_no(
+                    f"{name} is already trained on '{tag}' -- retrain it", default=False):
+                continue
+            idon.train_variant(name, dataset, loaders, dataset_tag=tag, epochs=epochs, early_stop_epoch=50)
+        if _prompt_yes_no("Evaluate the trained variants now (solver-checked)", default=True):
+            return idon_evaluate.main(chosen, tag)
+        return None
+    trained = [n for n in chosen if idon.model_path(n, tag).exists()]
+    if not trained:
+        print(f"None of {chosen} is trained on '{tag}'.")
+        return None
+    if action == "2":
+        n_targets = _prompt_int("Held-out target spectra", default=500, minimum=3)
+        n_samples = _prompt_int("Samples per target", default=16, minimum=1)
+        return idon_evaluate.main(trained, tag, num_targets=n_targets, num_samples=n_samples)
+    plot_best_of_samples.main(trained, dataset_tag=tag)
+    for k in (1, 2, 3):
+        collage_examples.collage(trained, k, tag)
+    return None
 
 
 def _print_displacement_menu() -> None:
@@ -1019,32 +1298,37 @@ def _print_displacement_menu() -> None:
 
 
 def main_displacement():
-    """Interactive entry point for the displacement-field workflow.
-
-    Each architecture's run (data loss + physics-informed PDE residual +
-    ERP reconstruction + loss-curve/comparison plots + checkpoint save) is
-    one call to ``displacement_forward_operators.train_all.run_one`` -- a
-    single, already-tuned pipeline (fixed epoch/batch/physics-weight budget,
-    see that module's own constants), so this menu only needs to ask which
-    architecture(s) to run, unlike the ERP menu's per-run hyperparameter
-    prompts.
-    """
+    """Interactive entry point for the displacement-field workflow (fixed,
+    already-tuned pipeline per architecture, see
+    ``disp_forward.scripts.train_all.run_one``)."""
     _print_displacement_menu()
     all_key = str(len(DISPLACEMENT_OPERATORS) + 1)
-    choices = {**DISPLACEMENT_OPERATORS, all_key: None}
-    key = _prompt_choice("Select architecture/workflow: ", choices)
+    key = _prompt_choice("Select architecture/workflow: ", {**DISPLACEMENT_OPERATORS, all_key: None})
     keys = list(DISPLACEMENT_OPERATORS.keys()) if key == all_key else [key]
 
-    from displacement_forward_operators.train_all import run_one
+    import disp_forward.scripts.train_all as displacement_training
+
+    print("\nWhich dataset?")
+    print(f"1. field_displacement   {len(displacement_training.DISPLACEMENT_FILES)} shards in datasets/displacement/ "
+          "(configuration, frequency, collocation points -> velocity field)")
+    _prompt_choice("Select dataset: ", {"1": None})
+    displacement_training.EPOCHS = _prompt_int("Epochs", default=displacement_training.EPOCHS, minimum=1)
+    run_one = displacement_training.run_one
 
     results = []
     for architecture_key in keys:
-        name, result, train_time = run_one(architecture_key)
+        try:
+            name, result, train_time = run_one(architecture_key)
+        except Exception:
+            print(f"\n!!! displacement operator {architecture_key} FAILED -- continuing.")
+            traceback.print_exc()
+            continue
         print(
             f"\n{name}: RMSE={result['rmse']:.3f} dB  R^2={result['r2_score']:.3f}  "
             f"Pearson={result['pearson_correlation']:.3f}  ({train_time:.1f}s)"
         )
         results.append((name, result, train_time))
+        _release_memory()
     return results
 
 
@@ -1053,34 +1337,99 @@ def _print_invertible_menu() -> None:
     print("=" * 56)
     for key, spec in INVERTIBLE_OPERATORS.items():
         print(f"{key}. {spec['name']} ({spec['short']})")
-    print(f"{len(INVERTIBLE_OPERATORS) + 1}. Train and evaluate ALL three")
+    print(f"{len(INVERTIBLE_OPERATORS) + 1}. ALL {len(INVERTIBLE_OPERATORS)}")
     print("=" * 56)
 
 
+def _prompt_invertible_options(invertible) -> dict:
+    """Configuration of the invertible operators (see erp_invertible/scripts/train.py)."""
+    print("\nInvertible-operator configuration")
+    print("1. Standard     (paper-style: 5 x num_res design, softplus gate, pooled readout, set encoder,")
+    print("                 z-scored features)  [older models]")
+    print("2. Recommended  (bounded 4 x num_res design, identity-init bounded gate, binned readout,")
+    print("                 iFNO FFT padding, cycle+alignment terms 0.1, stage-2 on stage-1 estimates,")
+    print("                 f_t-sorted resonator encoder, plate mode shapes / physical detuning)")
+    print("3. Custom       (choose each option)")
+    choice = _prompt_choice("Select configuration: ", {"1": None, "2": None, "3": None})
+    if choice == "1":
+        return {}
+    if choice == "2":
+        return dict(invertible.RECOMMENDED_OPTIONS)
+    opts = {}
+    if _prompt_yes_no("Bounded design, 4 numbers per resonator [m, f_t, x, y] with k derived (suffix _b12)?", default=True):
+        opts["design_param"] = "bounded12"
+    if _prompt_yes_no("Identity-initialised bounded gate exp(c tanh(a L)) (suffix _bg)?", default=True):
+        opts["gate"] = "bounded"
+    if _prompt_yes_no("Ordered frequency bins in the design readout (suffix _bin)?", default=True):
+        opts["readout"] = "binned"
+    if _prompt_yes_no("Zero-padded FFT in iFNO's spectral layer (suffix _pad, iFNO only)?", default=True):
+        opts["spectral_padding"] = _prompt_int("Padding (frequency points)", default=8, minimum=1)
+    if _prompt_yes_no("Design-cycle + latent-alignment loss terms (suffix _cyc)?", default=True):
+        opts["cycle_weight"] = _prompt_float("Cycle weight", default=0.1, minimum=0.0)
+        opts["align_weight"] = _prompt_float("Alignment weight", default=0.1, minimum=0.0)
+    if _prompt_yes_no("Stage-2 VAE pretraining on stage-1 inverse estimates (suffix _s2e)?", default=True):
+        opts["stage2_source"] = "estimates"
+    print("\nResonator encoder (iFNO, iDCO, iDNO, iWNO, iLNO, iSIREN; iGNO and iSTO have none)")
+    print("1. f_t-sorted encoder             (suffix _sortenc)  [recommended]")
+    print("2. Set encoder (mean + max pool)  [older models]")
+    print("3. Set + f_t-sorted encoder       (suffix _sorted)")
+    opts["encoder"] = {"1": "sorted", "2": "set", "3": "set+sorted"}[_prompt_choice("Select encoder: ", {"1": None, "2": None, "3": None})]
+    if _prompt_yes_no("Plate mode shapes + physical detuning features (suffix _phys)?", default=True):
+        opts["coordinate_features"] = "physical"
+    return opts
+
+
 def main_invertible_operators():
-    """Interactive entry point for the invertible-operator family (Long et
-    al., arXiv:2402.11722, adapted three ways -- see
-    erp_forward_inverse_operators/__init__.py). Each shares the same fixed
-    3-step training schedule (invertible-block pretraining -> beta-VAE
-    pretraining -> joint fine-tune, see
-    erp_forward_inverse_operators/train.py), so this menu only needs to ask
-    which architecture(s) to run, same pattern as the displacement menu.
-    """
+    """Invertible-operator family (Long et al., arXiv:2402.11722): train with
+    the 3-stage schedule, or re-evaluate saved checkpoints."""
+    import erp_invertible.scripts.train as invertible
+
     _print_invertible_menu()
     all_key = str(len(INVERTIBLE_OPERATORS) + 1)
-    choices = {**INVERTIBLE_OPERATORS, all_key: None}
-    key = _prompt_choice("Select architecture/workflow: ", choices)
+    key = _prompt_choice("Select architecture/workflow: ", {**INVERTIBLE_OPERATORS, all_key: None})
     keys = list(INVERTIBLE_OPERATORS.keys()) if key == all_key else [key]
 
-    print(f"\nRuns the paper's 3-step schedule on the full 100k-configuration ERP "
-          f"dataset for {'all three' if key == all_key else INVERTIBLE_OPERATORS[key]['short']}, "
-          "then forward (config->ERP) and inverse (ERP->config, solver-validated) evaluation.")
-    if not _prompt_yes_no(
-        f"Proceed with training ({len(keys)} model(s), 100k configurations, ~1-2h/model on CPU)", default=True
-    ):
-        print("Cancelled.")
-        return None
+    print("\nOperation")
+    print("1. Train (3-stage schedule) + forward/inverse evaluation")
+    print("2. Evaluate saved checkpoint(s)")
+    evaluate_only = _prompt_choice("Select operation: ", {"1": None, "2": None}) == "2"
+    use_sorted_branch = False  # the encoder is chosen in the options below
+    options = _prompt_invertible_options(invertible)
+    print("Model name(s): " + ", ".join(invertible.variant(k, use_sorted_branch, options)[0] for k in keys))
+    tag, dataset_file = _prompt_dataset("100k")
+    num_inverse_examples = _prompt_int("Held-out targets for the solver-scored inverse evaluation", default=100, minimum=1)
+    num_inverse_samples = _prompt_int("Posterior samples per target", default=8, minimum=1)
 
-    from erp_forward_inverse_operators.train import main as invertible_main
+    if evaluate_only:
+        return invertible.main(
+            keys=tuple(keys), evaluate_only=True, dataset_file=dataset_file, seed=SEED,
+            use_sorted_branch=use_sorted_branch, options=options,
+            num_inverse_examples=num_inverse_examples, num_inverse_samples=num_inverse_samples,
+        )
 
-    return invertible_main(keys=tuple(keys))
+    num_configurations = _prompt_num_configurations(tag)
+    batch_size = _prompt_int("Batch size", default=invertible.BATCH_SIZE, minimum=1)
+    print("\nThree-stage schedule (see erp_invertible/scripts/train.py):")
+    stage1 = _prompt_int("Stage 1 epochs (invertible blocks: J_FWD + J_INV + round-trip terms)",
+                         default=invertible.STAGE1_EPOCHS, minimum=0)
+    stage2 = _prompt_int("Stage 2 epochs (beta-VAE pretraining on designs)",
+                         default=invertible.STAGE2_EPOCHS, minimum=0)
+    stage3 = _prompt_int("Stage 3 epochs (joint fine-tuning)", default=invertible.STAGE3_EPOCHS, minimum=0)
+    inverse_weight = _prompt_float("Stage 3 weight of the direct inverse term J_INV (0 = paper's eq 11)",
+                                   default=invertible.STAGE3_INVERSE_WEIGHT, minimum=-1e-12)
+    print(f"\nPlots -> {INVERTIBLE_ROOT / 'plots' / 'models' / tag}/<MODEL>/ (and {ALL_MODELS}/ when training several)")
+    return invertible.main(
+        keys=tuple(keys),
+        num_configurations=num_configurations,
+        batch_size=batch_size,
+        dataset_file=dataset_file,
+        seed=SEED,
+        stage1_epochs=stage1,
+        stage2_epochs=stage2,
+        stage3_epochs=stage3,
+        stage3_inverse_weight=inverse_weight,
+        use_sorted_branch=use_sorted_branch,
+        options=options,
+        num_inverse_examples=num_inverse_examples,
+        num_inverse_samples=num_inverse_samples,
+    )
