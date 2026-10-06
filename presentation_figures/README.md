@@ -115,4 +115,4 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `plate_equation_kirchhoff_love` | the Kirchhoff-Love thin plate equation D nabla^4 w + rho h d^2w/dt^2 = q, the expansion of nabla^4 and D, with the meaning of each symbol; script `kirchhoff_love_equation_figure.py` |
 
-| `plate_equation_short` (and `_transparent`) | the Kirchhoff-Love plate equation in short form, D nabla^4 w + rho h w'' = q, bare like the Helmholtz equation on the approaches slide; script `kirchhoff_love_short_figure.py` |
+| `plate_equation_short` (and `_transparent`) | the Kirchhoff-Love plate equation in short form, D nabla^4 w + rho h w'' = f, bare like the Helmholtz equation on the approaches slide; script `kirchhoff_love_short_figure.py` |

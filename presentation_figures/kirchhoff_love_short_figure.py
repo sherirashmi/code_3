@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 import utils.plot_style  # noqa: F401
 
-EQ = r"$D\,\nabla^{4}w+\rho h\,\ddot{w}=q$"
+EQ = r"$D\,\nabla^{4}w+\rho h\,\ddot{w}=f$"
 fig = plt.figure(figsize=(5.2, 1.0))
 fig.text(0.5, 0.5, EQ, fontsize=34, ha="center", va="center")
 for ext, kw in (("png", dict(dpi=300)), ("pdf", {}), ("svg", {})):
