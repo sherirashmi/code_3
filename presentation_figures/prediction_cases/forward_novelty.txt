@@ -1,0 +1,78 @@
+Checkpoints used (erp_forward/models/100k/):
+  DON    /home/user/code_3/erp_forward/models/100k/don_sorted_phys.pth
+  DNO    /home/user/code_3/erp_forward/models/100k/dno_sorted_phys.pth
+  DCO    /home/user/code_3/erp_forward/models/100k/dco_sorted_phys.pth
+  FNO    /home/user/code_3/erp_forward/models/100k/fno_sorted_phys.pth
+  WNO    /home/user/code_3/erp_forward/models/100k/wno_sorted_phys.pth
+  LNO    /home/user/code_3/erp_forward/models/100k/lno_sorted_phys.pth
+  GNO    /home/user/code_3/erp_forward/models/100k/gno_phys.pth
+  STO    /home/user/code_3/erp_forward/models/100k/sto_phys.pth
+  SIREN  /home/user/code_3/erp_forward/models/100k/siren_sorted_phys.pth
+  NN     /home/user/code_3/erp_forward/models/100k/nn_perm.pth
+
+Novelty: distance of each case to its nearest TRAINING configuration (RMS over the range-scaled numbers m, f_t, x, y of the sorted resonators; 0 = identical to a training sample). Median of the same distance for held-out test configurations: 0.103
+
+Case 1: Test-split configuration 3 (held out: not used for training)
+  R1: m=0.51 kg  k=77,352 N/m  f_t=62 Hz  (x, y)=(1.13, 0.31) m
+  R2: m=0.32 kg  k=129,586 N/m  f_t=101 Hz  (x, y)=(0.46, 0.27) m
+  R3: m=0.45 kg  k=252,706 N/m  f_t=120 Hz  (x, y)=(0.97, 0.13) m
+  nearest training configuration: 0.087  (0.8 x the typical test configuration)
+  DON    RMSE   5.65 dB   peak RMSE   9.30 dB
+  DNO    RMSE   3.48 dB   peak RMSE   5.47 dB
+  DCO    RMSE   3.59 dB   peak RMSE   5.34 dB
+  FNO    RMSE   4.49 dB   peak RMSE   8.61 dB
+  WNO    RMSE   4.26 dB   peak RMSE  11.20 dB
+  LNO    RMSE   4.57 dB   peak RMSE  11.73 dB
+  GNO    RMSE   3.86 dB   peak RMSE   6.58 dB
+  STO    RMSE   3.64 dB   peak RMSE   5.91 dB
+  SIREN  RMSE   3.64 dB   peak RMSE   3.66 dB
+  NN     RMSE   7.99 dB   peak RMSE  13.96 dB
+
+Case 2: New configuration inside the training ranges (hand-picked, not in the dataset)
+  R1: m=0.40 kg  k=31,978 N/m  f_t=45 Hz  (x, y)=(0.30, 0.12) m
+  R2: m=0.70 kg  k=249,405 N/m  f_t=95 Hz  (x, y)=(1.10, 0.38) m
+  R3: m=0.25 kg  k=166,796 N/m  f_t=130 Hz  (x, y)=(0.65, 0.25) m
+  nearest training configuration: 0.107  (1.0 x the typical test configuration)
+  DON    RMSE   7.31 dB   peak RMSE  16.38 dB
+  DNO    RMSE   1.74 dB   peak RMSE   2.80 dB
+  DCO    RMSE   1.96 dB   peak RMSE   4.47 dB
+  FNO    RMSE   2.80 dB   peak RMSE   3.84 dB
+  WNO    RMSE   3.64 dB   peak RMSE   8.95 dB
+  LNO    RMSE   2.14 dB   peak RMSE   1.33 dB
+  GNO    RMSE   3.65 dB   peak RMSE   4.18 dB
+  STO    RMSE   3.50 dB   peak RMSE   3.88 dB
+  SIREN  RMSE   2.33 dB   peak RMSE   4.32 dB
+  NN     RMSE   7.72 dB   peak RMSE  16.54 dB
+
+Case 3: All three resonators tuned to the same frequency (72 Hz), placed along one line
+  R1: m=0.30 kg  k=61,397 N/m  f_t=72 Hz  (x, y)=(0.30, 0.20) m
+  R2: m=0.50 kg  k=102,328 N/m  f_t=72 Hz  (x, y)=(0.80, 0.20) m
+  R3: m=0.70 kg  k=143,259 N/m  f_t=72 Hz  (x, y)=(1.20, 0.20) m
+  nearest training configuration: 0.097  (0.9 x the typical test configuration)
+  DON    RMSE   8.23 dB   peak RMSE  13.53 dB
+  DNO    RMSE   3.72 dB   peak RMSE   8.86 dB
+  DCO    RMSE   2.55 dB   peak RMSE   3.83 dB
+  FNO    RMSE   4.70 dB   peak RMSE   7.74 dB
+  WNO    RMSE   4.94 dB   peak RMSE  10.99 dB
+  LNO    RMSE   5.26 dB   peak RMSE  10.22 dB
+  GNO    RMSE   5.84 dB   peak RMSE  11.04 dB
+  STO    RMSE   7.84 dB   peak RMSE  11.95 dB
+  SIREN  RMSE   3.22 dB   peak RMSE   6.34 dB
+  NN     RMSE   9.63 dB   peak RMSE  12.69 dB
+
+Case 4: Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)  [outside: m outside 0.1-1 kg]
+  R1: m=2.00 kg  k=126,331 N/m  f_t=40 Hz  (x, y)=(0.45, 0.25) m
+  R2: m=1.50 kg  k=427,847 N/m  f_t=85 Hz  (x, y)=(1.10, 0.20) m
+  R3: m=2.50 kg  k=1,542,126 N/m  f_t=125 Hz  (x, y)=(0.70, 0.40) m
+  nearest training configuration: 0.626  (6.1 x the typical test configuration)
+  DON    RMSE  12.21 dB   peak RMSE  28.04 dB
+  DNO    RMSE  10.91 dB   peak RMSE  21.33 dB
+  DCO    RMSE   8.60 dB   peak RMSE  24.48 dB
+  FNO    RMSE  12.99 dB   peak RMSE  32.93 dB
+  WNO    RMSE  10.64 dB   peak RMSE  24.38 dB
+  LNO    RMSE   8.01 dB   peak RMSE  19.71 dB
+  GNO    RMSE  14.32 dB   peak RMSE  23.42 dB
+  STO    RMSE  14.80 dB   peak RMSE  22.79 dB
+  SIREN  RMSE  10.52 dB   peak RMSE  26.32 dB
+  NN     RMSE  11.40 dB   peak RMSE  23.34 dB
+

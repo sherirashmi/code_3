@@ -1,0 +1,41 @@
+case,title,model,rmse_db,peak_rmse_db
+1,Test-split configuration 3 (held out: not used for training),DON,5.65,9.298
+1,Test-split configuration 3 (held out: not used for training),DNO,3.481,5.467
+1,Test-split configuration 3 (held out: not used for training),DCO,3.588,5.34
+1,Test-split configuration 3 (held out: not used for training),FNO,4.491,8.613
+1,Test-split configuration 3 (held out: not used for training),WNO,4.257,11.199
+1,Test-split configuration 3 (held out: not used for training),LNO,4.573,11.732
+1,Test-split configuration 3 (held out: not used for training),GNO,3.859,6.577
+1,Test-split configuration 3 (held out: not used for training),STO,3.637,5.907
+1,Test-split configuration 3 (held out: not used for training),SIREN,3.638,3.659
+1,Test-split configuration 3 (held out: not used for training),NN,7.992,13.962
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",DON,7.314,16.384
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",DNO,1.742,2.804
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",DCO,1.965,4.465
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",FNO,2.804,3.842
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",WNO,3.645,8.947
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",LNO,2.137,1.329
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",GNO,3.646,4.179
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",STO,3.503,3.884
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",SIREN,2.334,4.322
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",NN,7.72,16.539
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",DON,8.23,13.534
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",DNO,3.723,8.857
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",DCO,2.55,3.83
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",FNO,4.696,7.736
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",WNO,4.944,10.993
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",LNO,5.261,10.215
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",GNO,5.837,11.042
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",STO,7.839,11.951
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",SIREN,3.218,6.342
+3,"All three resonators tuned to the same frequency (72 Hz), placed along one line",NN,9.63,12.695
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",DON,12.206,28.037
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",DNO,10.909,21.33
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",DCO,8.595,24.48
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",FNO,12.992,32.932
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",WNO,10.639,24.38
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",LNO,8.014,19.711
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",GNO,14.324,23.416
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",STO,14.803,22.786
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",SIREN,10.519,26.317
+4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",NN,11.398,23.344
