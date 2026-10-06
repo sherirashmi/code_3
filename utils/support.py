@@ -91,7 +91,15 @@ def _resolve(filename: str | os.PathLike[str]) -> Path:
     path = Path(filename)
     if path.is_absolute() or path.exists():
         return path
-    return _PROJECT_ROOT / path
+    path = _PROJECT_ROOT / path
+    if not path.exists() and "datasets" in path.parts:
+        # Checkpoints trained before datasets/ was sorted into erp/<N>res/<tag>/
+        # still record the old flat path (datasets/<file>.pth): find the file
+        # by name below datasets/ instead.
+        matches = list((_PROJECT_ROOT / "datasets").rglob(path.name))
+        if len(matches) == 1:
+            return matches[0]
+    return path
 
 
 def _ensure_parent_dir(filename: str | os.PathLike[str]) -> Path:

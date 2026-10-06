@@ -95,6 +95,7 @@ DATASETS: dict[str, dict[str, object]] = {
         "files": ["datasets/erp/3res/10k/dataset_erp_ft.pth"],
         "num_configurations": 10_000,
         "modal_resolution": (15, 10),
+        "num_res": 3,
     },
     "100k": {
         "label": "100k configurations, 150 plate modes (15x10)",
@@ -104,6 +105,7 @@ DATASETS: dict[str, dict[str, object]] = {
         ],
         "num_configurations": 100_000,
         "modal_resolution": (15, 10),
+        "num_res": 3,
     },
     "200k_18modes": {
         "label": "200k configurations, 18 plate modes (6x3)",
@@ -115,6 +117,7 @@ DATASETS: dict[str, dict[str, object]] = {
         ],
         "num_configurations": 200_000,
         "modal_resolution": (6, 3),
+        "num_res": 3,
     },
 }
 DATASETS["100k_2res_grid_18modes"] = {
