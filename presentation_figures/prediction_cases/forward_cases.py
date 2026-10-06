@@ -43,6 +43,10 @@ NEW_CASES = [  # (title, [(m [kg], f_t [Hz], x [m], y [m])]); none of them is in
      [(0.30, 72.0, 0.30, 0.20), (0.50, 72.0, 0.80, 0.20), (0.70, 72.0, 1.20, 0.20)]),
     ("Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",
      [(2.00, 40.0, 0.45, 0.25), (1.50, 85.0, 1.10, 0.20), (2.50, 125.0, 0.70, 0.40)]),
+    ("Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",
+     [(1.00, 46.0, 0.45, 0.25), (1.00, 98.0, 0.60, 0.20), (1.00, 145.0, 1.10, 0.30)]),
+    ("Different ERP: very light resonators (0.1 kg), almost the bare plate",
+     [(0.10, 30.0, 0.40, 0.15), (0.10, 80.0, 0.80, 0.35), (0.10, 140.0, 1.15, 0.20)]),
 ]
 
 select_dataset_modal_resolution(DATASET)

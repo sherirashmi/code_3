@@ -39,3 +39,23 @@ case,title,model,rmse_db,peak_rmse_db
 4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",STO,14.803,22.786
 4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",SIREN,10.519,26.317
 4,"Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (training: 0.1-1 kg)",NN,11.398,23.344
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",DON,9.976,23.849
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",DNO,4.909,13.493
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",DCO,4.565,9.324
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",FNO,6.126,18.032
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",WNO,6.607,17.523
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",LNO,6.06,12.334
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",GNO,6.437,7.934
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",STO,6.813,10.4
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",SIREN,5.169,11.35
+5,"Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)",NN,9.587,21.826
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",DON,5.301,9.798
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",DNO,1.443,2.573
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",DCO,1.128,4.634
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",FNO,2.326,2.813
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",WNO,2.795,7.155
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",LNO,1.308,3.069
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",GNO,1.831,1.856
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",STO,2.465,3.236
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",SIREN,1.581,2.55
+6,"Different ERP: very light resonators (0.1 kg), almost the bare plate",NN,6.672,14.075

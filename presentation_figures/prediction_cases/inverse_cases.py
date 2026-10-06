@@ -51,6 +51,9 @@ NEW_CASES = [  # (title, [(m, f_t, x, y)], encodable)
     ("New configuration inside the training ranges (hand-picked, not in the dataset)", [(0.45, 55.0, 0.35, 0.15), (0.65, 110.0, 1.05, 0.38)], True),
     ("Outside the training ranges: heavy resonators, m = 2.0 and 1.5 kg (training: 0.1-1 kg); target ERP only",
      [(2.00, 60.0, 0.45, 0.25), (1.50, 120.0, 1.05, 0.15)], False),
+    ("Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz)", [(1.00, 46.0, 0.45, 0.25), (0.90, 55.0, 0.90, 0.28)], True),
+    ("Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz)", [(1.00, 98.0, 0.60, 0.20), (1.00, 145.0, 1.10, 0.30)], True),
+    ("Different ERP: both resonators tuned to 100 Hz, heavy", [(1.00, 100.0, 0.55, 0.20), (1.00, 100.0, 0.90, 0.30)], True),
 ]
 
 select_dataset_modal_resolution(TAG)

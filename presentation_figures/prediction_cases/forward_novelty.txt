@@ -76,3 +76,35 @@ Case 4: Outside the training ranges: heavy resonators, m = 2.0, 1.5 and 2.5 kg (
   SIREN  RMSE  10.52 dB   peak RMSE  26.32 dB
   NN     RMSE  11.40 dB   peak RMSE  23.34 dB
 
+Case 5: Different ERP: heavy absorbers on three plate peaks (1 kg at 46, 98 and 145 Hz)
+  R1: m=1.00 kg  k=83,536 N/m  f_t=46 Hz  (x, y)=(0.45, 0.25) m
+  R2: m=1.00 kg  k=379,151 N/m  f_t=98 Hz  (x, y)=(0.60, 0.20) m
+  R3: m=1.00 kg  k=830,034 N/m  f_t=145 Hz  (x, y)=(1.10, 0.30) m
+  nearest training configuration: 0.104  (1.0 x the typical test configuration)
+  DON    RMSE   9.98 dB   peak RMSE  23.85 dB
+  DNO    RMSE   4.91 dB   peak RMSE  13.49 dB
+  DCO    RMSE   4.56 dB   peak RMSE   9.32 dB
+  FNO    RMSE   6.13 dB   peak RMSE  18.03 dB
+  WNO    RMSE   6.61 dB   peak RMSE  17.52 dB
+  LNO    RMSE   6.06 dB   peak RMSE  12.33 dB
+  GNO    RMSE   6.44 dB   peak RMSE   7.93 dB
+  STO    RMSE   6.81 dB   peak RMSE  10.40 dB
+  SIREN  RMSE   5.17 dB   peak RMSE  11.35 dB
+  NN     RMSE   9.59 dB   peak RMSE  21.83 dB
+
+Case 6: Different ERP: very light resonators (0.1 kg), almost the bare plate
+  R1: m=0.10 kg  k=3,553 N/m  f_t=30 Hz  (x, y)=(0.40, 0.15) m
+  R2: m=0.10 kg  k=25,266 N/m  f_t=80 Hz  (x, y)=(0.80, 0.35) m
+  R3: m=0.10 kg  k=77,378 N/m  f_t=140 Hz  (x, y)=(1.15, 0.20) m
+  nearest training configuration: 0.098  (1.0 x the typical test configuration)
+  DON    RMSE   5.30 dB   peak RMSE   9.80 dB
+  DNO    RMSE   1.44 dB   peak RMSE   2.57 dB
+  DCO    RMSE   1.13 dB   peak RMSE   4.63 dB
+  FNO    RMSE   2.33 dB   peak RMSE   2.81 dB
+  WNO    RMSE   2.80 dB   peak RMSE   7.15 dB
+  LNO    RMSE   1.31 dB   peak RMSE   3.07 dB
+  GNO    RMSE   1.83 dB   peak RMSE   1.86 dB
+  STO    RMSE   2.46 dB   peak RMSE   3.24 dB
+  SIREN  RMSE   1.58 dB   peak RMSE   2.55 dB
+  NN     RMSE   6.67 dB   peak RMSE  14.07 dB
+

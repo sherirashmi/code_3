@@ -41,3 +41,36 @@ Case 3: Outside the training ranges: heavy resonators, m = 2.0 and 1.5 kg (train
   iSTO          forward n/a | inverse: point-estimate ERP RMSE 10.60 dB, best of 16 9.45 dB | best-of-16 design R1 m=0.86 f_t=51 (0.52, 0.24) [7.0 cm]; R2 m=0.89 f_t=122 (1.00, 0.15) [5.0 cm]
   iGNO          forward n/a | inverse: point-estimate ERP RMSE 9.51 dB, best of 16 8.89 dB | best-of-16 design R1 m=0.73 f_t=25 (0.46, 0.25) [1.5 cm]; R2 m=0.87 f_t=87 (0.97, 0.19) [9.4 cm]
 
+Case 4: Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz)
+  true R1: m=1.00 kg  f_t=46.0 Hz  (x, y)=(0.45, 0.25) m
+  true R2: m=0.90 kg  f_t=55.0 Hz  (x, y)=(0.90, 0.28) m
+  nearest training configuration: 0.057  (0.9 x typical)
+  iDON Q64      forward RMSE 5.35 dB (peak 16.66) | inverse: point-estimate ERP RMSE 10.05 dB, best of 16 9.31 dB | best-of-16 design R1 m=0.96 f_t=53 (0.79, 0.28) [34.1 cm]; R2 m=0.79 f_t=91 (0.35, 0.24) [55.0 cm]
+  iDON Q64-ERP  forward RMSE 9.32 dB (peak 15.24) | inverse: point-estimate ERP RMSE 11.70 dB, best of 16 9.21 dB | best-of-16 design R1 m=0.85 f_t=41 (0.94, 0.30) [48.9 cm]; R2 m=0.61 f_t=83 (0.52, 0.20) [38.9 cm]
+  iFNO          forward RMSE 4.02 dB (peak 15.00) | inverse: point-estimate ERP RMSE 9.97 dB, best of 16 8.14 dB | best-of-16 design R1 m=0.74 f_t=21 (0.61, 0.25) [16.0 cm]; R2 m=0.88 f_t=61 (0.80, 0.20) [12.4 cm]
+  iLNO          forward RMSE 4.76 dB (peak 14.93) | inverse: point-estimate ERP RMSE 10.58 dB, best of 16 10.27 dB | best-of-16 design R1 m=0.71 f_t=52 (0.41, 0.25) [4.0 cm]; R2 m=0.87 f_t=103 (1.01, 0.26) [11.4 cm]
+  iSTO          forward RMSE 4.56 dB (peak 13.22) | inverse: point-estimate ERP RMSE 7.95 dB, best of 16 8.93 dB | best-of-16 design R1 m=0.86 f_t=30 (0.73, 0.26) [27.9 cm]; R2 m=0.83 f_t=60 (0.83, 0.26) [7.5 cm]
+  iGNO          forward RMSE 6.57 dB (peak 21.34) | inverse: point-estimate ERP RMSE 9.36 dB, best of 16 9.54 dB | best-of-16 design R1 m=0.75 f_t=33 (0.62, 0.25) [16.9 cm]; R2 m=0.72 f_t=59 (0.76, 0.26) [13.7 cm]
+
+Case 5: Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz)
+  true R1: m=1.00 kg  f_t=98.0 Hz  (x, y)=(0.60, 0.20) m
+  true R2: m=1.00 kg  f_t=145.0 Hz  (x, y)=(1.10, 0.30) m
+  nearest training configuration: 0.053  (0.9 x typical)
+  iDON Q64      forward RMSE 5.93 dB (peak 24.65) | inverse: point-estimate ERP RMSE 13.60 dB, best of 16 10.38 dB | best-of-16 design R1 m=0.91 f_t=87 (0.64, 0.23) [4.6 cm]; R2 m=0.91 f_t=105 (0.98, 0.21) [15.2 cm]
+  iDON Q64-ERP  forward RMSE 9.56 dB (peak 34.01) | inverse: point-estimate ERP RMSE 11.95 dB, best of 16 11.18 dB | best-of-16 design R1 m=1.00 f_t=157 (0.99, 0.15) [38.8 cm]; R2 m=0.13 f_t=160 (0.12, 0.15) [98.9 cm]
+  iFNO          forward RMSE 4.63 dB (peak 21.71) | inverse: point-estimate ERP RMSE 13.17 dB, best of 16 10.90 dB | best-of-16 design R1 m=0.85 f_t=80 (0.47, 0.24) [13.8 cm]; R2 m=0.88 f_t=134 (0.75, 0.19) [36.2 cm]
+  iLNO          forward RMSE 4.46 dB (peak 21.18) | inverse: point-estimate ERP RMSE 14.77 dB, best of 16 10.13 dB | best-of-16 design R1 m=0.75 f_t=61 (0.60, 0.26) [5.6 cm]; R2 m=0.84 f_t=116 (1.06, 0.31) [4.4 cm]
+  iSTO          forward RMSE 3.79 dB (peak 18.71) | inverse: point-estimate ERP RMSE 10.86 dB, best of 16 7.08 dB | best-of-16 design R1 m=0.89 f_t=69 (0.60, 0.26) [5.8 cm]; R2 m=0.87 f_t=125 (0.94, 0.28) [15.8 cm]
+  iGNO          forward RMSE 6.80 dB (peak 32.32) | inverse: point-estimate ERP RMSE 9.13 dB, best of 16 7.83 dB | best-of-16 design R1 m=0.85 f_t=85 (0.51, 0.24) [10.0 cm]; R2 m=0.84 f_t=144 (1.00, 0.21) [13.6 cm]
+
+Case 6: Different ERP: both resonators tuned to 100 Hz, heavy
+  true R1: m=1.00 kg  f_t=100.0 Hz  (x, y)=(0.55, 0.20) m
+  true R2: m=1.00 kg  f_t=100.0 Hz  (x, y)=(0.90, 0.30) m
+  nearest training configuration: 0.087  (1.4 x typical)
+  iDON Q64      forward RMSE 6.51 dB (peak 19.68) | inverse: point-estimate ERP RMSE 7.93 dB, best of 16 7.93 dB | best-of-16 design R1 m=0.97 f_t=78 (0.48, 0.30) [12.2 cm]; R2 m=0.89 f_t=143 (0.85, 0.25) [7.1 cm]
+  iDON Q64-ERP  forward RMSE 13.00 dB (peak 23.32) | inverse: point-estimate ERP RMSE 11.52 dB, best of 16 8.77 dB | best-of-16 design R1 m=0.93 f_t=78 (0.83, 0.26) [28.6 cm]; R2 m=0.95 f_t=127 (0.54, 0.23) [37.0 cm]
+  iFNO          forward RMSE 3.96 dB (peak 17.26) | inverse: point-estimate ERP RMSE 12.88 dB, best of 16 9.85 dB | best-of-16 design R1 m=0.87 f_t=72 (0.98, 0.27) [43.3 cm]; R2 m=0.86 f_t=132 (0.79, 0.30) [10.7 cm]
+  iLNO          forward RMSE 4.91 dB (peak 18.82) | inverse: point-estimate ERP RMSE 11.25 dB, best of 16 9.27 dB | best-of-16 design R1 m=0.84 f_t=93 (0.46, 0.26) [10.7 cm]; R2 m=0.83 f_t=138 (0.60, 0.28) [30.1 cm]
+  iSTO          forward RMSE 5.28 dB (peak 19.59) | inverse: point-estimate ERP RMSE 11.77 dB, best of 16 9.84 dB | best-of-16 design R1 m=0.81 f_t=92 (0.54, 0.25) [5.2 cm]; R2 m=0.73 f_t=136 (0.75, 0.24) [15.8 cm]
+  iGNO          forward RMSE 7.03 dB (peak 25.43) | inverse: point-estimate ERP RMSE 11.92 dB, best of 16 9.90 dB | best-of-16 design R1 m=0.75 f_t=72 (0.92, 0.24) [37.5 cm]; R2 m=0.77 f_t=134 (0.44, 0.24) [45.9 cm]
+
