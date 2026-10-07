@@ -13,6 +13,10 @@ Usage (from the repository root):
     python -m erp_invertible.scripts.run_dataset 200k_2res_18modes 1 4      # iFNO and iDNO
     keys: 1 iFNO, 2 iDCO, 3 iGNO, 4 iDNO, 5 iWNO, 6 iLNO, 7 iSIREN, 8 iSTO
     --set-encoder / --zscored: the earlier pooled set encoder / z-scored sine features
+    --epochs=22,12,10: epoch budget of stage 1, 2 and 3 for every model of this run (default: STAGE1/2/3_EPOCHS of
+                     train.py; the earlier long runs used --epochs=100,25,50). A model costs about
+                     stage1 + 0.15 * stage2 + stage3 stage-1-epochs of session time. An interrupted run
+                     that already passed the new stage-1 budget finishes stage 1 with its best weights.
     --retrain: also retrain models whose checkpoint already exists (default: skip them)
     --evaluate-only: no training; evaluate the existing checkpoints and write the
                      ALL_MODELS comparison (e.g. after merging runs from several sessions)
@@ -42,6 +46,16 @@ if __name__ == "__main__":
         options["encoder"] = "set"
     if "--zscored" in flags:
         options["coordinate_features"] = "zscored"
+    epoch_kwargs = {}
+    for a in sys.argv[1:]:
+        if a.startswith("--epochs="):
+            e1, e2, e3 = (int(v) for v in a.split("=", 1)[1].split(","))
+            epoch_kwargs = {"stage1_epochs": e1, "stage2_epochs": e2, "stage3_epochs": e3}
+    from .train import STAGE1_EPOCHS, STAGE2_EPOCHS, STAGE3_EPOCHS
+    e1, e2, e3 = (epoch_kwargs.get(k, d) for k, d in (("stage1_epochs", STAGE1_EPOCHS), ("stage2_epochs", STAGE2_EPOCHS),
+                                                      ("stage3_epochs", STAGE3_EPOCHS)))
+    print(f"Epochs per model: stage 1 = {e1}, stage 2 = {e2}, stage 3 = {e3} "
+          f"(about {e1 + 0.15 * e2 + e3:.0f} stage-1-epochs of session time per model)", flush=True)
     spec = DATASETS[tag]
     select_dataset_modal_resolution(tag)
     files = list(spec["files"])
@@ -59,5 +73,5 @@ if __name__ == "__main__":
         keys = tuple(k for k in keys if k not in done)
     if keys:
         main(keys=keys, evaluate_only=evaluate_only, dataset_file=files if len(files) > 1 else files[0],
-             num_configurations=int(spec["num_configurations"]), options=options)
+             num_configurations=int(spec["num_configurations"]), options=options, **epoch_kwargs)
     print("ALL DONE", flush=True)
