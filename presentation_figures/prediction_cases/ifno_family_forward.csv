@@ -1,0 +1,31 @@
+case,title,model,rmse_db,peak_rmse_db
+1,Test-split configuration 3 (held out: not used for training),iFNO,1.521,6.376
+1,Test-split configuration 3 (held out: not used for training),iDCO,1.946,6.904
+1,Test-split configuration 3 (held out: not used for training),iGNO,2.789,11.007
+1,Test-split configuration 3 (held out: not used for training),iDNO,2.109,8.731
+1,Test-split configuration 3 (held out: not used for training),iLNO,1.425,5.758
+1,Test-split configuration 3 (held out: not used for training),iSTO,1.535,5.941
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iFNO,2.944,11.302
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iDCO,2.456,8.921
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iGNO,3.429,15.316
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iDNO,2.13,8.206
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iLNO,2.246,7.098
+2,"New configuration inside the training ranges (hand-picked, not in the dataset)",iSTO,2.634,5.905
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iFNO,4.015,15.001
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iDCO,4.709,15.505
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iGNO,6.566,21.335
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iDNO,4.474,15.306
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iLNO,4.76,14.932
+3,Different ERP: heavy absorbers on the first two plate peaks (46 and 55 Hz),iSTO,4.561,13.222
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iFNO,4.627,21.712
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iDCO,4.362,21.257
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iGNO,6.805,32.318
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iDNO,3.871,21.572
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iLNO,4.46,21.18
+4,Different ERP: heavy absorbers on the two high plate peaks (98 and 145 Hz),iSTO,3.792,18.714
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iFNO,3.965,17.261
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iDCO,3.74,16.364
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iGNO,7.031,25.431
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iDNO,5.407,20.551
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iLNO,4.911,18.816
+5,"Different ERP: both resonators tuned to 100 Hz, heavy",iSTO,5.284,19.589
