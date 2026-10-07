@@ -1,4 +1,4 @@
-"""Best of 16 sampled designs of iFNO, iLNO, iSTO and iGNO (test configuration 3): one ERP graph per model (best design checked with the
+"""Best of 16 sampled designs of iFNO, iDCO, iGNO, iDNO, iLNO and iSTO (test configuration 3): one ERP graph per model (best design checked with the
 solver against the target ERP) and one plate with the true resonators and the best designs of all four models.
 "best of 16": of 16 designs sampled through the VAE, the one whose solver ERP is closest to the target (needs the solver and the target).
 """
@@ -32,9 +32,11 @@ TEST_INDEX = 3
 NUM_SAMPLES = 16
 MODELS = [
     ("iFNO", "ifno_sortenc_phys_b12_bg_bin_pad_cyc_s2e"),
+    ("iDCO", "idco_sortenc_phys_b12_bg_bin_cyc_s2e"),
+    ("iGNO", "igno_phys_b12_bg_bin_cyc_s2e"),
+    ("iDNO", "idno_sortenc_phys_b12_bg_bin_cyc_s2e"),
     ("iLNO", "ilno_sortenc_phys_b12_bg_bin_cyc_s2e"),
     ("iSTO", "isto_phys_b12_bg_bin_cyc_s2e"),
-    ("iGNO", "igno_phys_b12_bg_bin_cyc_s2e"),
 ]
 spec_by_short = {s["short"]: s for s in INVERTIBLE_OPERATORS.values()}
 
@@ -77,7 +79,7 @@ for label, name in MODELS:
                      rmse_point=float(np.sqrt(((solved_point - target) ** 2).mean())), best=best, rmse_best=float(rmse[best])))
     print(f"{label}: point estimate RMSE {rows[-1]['rmse_point']:.2f} dB, best of {NUM_SAMPLES} {rows[-1]['rmse_best']:.2f} dB")
 
-COLOURS = {"iFNO": "#d62728", "iLNO": "#2ca02c", "iSTO": "#1f77b4", "iGNO": "#ff7f0e"}
+COLOURS = {"iFNO": "#d62728", "iDCO": "#8c564b", "iGNO": "#ff7f0e", "iDNO": "#9467bd", "iLNO": "#2ca02c", "iSTO": "#1f77b4"}
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from utils.physics import Lx, Ly, xf, yf
@@ -132,6 +134,6 @@ axp.set_ylabel("Position $y$ (m)")
 handles = [Line2D([], [], marker="*", color="#35d0ff", mec="black", ls="", ms=14, label="Force"),
            Line2D([], [], marker="o", color="#dc143c", mec="black", ls="", ms=10, label="True resonator")]
 handles += [Line2D([], [], marker="X", color=COLOURS[r["label"]], mec="black", mew=0.6, ls="", ms=10, label=r["label"]) for r in rows]
-axp.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=6, frameon=False, fontsize=10, handletextpad=0.2, columnspacing=1.0)
+axp.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, frameon=False, fontsize=10, handletextpad=0.2, columnspacing=1.0)
 fig.tight_layout()
 save(fig, "invertible_best16_plate")

@@ -103,7 +103,7 @@ Script: `peak_schedule_comparison.py`. The checkpoints were identified by reprod
 
 | `invertible_models_idon_style` | inverse design of test configuration 3 by iFNO, iLNO, iSTO and iGNO in the layout of the iDON example: ERP of 16 sampled designs, the point estimate and the best of 16 checked with the solver, plus the plate with true and predicted resonators; script `invertible_models_idon_style.py` |
 
-| `invertible_best16_iFNO`, `..._iLNO`, `..._iSTO`, `..._iGNO`, `invertible_best16_plate` | best of 16 sampled designs on test configuration 3: one ERP graph per model (solver-checked design against the target ERP, true tuning frequencies dashed) and one plate with the true resonators and the best designs of all four models; script `invertible_models_best_of_16_separate.py` |
+| `invertible_best16_iFNO`, `..._iDCO`, `..._iGNO`, `..._iDNO`, `..._iLNO`, `..._iSTO`, `invertible_best16_plate` | best of 16 sampled designs of the six trained iFNO-family models on test configuration 3 (rendered with LaTeX): one ERP graph per model (solver-checked design against the target ERP, true tuning frequencies dashed) and one plate with the true resonators and the best designs of all four models; script `invertible_models_best_of_16_separate.py` |
 
 | `forward_general_block_diagram`, `inverse_general_block_diagram`, `invertible_general_block_diagram` | general top-to-bottom block diagrams (input, architecture, output): forward is one design to one ERP, inverse is one ERP to several possible designs (many designs share one ERP); invertible is one architecture used in both directions (design to ERP and back); script `general_block_diagrams.py` |
 
