@@ -81,12 +81,12 @@ from utils.support import device, seed_everything
 # on). The defaults are sized for a Colab session: one epoch of stage 3 costs
 # about as much as one of stage 1, one epoch of stage 2 only ~0.1-0.15 of that
 # (the VAE alone), so a model costs ~ STAGE1 + 0.15 * STAGE2 + STAGE3
-# stage-1-epochs = 34 here (about 45 min of a session that manages 80 stage-1
-# epochs). The earlier long runs (checkpoints of iFNO, iLNO, iSTO, iGNO) used
+# stage-1-epochs = 67 here (one model per session that manages 80 stage-1
+# epochs; two models in one such session need --epochs=22,12,10). The earlier long runs (checkpoints of iFNO, iLNO, iSTO, iGNO) used
 # 100 / 25 / 50. Override per run: run_dataset ... --epochs=100,25,50
-STAGE1_EPOCHS = 22
-STAGE2_EPOCHS = 12
-STAGE3_EPOCHS = 10
+STAGE1_EPOCHS = 50
+STAGE2_EPOCHS = 15
+STAGE3_EPOCHS = 15
 EARLY_STOP_PATIENCE = 10
 # Every SNAPSHOT_EVERY epochs: a copy of the current model in
 # models/<dataset>/snapshots/<model>/<stage>_epNNN.pth (at the end of each
