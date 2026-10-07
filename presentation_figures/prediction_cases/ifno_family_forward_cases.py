@@ -1,8 +1,8 @@
 """Forward collage of the iFNO family (iFNO, iDCO, iGNO, iDNO, iLNO, iSTO: the six trained in erp_invertible/models/200k_2res_18modes): for
 cases that were NOT used for training the plate with the configuration, the RMSE of every model and the true (solver) vs predicted ERP of
 each model (design -> ERP). Inference only; ground truth = plate solver (18 modes, 2 resonators). The outside-the-ranges case of
-inverse_cases.py has no forward panel because the models encode the design in bounded coordinates (m <= 1 kg).
-Saves ifno_family_forward_case_<n>.png and ifno_family_forward.csv in this folder.
+inverse_cases.py has no forward panel because the models encode the design in bounded coordinates (m <= 1 kg). Rendered with real LaTeX when installed (utils/plot_style.py).
+Saves png and pdf (vector) of ifno_family_forward_case_<n>.png and ifno_family_forward.csv in this folder.
 
     python presentation_figures/prediction_cases/ifno_family_forward_cases.py
 """
@@ -20,6 +20,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import utils.plot_style  # noqa: F401
+from utils.plot_style import save_figure
 from erp_inverse.scripts.common import denormalize_design, prepare_inverse_data, sort_resonators_by_ft
 from erp_inverse.scripts.design_space import encode_bounded
 from erp_invertible.scripts.train import RECOMMENDED_OPTIONS, _load_checkpoint, variant
@@ -111,8 +112,8 @@ for n, (title, d, truth) in enumerate(cases, 1):
         if i == 0:
             ax.legend(fontsize=9, loc="lower right")
     fig.suptitle(f"iFNO family, forward direction, case {n}: {title}", fontsize=13)
-    fig.savefig(OUT / f"ifno_family_forward_case_{n}.png", dpi=150, facecolor="white")
-    plt.close(fig)
+    save_figure(fig, OUT / f"ifno_family_forward_case_{n}.png", dpi=170, close=False)
+    save_figure(fig, OUT / f"ifno_family_forward_case_{n}.pdf")  # vector, fonts embedded
 
 with open(OUT / "ifno_family_forward.csv", "w", newline="") as fh:
     w = csv.writer(fh)
