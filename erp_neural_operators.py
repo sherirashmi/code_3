@@ -71,7 +71,7 @@ def make_folders():
 
 plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "cm", "font.size": 12, "axes.labelsize": 13,
                      "axes.titlesize": 13, "legend.fontsize": 10, "axes.grid": True, "grid.alpha": 0.3,
-                     "figure.dpi": 100, "savefig.dpi": 200})
+                     "figure.dpi": 100, "savefig.dpi": 200, "savefig.bbox": "tight"})
 ERP_LABEL, FREQ_LABEL = "ERP (dB re 1 pW)", "Frequency (Hz)"
 
 #%% 2. Parameters and plate modes
@@ -445,7 +445,7 @@ def dataset_statistics(data):
     ax.fill_between(data.freqs, q1, q3, color="C0", alpha=0.45, lw=0, label="Interquartile range")
     ax.plot(data.freqs, med, "k", lw=1.5, label="Median")
     ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, xlim=(f_min, f_max), title=f"ERP distribution, {tag}")
-    ax.legend(ncol=2)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3)
     fig.tight_layout()
     fig.savefig(plots_dir / "erp_frequency_band.png")
     plt.close(fig)
@@ -1718,7 +1718,7 @@ def plot_loss(history, name, path):
             ax.plot(range(offset, offset + n), history[stage]["val"], color, label=label)
             offset += n
     ax.set(xlabel="Epoch", ylabel="Loss", yscale="log", title=f"{name}: training history")
-    ax.legend()
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0))
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -1747,8 +1747,10 @@ def plot_forward_results(out, name, true, pred, frequencies):
         ax.set(title=f"RMSE {rmse[i]:.2f} dB {label}".strip())
     axes[1, 0].set_xlabel(FREQ_LABEL)
     axes[0, 0].set_ylabel(ERP_LABEL)
-    axes[0, 0].legend()
-    fig.tight_layout()
+    axes[1, 0].set_ylabel(ERP_LABEL)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.04))
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(out / "test_examples.png")
     plt.close(fig)
 
@@ -1760,28 +1762,55 @@ def plot_forward_results(out, name, true, pred, frequencies):
     plt.close(fig)
 
 
+def _place_labels(ax, labels, markers):
+    """Write each label next to its marker on the side that overlaps neither other labels, markers nor the frame.
+    labels: list of (x, y, text, colour); markers: all marker positions (x, y)."""
+    w, h, r = 0.24, 0.075, 0.035  # label width and height, marker radius (data units; the plate axes are equal-aspect)
+    boxes = [(mx - r, my - r, mx + r, my + r) for mx, my in markers]
+    xl, xr = ax.get_xlim()
+    yl, yr = ax.get_ylim()
+    sides = [(0.03, 0.025, "left"), (0.03, -0.025 - h, "left"), (-0.03, 0.025, "right"), (-0.03, -0.025 - h, "right"),
+             (0.0, 0.05, "center"), (0.0, -0.05 - h, "center")]
+    for x, y, text, color in labels:
+        chosen = None
+        for dx, dy, ha in sides:
+            x0 = x + dx - (w if ha == "right" else w / 2 if ha == "center" else 0)
+            box = (x0, y + dy, x0 + w, y + dy + h)
+            inside = xl <= box[0] and box[2] <= xr and yl <= box[1] and box[3] <= yr
+            free = all(box[2] <= o[0] or o[2] <= box[0] or box[3] <= o[1] or o[3] <= box[1] for o in boxes)
+            if inside and free:
+                chosen = (dx, dy, ha, box)
+                break
+        dx, dy, ha, box = chosen or (sides[0] + ((x, y, x, y),))
+        boxes.append(box)
+        ax.text(box[0] if ha == "left" else box[2] if ha == "right" else (box[0] + box[2]) / 2, box[1], text, fontsize=8, color=color,
+                ha=ha, va="bottom", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.8), zorder=6)
+
+
 def draw_plate(ax, true_config=None, proposals=(), legend=True):
     """Plate outline with the force position, the true resonators (circles) and proposed resonators (triangles).
     proposals: list of (label, (R, 6) configuration, colour, emphasised)."""
+    ax.set_xlim(-0.05 * Lx, 1.05 * Lx)
+    ax.set_ylim(-0.05 * Ly, 1.05 * Ly)
     ax.add_patch(plt.Rectangle((0, 0), Lx, Ly, fill=False, edgecolor="black", lw=1.5))
     ax.scatter([xf], [yf], marker="*", s=180, color="cyan", edgecolors="black", linewidths=0.8, zorder=3, label="Force $F_0$")
+    markers, labels = [(xf, yf)], []
     if true_config is not None:
         c = np.asarray(true_config, float)
         ax.scatter(c[:, 3], c[:, 4], marker="o", s=90, color="crimson", edgecolors="black", linewidths=0.8, zorder=4, label="True resonator")
-        for ft, x, y in c[:, [2, 3, 4]]:
-            ax.annotate(f"{ft:.1f} Hz", (x, y), textcoords="offset points", xytext=(6, 6), fontsize=8, color="crimson")
+        markers += list(zip(c[:, 3], c[:, 4]))
+        labels += [(x, y, f"{ft:.1f} Hz", "crimson") for ft, x, y in c[:, [2, 3, 4]]]
     for label, cfg, color, strong in proposals:
         c = np.asarray(cfg, float)
         ax.scatter(c[:, 3], c[:, 4], marker="^", s=90 if strong else 28, color=color, alpha=1.0 if strong else 0.35,
                    edgecolors="black" if strong else "none", linewidths=0.8, zorder=5 if strong else 2, label=label)
+        markers += list(zip(c[:, 3], c[:, 4]))
         if strong:
-            for ft, x, y in c[:, [2, 3, 4]]:
-                ax.annotate(f"{ft:.1f} Hz", (x, y), textcoords="offset points", xytext=(6, -12), fontsize=8, color=color)
-    ax.set_xlim(-0.05 * Lx, 1.05 * Lx)
-    ax.set_ylim(-0.05 * Ly, 1.05 * Ly)
+            labels += [(x, y, f"{ft:.1f} Hz", color) for ft, x, y in c[:, [2, 3, 4]]]
+    _place_labels(ax, labels, markers)
     ax.set(aspect="equal", xlabel="$x$ (m)", ylabel="$y$ (m)", title="Resonator layout on plate")
     if legend:
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.38), ncol=2, fontsize=8)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=2, fontsize=8)
 
 
 def plot_spectrum_and_plate(path, true, curves, true_config, title, proposals=(), faint=()):
@@ -1798,7 +1827,7 @@ def plot_spectrum_and_plate(path, true, curves, true_config, title, proposals=()
         ax.axvline(ft, color="red", ls=":", lw=1.3, alpha=0.85, zorder=0, label="Resonator $f_t$" if i == 0 else None)
     first = np.asarray(curves[0][1], float) - np.asarray(true, float)
     ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, title=f"{title}\nMSE $= {np.mean(first**2):.3f}$ dB$^2$, MAE $= {np.mean(np.abs(first)):.3f}$ dB")
-    ax.legend(fontsize=8)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3, fontsize=8)
     draw_plate(ax_plate, true_config, proposals)
     fig.tight_layout()
     fig.savefig(path)
@@ -1933,7 +1962,7 @@ def compare_models(kind, tag, names, data):
     for ax, title in zip(axes, ("Training loss", "Validation loss")):
         ax.set(xlabel="Epoch", yscale="log", title=title)
     axes[0].set_ylabel("Loss")
-    axes[1].legend(ncol=2)
+    axes[1].legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), ncol=1)
     fig.tight_layout()
     fig.savefig(out / "loss_curves_all_models.png")
     plt.close(fig)
@@ -1962,8 +1991,9 @@ def compare_models(kind, tag, names, data):
         ax.set_title(f"Test configuration {k + 1}")
     axes[1, 0].set_xlabel(FREQ_LABEL)
     axes[0, 0].set_ylabel(ERP_LABEL)
-    axes[0, 0].legend(ncol=2, fontsize=8)
-    fig.tight_layout()
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=min(len(labels), 6), bbox_to_anchor=(0.5, -0.03))
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(out / "test_examples_all_models.png")
     plt.close(fig)
 
