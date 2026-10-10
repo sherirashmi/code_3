@@ -1762,15 +1762,17 @@ def plot_forward_results(out, name, true, pred, frequencies):
     plt.close(fig)
 
 
-def _place_labels(ax, labels, markers):
-    """Write each label next to its marker on the side that overlaps neither other labels, markers nor the frame.
-    labels: list of (x, y, text, colour); markers: all marker positions (x, y)."""
-    w, h, r = 0.24, 0.075, 0.035  # label width and height, marker radius (data units; the plate axes are equal-aspect)
+def _place_labels(ax, labels, markers, w=0.24, h=0.075):
+    """Write each label next to its marker on a side that overlaps neither other labels, markers nor the frame.
+    labels: list of (x, y, text, colour); markers: all marker positions (x, y).
+    Returns (text artists, True if every label found a free spot)."""
+    r = 0.035  # marker radius (data units; the plate axes are equal-aspect)
     boxes = [(mx - r, my - r, mx + r, my + r) for mx, my in markers]
     xl, xr = ax.get_xlim()
     yl, yr = ax.get_ylim()
     sides = [(0.03, 0.025, "left"), (0.03, -0.025 - h, "left"), (-0.03, 0.025, "right"), (-0.03, -0.025 - h, "right"),
-             (0.0, 0.05, "center"), (0.0, -0.05 - h, "center")]
+             (0.0, 0.05, "center"), (0.0, -0.05 - h, "center"), (0.0, 0.12, "center"), (0.0, -0.12 - h, "center")]
+    texts, ok = [], True
     for x, y, text, color in labels:
         chosen = None
         for dx, dy, ha in sides:
@@ -1779,38 +1781,51 @@ def _place_labels(ax, labels, markers):
             inside = xl <= box[0] and box[2] <= xr and yl <= box[1] and box[3] <= yr
             free = all(box[2] <= o[0] or o[2] <= box[0] or box[3] <= o[1] or o[3] <= box[1] for o in boxes)
             if inside and free:
-                chosen = (dx, dy, ha, box)
+                chosen = (ha, box)
                 break
-        dx, dy, ha, box = chosen or (sides[0] + ((x, y, x, y),))
+        ok = ok and chosen is not None
+        ha, box = chosen or ("left", (x + 0.03, y + 0.025, x + 0.03 + w, y + 0.025 + h))
         boxes.append(box)
-        ax.text(box[0] if ha == "left" else box[2] if ha == "right" else (box[0] + box[2]) / 2, box[1], text, fontsize=8, color=color,
-                ha=ha, va="bottom", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.8), zorder=6)
+        texts.append(ax.annotate(text, xy=(x, y), xytext=(box[0] if ha == "left" else box[2] if ha == "right" else (box[0] + box[2]) / 2, box[1]),
+                                 textcoords="data", fontsize=8, color=color, ha=ha, va="bottom", zorder=6,
+                                 bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.8),
+                                 arrowprops=dict(arrowstyle="-", color=color, lw=0.6, shrinkA=0, shrinkB=4)))
+    return texts, ok
 
 
 def draw_plate(ax, true_config=None, proposals=(), legend=True):
     """Plate outline with the force position, the true resonators (circles) and proposed resonators (triangles).
-    proposals: list of (label, (R, 6) configuration, colour, emphasised)."""
+    proposals: list of (label, (R, 6) configuration, colour, emphasised). Resonators are labelled with their f_t; when
+    the labels would overlap (or several proposal sets are shown) they are numbered instead / left out."""
     ax.set_xlim(-0.05 * Lx, 1.05 * Lx)
     ax.set_ylim(-0.05 * Ly, 1.05 * Ly)
     ax.add_patch(plt.Rectangle((0, 0), Lx, Ly, fill=False, edgecolor="black", lw=1.5))
     ax.scatter([xf], [yf], marker="*", s=180, color="cyan", edgecolors="black", linewidths=0.8, zorder=3, label="Force $F_0$")
-    markers, labels = [(xf, yf)], []
+    markers, sets = [(xf, yf)], []  # sets: (handle, base label, configuration, colour) of the labelled resonator sets
     if true_config is not None:
         c = np.asarray(true_config, float)
-        ax.scatter(c[:, 3], c[:, 4], marker="o", s=90, color="crimson", edgecolors="black", linewidths=0.8, zorder=4, label="True resonator")
+        handle = ax.scatter(c[:, 3], c[:, 4], marker="o", s=90, color="crimson", edgecolors="black", linewidths=0.8, zorder=4, label="True resonator")
         markers += list(zip(c[:, 3], c[:, 4]))
-        labels += [(x, y, f"{ft:.1f} Hz", "crimson") for ft, x, y in c[:, [2, 3, 4]]]
-    for label, cfg, color, strong in proposals:
+        sets.append((handle, "True resonator", c, "crimson"))
+    strong = [pr for pr in proposals if pr[3]]
+    for label, cfg, color, emphasised in proposals:
         c = np.asarray(cfg, float)
-        ax.scatter(c[:, 3], c[:, 4], marker="^", s=90 if strong else 28, color=color, alpha=1.0 if strong else 0.35,
-                   edgecolors="black" if strong else "none", linewidths=0.8, zorder=5 if strong else 2, label=label)
+        handle = ax.scatter(c[:, 3], c[:, 4], marker="^", s=90 if emphasised else 28, color=color, alpha=1.0 if emphasised else 0.35,
+                            edgecolors="black" if emphasised else "none", linewidths=0.8, zorder=5 if emphasised else 2, label=label)
         markers += list(zip(c[:, 3], c[:, 4]))
-        if strong:
-            labels += [(x, y, f"{ft:.1f} Hz", color) for ft, x, y in c[:, [2, 3, 4]]]
-    _place_labels(ax, labels, markers)
+        if emphasised and len(strong) == 1:  # one proposal set: label it; several sets would only clutter the plate
+            sets.append((handle, label, c, color))
+    labels = [(x, y, f"{ft:.1f} Hz", color) for _, _, c, color in sets for ft, x, y in c[:, [2, 3, 4]]]
+    texts, ok = _place_labels(ax, labels, markers)
+    if not ok:  # crowded: number the resonators and give the tuning frequencies in the legend
+        for t in texts:
+            t.remove()
+        _place_labels(ax, [(x, y, str(i + 1), color) for _, _, c, color in sets for i, (x, y) in enumerate(c[:, [3, 4]])], markers, w=0.07)
+        for handle, label, c, _ in sets:
+            handle.set_label(f"{label} (1 to {len(c)}: " + ", ".join(f"{ft:.1f}" for ft in c[:, 2]) + " Hz)")
     ax.set(aspect="equal", xlabel="$x$ (m)", ylabel="$y$ (m)", title="Resonator layout on plate")
     if legend:
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=2, fontsize=8)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.62), ncol=1 if not ok else 2, fontsize=8)
 
 
 def plot_spectrum_and_plate(path, true, curves, true_config, title, proposals=(), faint=()):
@@ -1869,11 +1884,11 @@ def evaluate_inverse(model, name, data, loaders, out, num_targets=100, num_sampl
 
     for r in range(min(5, n)):  # target spectrum + solver ERP of the selected proposal, true vs proposed configurations
         others = [k for k in range(num_samples) if k != pick[r]]
-        plot_spectrum_and_plate(out / f"inverse_target_{r + 1:02d}.png", true[r], [("Selected proposal (solver)", solved[r, pick[r]], "#C44E52")],
+        plot_spectrum_and_plate(out / f"inverse_target_{r + 1:02d}.png", true[r], [("Selected proposal (solver)", solved[r, pick[r]], "C2")],
                                 truth[r], f"{name}: inverse design for target {r + 1}",
                                 proposals=[("Other proposals", samples[r, k], "C0", False) for k in others[:1]] +
                                           [("", samples[r, k], "C0", False) for k in others[1:]] +
-                                          [("Selected proposal", samples[r, pick[r]], "#C44E52", True)],
+                                          [("Selected proposal", samples[r, pick[r]], "C2", True)],
                                 faint=[solved[r, k] for k in others])
 
     fig, axes = plt.subplots(1, 1 + N_DESIGN, figsize=(4.4 * (1 + N_DESIGN), 4))
@@ -2019,14 +2034,14 @@ def predict_configuration(kind, tag, names, data, configuration, direction="forw
     stamp = time.strftime("%Y%m%d_%H%M%S")
     out = plot_dir(kind, tag, names[0] if len(names) == 1 else "ALL_MODELS")
     report = [f"Configuration [m, k, f_t, x, y, zeta]:\n{np.array2string(configuration, precision=4)}"]
-    colors = plt.get_cmap("tab10").colors
+    colors = [f"C{k}" for k in (1, 2, 4, 5, 6, 7, 8, 9)]  # not red (true resonators) and not blue (other proposals)
     curves, proposals, faint = [], [], []
     for i, name in enumerate(names):
         model, _ = load_model(kind, tag, name)
         if model is None:
             print(f"{name}: not trained for '{tag}', skipped")
             continue
-        color = colors[(i + 3) % 10]
+        color = colors[i % len(colors)]
         if direction == "forward":
             if kind == "forward":
                 cfg = torch.from_numpy(normalize_config(configuration, data.norm))[None].to(device)
