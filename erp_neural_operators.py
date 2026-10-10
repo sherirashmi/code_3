@@ -1196,7 +1196,7 @@ class FourierGate(nn.Module):
 
 
 class IFNO(InvertibleOperator):
-    def __init__(self, num_res, width=72, num_blocks=4, modes=48, config_hidden=239, query_dim=96):
+    def __init__(self, num_res, width=20, num_blocks=4, modes=48, config_hidden=69, query_dim=33):
         self._init_base(num_res, width, nn.GELU)
         self.encoder = SortedResonatorEncoder(num_res, config_hidden, 2 * width)
         self.query = ResonanceQueryEncoder(query_dim, query_dim, query_dim)
@@ -1219,7 +1219,7 @@ class DCOGate(nn.Module):
 
 
 class IDCO(InvertibleOperator):
-    def __init__(self, num_res, width=132, num_blocks=4, branch_dim=307, trunk_dim=154, query_dim=175):
+    def __init__(self, num_res, width=36, num_blocks=4, branch_dim=83, trunk_dim=42, query_dim=47):
         self._init_base(num_res, width, nn.SiLU)
         self.branch = SortedResonatorEncoder(num_res, branch_dim, branch_dim)
         self.trunk = MLP([1, trunk_dim, trunk_dim], nn.SiLU)
@@ -1247,7 +1247,7 @@ class IGNO(InvertibleOperator):
     uses_modal_features = True
     uses_detuning = True
 
-    def __init__(self, num_res, width=142, num_blocks=4, depth=3, frequency_dim=165, harmonics=4, dropout=0.1):
+    def __init__(self, num_res, width=42, num_blocks=4, depth=3, frequency_dim=38, harmonics=4, dropout=0.1):
         self._init_base(num_res, width, nn.SiLU)
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.SiLU)
@@ -1290,7 +1290,7 @@ class LNOGate(nn.Module):
 
 
 class ILNO(InvertibleOperator):
-    def __init__(self, num_res, width=138, num_blocks=4, num_poles=12, gate_poles=8, context_dim=275, config_hidden=367, pole_hidden=275, query_dim=137):
+    def __init__(self, num_res, width=36, num_blocks=4, num_poles=12, gate_poles=8, context_dim=72, config_hidden=97, pole_hidden=72, query_dim=36):
         self._init_base(num_res, width, nn.SiLU)
         self.num_poles = num_poles
         self.encoder = SortedResonatorEncoder(num_res, config_hidden, context_dim)
@@ -1309,7 +1309,7 @@ class ILNO(InvertibleOperator):
 class ISTO(InvertibleOperator):
     uses_modal_features = True
 
-    def __init__(self, num_res, width=128, num_blocks=4, token_width=172, heads=4, encoder_depth=2, ff_dim=340, harmonics=4, frequency_dim=128):
+    def __init__(self, num_res, width=37, num_blocks=4, token_width=52, heads=4, encoder_depth=2, ff_dim=94, harmonics=4, frequency_dim=38):
         self._init_base(num_res, width, nn.GELU)
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), token_width, token_width], nn.GELU)
@@ -1386,7 +1386,7 @@ class IDON(nn.Module):
     """Branch = RealNVP on the padded design (Q = 64 basis functions), trunk = MLP of the frequency.
     The inverse is a closed-form projection onto the orthonormalised basis followed by RealNVP^-1."""
 
-    def __init__(self, num_res, q=64, num_layers=10, hidden=256, trunk_hidden=256, num_fourier=32):
+    def __init__(self, num_res, q=64, num_layers=10, hidden=52, trunk_hidden=52, num_fourier=32):
         super().__init__()
         self.num_res, self.design_dim, self.q = num_res, N_DESIGN * num_res, q
         self.pad = q - self.design_dim
