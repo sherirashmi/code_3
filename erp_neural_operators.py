@@ -10,7 +10,8 @@
 # Folders   dataset/{datasets,stats,plots}
 #           forward_models/{models,plots/<dataset>/<MODEL>}
 #           invertible_models/{models,plots/<dataset>/<MODEL>}
-# Data      m, f_t, x, y of every resonator by Latin hypercube (k = m (2 pi f_t)^2)
+# Data      m, f_t, x, y (uniform) and damping ratio zeta (log-uniform) of every resonator by Latin hypercube;
+#           k = m (2 pi f_t)^2, c = 2 zeta sqrt(k m)
 # Defaults  every model uses the set + f_t-sorted resonator encoder and the
 #           plate-mode (physics-aware) features; invertible models use the
 #           bounded design, bounded gate, binned readout, cycle/alignment
@@ -93,10 +94,11 @@ erp_nx, erp_ny = 280, 100
 X_grid, Y_grid = np.meshgrid(np.linspace(0, Lx, erp_nx), np.linspace(0, Ly, erp_ny))
 dA = (Lx / (erp_nx - 1)) * (Ly / (erp_ny - 1))
 
-# Resonators: mass, tuning frequency and position all by Latin hypercube, k = m (2 pi f_t)^2, c = 1 N s/m
+# Resonators: mass, tuning frequency, position (uniform) and damping ratio (log-uniform) by Latin hypercube,
+# k = m (2 pi f_t)^2, c = 2 zeta sqrt(k m)
 m_min, m_max = 0.1, 1.0
 edge_margin = 0.05
-resonator_damping = 1.0
+zeta_min, zeta_max = 5e-4, 8e-2
 
 # Plate modes (set when a dataset is generated or loaded)
 Nx, Ny = 6, 3
@@ -191,9 +193,9 @@ def compute_erp_spectrum(resonators, frequencies=freqs):
 
 
 def to_resonators(configuration):
-    """(R, 5) [m, k, f_t, x, y] rows -> solver dictionaries."""
-    return [dict(m=float(m), k=float(k), f_t=float(ft), x=float(x), y=float(y), c=resonator_damping)
-            for m, k, ft, x, y in np.asarray(configuration, float)]
+    """(R, 6) [m, k, f_t, x, y, zeta] rows -> solver dictionaries, c = 2 zeta sqrt(k m)."""
+    return [dict(m=float(m), k=float(k), f_t=float(ft), x=float(x), y=float(y), zeta=float(z), c=float(2 * z * np.sqrt(k * m)))
+            for m, k, ft, x, y, z in np.asarray(configuration, float)]
 
 
 def _worker_init(nx_modes, ny_modes):
@@ -205,7 +207,7 @@ def _worker_erp(configuration):
 
 
 def solve_configurations(configurations, report_every=0):
-    """ERP spectra (n, F) of physical configurations (n, R, 5), computed in parallel."""
+    """ERP spectra (n, F) of physical configurations (n, R, 6), computed in parallel."""
     configurations = np.asarray(configurations, float)
     out = np.empty((len(configurations), n_freq), np.float32)
     workers = max(1, min(os.cpu_count() or 1, len(configurations)))
@@ -225,11 +227,14 @@ def solve_configurations(configurations, report_every=0):
 
 
 def sample_configurations(n, num_res, seed=SEED):
-    """(n, num_res, 5) [m, k, f_t, x, y]: m, f_t, x and y of every resonator from one Latin hypercube, k = m (2 pi f_t)^2."""
-    bounds = np.tile([[m_min, m_max], [f_min, f_max], [edge_margin, Lx - edge_margin], [edge_margin, Ly - edge_margin]], (num_res, 1))
-    lhs = qmc.scale(qmc.LatinHypercube(d=4 * num_res, seed=seed).random(n), bounds[:, 0], bounds[:, 1])
-    m, f_t, x, y = (lhs[:, i::4] for i in range(4))
-    return np.stack([m, m * (2 * np.pi * f_t) ** 2, f_t, x, y], axis=-1).astype(np.float32)
+    """(n, num_res, 6) [m, k, f_t, x, y, zeta]: m, f_t, x, y uniform and zeta log-uniform, all from one Latin hypercube."""
+    u = qmc.LatinHypercube(d=5 * num_res, seed=seed).random(n).reshape(n, num_res, 5)
+    m = m_min + u[..., 0] * (m_max - m_min)
+    f_t = f_min + u[..., 1] * (f_max - f_min)
+    x = edge_margin + u[..., 2] * (Lx - 2 * edge_margin)
+    y = edge_margin + u[..., 3] * (Ly - 2 * edge_margin)
+    zeta = np.exp(np.log(zeta_min) + u[..., 4] * (np.log(zeta_max) - np.log(zeta_min)))
+    return np.stack([m, m * (2 * np.pi * f_t) ** 2, f_t, x, y, zeta], axis=-1).astype(np.float32)
 
 
 def dataset_tag(n, num_res, nx_modes, ny_modes):
@@ -259,14 +264,23 @@ def list_datasets():
 
 
 #%% 5. Normalisation, splits and statistics
-FIELDS = ("m", "k", "f_t", "x", "y")
-# bounded design coordinates [m, f_t, x, y]: (name, index in FIELDS, lower bound, upper bound)
-BOUNDED = (("m", 0, m_min, m_max), ("f_t", 2, f_min, f_max), ("x", 3, 0.0, Lx), ("y", 4, 0.0, Ly))
+FIELDS = ("m", "k", "f_t", "x", "y", "zeta")
+CONF_DIM = len(FIELDS)
+# bounded design coordinates [m, f_t, x, y, zeta]: (name, index in FIELDS, lower bound, upper bound); zeta on a log scale
+BOUNDED = (("m", 0, m_min, m_max), ("f_t", 2, f_min, f_max), ("x", 3, 0.0, Lx), ("y", 4, 0.0, Ly), ("zeta", 5, zeta_min, zeta_max))
+N_DESIGN = len(BOUNDED)
+
+
+def log_zeta(configuration):
+    """Copy of (..., 6) configurations with the damping ratio replaced by its logarithm (it spans two decades)."""
+    out = np.asarray(configuration, np.float32).copy()
+    out[..., 5] = np.log(out[..., 5])
+    return out
 
 
 def normalize_config(configuration, norm):
-    """z-score each field [m, k, f_t, x, y] (statistics shared by all resonators)."""
-    out = np.asarray(configuration, np.float32).copy()
+    """z-score each field [m, k, f_t, x, y, log zeta] (statistics shared by all resonators)."""
+    out = log_zeta(configuration)
     for i, name in enumerate(FIELDS):
         out[..., i] = (out[..., i] - norm[f"{name}_mean"]) / norm[f"{name}_std"]
     return out
@@ -288,32 +302,40 @@ def sort_by_ft(configuration):
     return np.take_along_axis(configuration, order[..., None], axis=-2)
 
 
+def _unit(values, name, lo, hi):
+    """Value -> (0, 1) inside its bounds (log scale for zeta)."""
+    values = np.asarray(values, float)
+    u = (np.log(values) - np.log(lo)) / (np.log(hi) - np.log(lo)) if name == "zeta" else (values - lo) / (hi - lo)
+    return np.clip(u, 1e-6, 1 - 1e-6)
+
+
 def fit_bounded_stats(configuration):
     """Logit-space mean/std of the bounded design coordinates (training designs)."""
     stats = {}
     for name, idx, lo, hi in BOUNDED:
-        u = np.clip((np.asarray(configuration, float)[..., idx] - lo) / (hi - lo), 1e-6, 1 - 1e-6)
+        u = _unit(np.asarray(configuration)[..., idx], name, lo, hi)
         w = np.log(u) - np.log1p(-u)
         stats[f"b12_{name}_mean"], stats[f"b12_{name}_std"] = float(w.mean()), float(max(w.std(), 1e-6))
     return stats
 
 
 def encode_bounded(configuration, norm):
-    """Physical (..., R, 5) -> normalised bounded coordinates (..., R, 4)."""
+    """Physical (..., R, 6) -> normalised bounded coordinates (..., R, 5)."""
     out = []
     for name, idx, lo, hi in BOUNDED:
-        u = np.clip((np.asarray(configuration, float)[..., idx] - lo) / (hi - lo), 1e-6, 1 - 1e-6)
+        u = _unit(np.asarray(configuration)[..., idx], name, lo, hi)
         out.append((np.log(u) - np.log1p(-u) - norm[f"b12_{name}_mean"]) / norm[f"b12_{name}_std"])
     return np.stack(out, axis=-1).astype(np.float32)
 
 
 def decode_bounded_torch(flat, num_res, mean, std):
-    """Differentiable (..., R*4) -> physical (..., R, 5); k = m (2 pi f_t)^2. mean/std: (4,) tensors."""
-    lo = torch.tensor([b[2] for b in BOUNDED], device=flat.device, dtype=flat.dtype)
-    hi = torch.tensor([b[3] for b in BOUNDED], device=flat.device, dtype=flat.dtype)
-    values = lo + (hi - lo) * torch.sigmoid(flat.reshape(*flat.shape[:-1], num_res, 4) * std + mean)
-    m, f_t, x, y = values.unbind(-1)
-    return torch.stack((m, m * (2 * math.pi * f_t) ** 2, f_t, x, y), dim=-1)
+    """Differentiable (..., R*5) -> physical (..., R, 6) [m, k, f_t, x, y, zeta]; k = m (2 pi f_t)^2. mean/std: (5,) tensors."""
+    lo = torch.tensor([b[2] for b in BOUNDED[:4]], device=flat.device, dtype=flat.dtype)
+    hi = torch.tensor([b[3] for b in BOUNDED[:4]], device=flat.device, dtype=flat.dtype)
+    s = torch.sigmoid(flat.reshape(*flat.shape[:-1], num_res, N_DESIGN) * std + mean)
+    m, f_t, x, y = (lo + (hi - lo) * s[..., :4]).unbind(-1)
+    zeta = zeta_min * torch.exp(s[..., 4] * (math.log(zeta_max) - math.log(zeta_min)))
+    return torch.stack((m, m * (2 * math.pi * f_t) ** 2, f_t, x, y, zeta), dim=-1)
 
 
 def decode_bounded(flat, num_res, norm):
@@ -357,16 +379,19 @@ class ERPData:
         self.tag, self.num_res = tag, int(payload["num_res"])
         set_modes(payload["nx_modes"], payload["ny_modes"])
         self.config = np.asarray(payload["configuration_features"], np.float32)
+        if self.config.shape[-1] == 5:  # dataset without damping column: c = 1 N s/m, zeta = c / (2 sqrt(k m))
+            self.config = np.concatenate([self.config, 1.0 / (2 * np.sqrt(self.config[..., 1:2] * self.config[..., 0:1]))], axis=-1).astype(np.float32)
         self.erp = np.asarray(payload["responses"], np.float32)
         self.freqs = np.asarray(payload["frequency_values"], np.float32)
         order = np.random.default_rng(SEED).permutation(len(self.config))
         n_train, n_val = int(0.8 * len(order)), int(0.1 * len(order))
         self.split = {"train": order[:n_train], "val": order[n_train:n_train + n_val], "test": order[n_train + n_val:]}
         train = self.config[self.split["train"]]
+        train_log = log_zeta(train)
         self.norm = {"num_res": self.num_res, "freq_mean": float(self.freqs.mean()), "freq_std": float(self.freqs.std()),
                      "erp_mean": float(self.erp[self.split["train"]].mean()), "erp_std": float(self.erp[self.split["train"]].std())}
         for i, name in enumerate(FIELDS):
-            self.norm[f"{name}_mean"], self.norm[f"{name}_std"] = float(train[..., i].mean()), float(max(train[..., i].std(), 1e-8))
+            self.norm[f"{name}_mean"], self.norm[f"{name}_std"] = float(train_log[..., i].mean()), float(max(train_log[..., i].std(), 1e-8))
         self.norm.update(fit_bounded_stats(sort_by_ft(train)))
         self.freq_norm = ((self.freqs - self.norm["freq_mean"]) / self.norm["freq_std"]).astype(np.float32)
 
@@ -422,10 +447,12 @@ def dataset_statistics(data):
     fig.savefig(DATASET_DIR / "plots" / f"{tag}_erp_frequency_band.png")
     plt.close(fig)
 
-    fig, axes = plt.subplots(1, 4, figsize=(16, 3.6))
-    for ax, (i, label) in zip(axes, ((0, "Mass $m$ (kg)"), (2, "Tuning frequency $f_t$ (Hz)"), (3, "Position $x$ (m)"), (4, "Position $y$ (m)"))):
-        ax.hist(config[..., i].ravel(), bins=40, color="C0")
-        ax.set(xlabel=label, ylabel="Resonators")
+    fig, axes = plt.subplots(1, 5, figsize=(20, 3.6))
+    for ax, (i, label) in zip(axes, ((0, "Mass $m$ (kg)"), (2, "Tuning frequency $f_t$ (Hz)"), (3, "Position $x$ (m)"), (4, "Position $y$ (m)"),
+                                     (5, r"Damping ratio $\zeta$"))):
+        values = config[..., i].ravel()
+        ax.hist(values, bins=np.geomspace(values.min(), values.max(), 41) if i == 5 else 40, color="C0")
+        ax.set(xlabel=label, ylabel="Resonators", xscale="log" if i == 5 else "linear")
     fig.tight_layout()
     fig.savefig(DATASET_DIR / "plots" / f"{tag}_parameter_distributions.png")
     plt.close(fig)
@@ -482,10 +509,9 @@ class FrequencyRefinement1d(nn.Module):
 
 # ---- plate-mode (physics-aware) features: sin(i pi x/Lx), sin(j pi y/Ly) and detuning f - f_t -----------------
 def modal_features(module, configuration, harmonics):
-    """[m, k, f_t, x, y] + x/y mode shapes + their products; x, y are mapped to x/Lx, y/Ly by the module's coord_affine."""
-    m, k, f_t, x, y = configuration.unbind(-1)
+    """[m, k, f_t, x, y, log zeta] + x/y mode shapes + their products; x, y are mapped to x/Lx, y/Ly by the module's coord_affine."""
     a = getattr(module, "coord_affine")
-    u, v = x * a[0, 0] + a[0, 1], y * a[1, 0] + a[1, 1]
+    u, v = configuration[..., 3] * a[0, 0] + a[0, 1], configuration[..., 4] * a[1, 0] + a[1, 1]
     xm = [torch.sin(math.pi * i * u)[..., None] for i in range(1, harmonics + 1)]
     ym = [torch.sin(math.pi * j * v)[..., None] for j in range(1, harmonics + 1)]
     return torch.cat([configuration, *xm, *ym, *[a_ * b_ for a_ in xm for b_ in ym]], dim=-1)
@@ -516,7 +542,7 @@ def set_physical_feature_normalization(model, norm):
 
 
 def feature_dim(harmonics):
-    return 5 + 2 * harmonics + harmonics**2
+    return CONF_DIM + 2 * harmonics + harmonics**2
 
 
 # ---- resonator encoders ---------------------------------------------------------------------------------------
@@ -546,7 +572,7 @@ class SortedResonatorEncoder(nn.Module):
 
     def forward(self, configuration):
         order = torch.argsort(configuration[..., 2], dim=-1)
-        ordered = torch.gather(configuration, 1, order[..., None].expand(-1, -1, 5))
+        ordered = torch.gather(configuration, 1, order[..., None].expand(-1, -1, CONF_DIM))
         return self.net(modal_features(self, ordered, self.harmonics).flatten(1))
 
 
@@ -800,7 +826,7 @@ class GraphMessageLayer(nn.Module):
 
     def __init__(self, width, dropout=0.0):
         super().__init__()
-        self.message, self.update = MLP([2 * width + 7, width, width], nn.SiLU), MLP([2 * width, width, width], nn.SiLU)
+        self.message, self.update = MLP([2 * width + CONF_DIM + 2, width, width], nn.SiLU), MLP([2 * width, width, width], nn.SiLU)
         self.norm, self.dropout = nn.LayerNorm(width), nn.Dropout(dropout)
 
     def forward(self, h, features):
@@ -824,7 +850,7 @@ class GNO(nn.Module):
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.SiLU)
         self.layers = nn.ModuleList([GraphMessageLayer(width, dropout) for _ in range(depth)])
         self.frequency_encoder = MLP([1, frequency_dim, frequency_dim], nn.SiLU)
-        self.query_kernel = MLP([width + 5 + frequency_dim + 4, width, width, width], nn.SiLU)
+        self.query_kernel = MLP([width + CONF_DIM + frequency_dim + 4, width, width, width], nn.SiLU)
         self.attention_score = MLP([width, width // 2, 1], nn.SiLU)
         self.attention_dropout = nn.Dropout(dropout)
         self.refine = FrequencyRefinement1d(width)
@@ -854,7 +880,7 @@ class DetuningCrossAttention(nn.Module):
         super().__init__()
         self.width, self.heads, self.head_dim = width, heads, width // heads
         self.q_proj, self.k_proj, self.v_proj, self.out_proj = (nn.Linear(width, width) for _ in range(4))
-        self.bias_net = MLP([8, width // 2, heads], activation)
+        self.bias_net = MLP([CONF_DIM + 3, width // 2, heads], activation)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, tokens, configuration, frequency):
@@ -953,7 +979,7 @@ class NN(nn.Module):
     def __init__(self, num_res, hidden_dim=148, depth=6, dropout=0.1):
         super().__init__()
         self.num_res = num_res
-        layers, n_in = [], num_res * 5 + 1
+        layers, n_in = [], num_res * CONF_DIM + 1
         for _ in range(depth):
             layers += [nn.Linear(n_in, hidden_dim), nn.ReLU(), nn.Dropout(dropout)]
             n_in = hidden_dim
@@ -979,7 +1005,7 @@ def build_forward_model(name, num_res, norm):
 
 
 #%% 7. Invertible models (design <-> ERP with one set of weights)
-# Design = bounded coordinates [m, f_t, x, y] per resonator (k derived), resonators sorted by f_t.
+# Design = bounded coordinates [m, f_t, x, y, zeta] per resonator (k, c derived), resonators sorted by f_t.
 class CouplingBlock(nn.Module):
     """v1 <- v1 * S(L(v2)),  v2 <- v2 * S(L(v1)),  S(x) = exp(c tanh(a x)) > 0: exactly invertible."""
 
@@ -1044,10 +1070,10 @@ class InvertibleOperator(nn.Module):
 
     def _init_base(self, num_res, width, act, vae_hidden=64, z_dim=6, readout_bins=16):
         super().__init__()
-        self.num_res, self.design_dim, self.width = num_res, 4 * num_res, width
+        self.num_res, self.design_dim, self.width = num_res, N_DESIGN * num_res, width
         f = torch.from_numpy(freqs.astype(np.float32))
         self.register_buffer("frequency_norm", (f - f.mean()) / f.std())
-        for name, size, value in (("config_mean", 5, 0.0), ("config_std", 5, 1.0), ("b12_mean", 4, 0.0), ("b12_std", 4, 1.0)):
+        for name, size, value in (("config_mean", CONF_DIM, 0.0), ("config_std", CONF_DIM, 1.0), ("b12_mean", N_DESIGN, 0.0), ("b12_std", N_DESIGN, 1.0)):
             self.register_buffer(name, torch.full((size,), value))
         self.project_q = nn.Sequential(nn.Linear(2 * width, 2 * width), act(), nn.Linear(2 * width, 1))
         self.readout_pool, self.readout_proj = nn.AdaptiveAvgPool1d(readout_bins), nn.Conv1d(2 * width, 4, 1)
@@ -1224,7 +1250,7 @@ class IGNO(InvertibleOperator):
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.SiLU)
         self.layers = nn.ModuleList([GraphMessageLayer(width, dropout) for _ in range(depth)])
-        self.query_kernel = MLP([width + 5 + frequency_dim + 4, width, width, width], nn.SiLU)
+        self.query_kernel = MLP([width + CONF_DIM + frequency_dim + 4, width, width, width], nn.SiLU)
         self.attention_score = MLP([width, width // 2, 1], nn.SiLU)
         self.attention_dropout, self.lift_p = nn.Dropout(dropout), nn.Linear(width, 2 * width)
         self._standard_inverse_lift(frequency_dim, nn.SiLU)
@@ -1360,7 +1386,7 @@ class IDON(nn.Module):
 
     def __init__(self, num_res, q=64, num_layers=10, hidden=256, trunk_hidden=256, num_fourier=32):
         super().__init__()
-        self.num_res, self.design_dim, self.q = num_res, 4 * num_res, q
+        self.num_res, self.design_dim, self.q = num_res, N_DESIGN * num_res, q
         self.pad = q - self.design_dim
         self.branch = RealNVP(q, num_layers, hidden)
         self.register_buffer("fourier", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
@@ -1507,7 +1533,7 @@ def train_forward(name, data, epochs=200, batch_size=128):
             configuration, frequency, target = configuration.to(device), frequency.to(device), target.to(device)
             if name == "NN":  # random resonator order each batch
                 order = torch.argsort(torch.rand(configuration.shape[:2], device=device), dim=1)
-                configuration = torch.gather(configuration, 1, order[..., None].expand(-1, -1, 5))
+                configuration = torch.gather(configuration, 1, order[..., None].expand(-1, -1, CONF_DIM))
             optimizer.zero_grad(set_to_none=True)
             loss = erp_spectrum_loss(model(configuration, frequency), target)
             loss.backward()
@@ -1733,7 +1759,7 @@ def plot_forward_results(out, name, true, pred, frequencies):
 # ---- inverse validation (invertible models) ------------------------------------------------------------------
 @torch.no_grad()
 def inverse_designs(model, data, spectrum, num_samples):
-    """Designs for target spectra (n, F) normalised: samples (n, S, R, 5), point estimate (n, R, 5), own-forward pick (n,)."""
+    """Designs for target spectra (n, F) normalised: samples (n, S, R, 6), point estimate (n, R, 6), own-forward pick (n,)."""
     R = data.num_res
     spectrum = spectrum.to(device)
     samples = model.sample(spectrum, num_samples)
@@ -1751,7 +1777,7 @@ def evaluate_inverse(model, name, data, loaders, out, num_targets=100, num_sampl
     true = denormalize_erp(spectrum, data.norm)
     samples, point, pick = inverse_designs(model, data, spectrum, num_samples)
     print(f"{name}: re-simulating {n * num_samples} proposed designs with the solver")
-    solved = solve_configurations(samples.reshape(-1, R, 5)).reshape(n, num_samples, -1)
+    solved = solve_configurations(samples.reshape(-1, R, CONF_DIM)).reshape(n, num_samples, -1)
     solved_point = solve_configurations(point)
     rows = np.arange(n)
     oracle = ((solved - true[:, None]) ** 2).mean(-1).argmin(1)
@@ -1777,7 +1803,7 @@ def evaluate_inverse(model, name, data, loaders, out, num_targets=100, num_sampl
     fig.savefig(out / "inverse_examples.png")
     plt.close(fig)
 
-    fig, axes = plt.subplots(1, 5, figsize=(22, 4))
+    fig, axes = plt.subplots(1, 1 + N_DESIGN, figsize=(4.4 * (1 + N_DESIGN), 4))
     for ax, (i, f) in zip(axes[1:], [(i, f) for i, f in enumerate(FIELDS) if f != "k"]):
         ax.scatter(truth[..., i].ravel(), chosen[..., i].ravel(), s=8, alpha=0.4)
         lim = [truth[..., i].min(), truth[..., i].max()]
@@ -1863,10 +1889,14 @@ def compare_models(kind, tag, names):
 
 # ---- prediction for a configuration -----------------------------------------------------------------------------
 def configuration_from_rows(rows):
-    """[[m, f_t, x, y], ...] -> (R, 5) [m, k, f_t, x, y]."""
-    rows = np.asarray(rows, float)
-    m, f_t = np.clip(rows[:, 0], m_min, m_max), np.clip(rows[:, 1], f_min, f_max)
-    return np.stack([m, m * (2 * np.pi * f_t) ** 2, f_t, np.clip(rows[:, 2], 0, Lx), np.clip(rows[:, 3], 0, Ly)], axis=-1)
+    """[[m, f_t, x, y, zeta], ...] -> (R, 6) [m, k, f_t, x, y, zeta]; zeta defaults to c = 1 N s/m when a row has four numbers."""
+    out = []
+    for row in rows:
+        m, f_t = np.clip(row[0], m_min, m_max), np.clip(row[1], f_min, f_max)
+        k = m * (2 * np.pi * f_t) ** 2
+        zeta = row[4] if len(row) > 4 else 1.0 / (2 * np.sqrt(k * m))
+        out.append([m, k, f_t, np.clip(row[2], 0, Lx), np.clip(row[3], 0, Ly), np.clip(zeta, zeta_min, zeta_max)])
+    return np.array(out)
 
 
 @torch.no_grad()
@@ -1878,7 +1908,7 @@ def predict_configuration(kind, tag, names, data, configuration, direction="forw
     out = plot_dir(kind, tag, names[0] if len(names) == 1 else "ALL_MODELS")
     fig, ax = plt.subplots(figsize=(10, 4.5))
     ax.plot(freqs, true, "k", lw=2, label="Solver (target)")
-    report = [f"Configuration [m, k, f_t, x, y]:\n{np.array2string(configuration, precision=4)}"]
+    report = [f"Configuration [m, k, f_t, x, y, zeta]:\n{np.array2string(configuration, precision=4)}"]
     for i, name in enumerate(names):
         model, _ = load_model(kind, tag, name)
         if model is None:
@@ -1900,7 +1930,7 @@ def predict_configuration(kind, tag, names, data, configuration, direction="forw
             solved = solve_configurations(np.concatenate([samples[0], point]))
             best = solved[pick[0]]
             ax.plot(freqs, best, f"C{i}", lw=1.3, label=f"{name} proposal (RMSE {np.sqrt(np.mean((best - true) ** 2)):.2f} dB)")
-            report.append(f"{name}: proposed design [m, k, f_t, x, y]:\n{np.array2string(sort_by_ft(samples[0][pick[0]]), precision=4)}\n"
+            report.append(f"{name}: proposed design [m, k, f_t, x, y, zeta]:\n{np.array2string(sort_by_ft(samples[0][pick[0]]), precision=4)}\n"
                           f"   solver RMSE {np.sqrt(np.mean((best - true) ** 2)):.3f} dB")
     ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, title="Prediction for the given configuration" if direction == "forward" else "Inverse design for the target ERP")
     ax.legend()
@@ -1942,9 +1972,10 @@ def yes(prompt, default=False):
 
 
 def prompt_configuration(data):
-    """Resonator rows 'm, f_t, x, y'; Enter on the first row selects a random test configuration."""
+    """Resonator rows 'm, f_t, x, y[, zeta]'; Enter on the first row selects a random test configuration."""
     print(f"\nConfiguration of {data.num_res} resonators. One line per resonator: m (kg, {m_min}-{m_max}), f_t (Hz, {f_min:g}-{f_max:g}), "
-          f"x (m, 0-{Lx}), y (m, 0-{Ly}). Press Enter for a random test configuration.")
+          f"x (m, 0-{Lx}), y (m, 0-{Ly}), zeta (damping ratio, {zeta_min:g}-{zeta_max:g}, optional: default c = 1 N s/m). "
+          "Press Enter for a random test configuration.")
     rows = []
     for i in range(data.num_res):
         while True:
@@ -1953,11 +1984,11 @@ def prompt_configuration(data):
                 return data.config[np.random.default_rng().choice(data.split["test"])]
             try:
                 values = [float(v) for v in text.replace(",", " ").split()]
-                assert len(values) == 4
+                assert len(values) in (4, 5)
                 rows.append(values)
                 break
             except (ValueError, AssertionError):
-                print("  Enter four numbers: m, f_t, x, y")
+                print("  Enter four or five numbers: m, f_t, x, y [, zeta]")
     return configuration_from_rows(rows)
 
 
