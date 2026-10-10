@@ -1388,7 +1388,9 @@ class IDON(nn.Module):
 
     def __init__(self, num_res, q=64, num_layers=10, hidden=52, trunk_hidden=52, num_fourier=32):
         super().__init__()
-        self.num_res, self.design_dim, self.q = num_res, N_DESIGN * num_res, q
+        self.num_res, self.design_dim = num_res, N_DESIGN * num_res
+        q = max(q, self.design_dim + 8)  # more basis functions than design numbers (padded latent)
+        self.q = q
         self.pad = q - self.design_dim
         self.branch = RealNVP(q, num_layers, hidden)
         self.register_buffer("fourier", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
