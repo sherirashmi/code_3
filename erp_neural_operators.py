@@ -1845,8 +1845,8 @@ def evaluate_model(kind, tag, name, data=None, batch_size=128):
     return metrics
 
 
-def compare_models(kind, tag, names):
-    """Table and bar charts of the evaluated models -> <kind>/plots/<dataset>/ALL_MODELS/."""
+def compare_models(kind, tag, names, data):
+    """Table, bar charts, combined loss curves and true vs predicted spectra of all models -> <kind>/plots/<dataset>/ALL_MODELS/."""
     rows = []
     for name in names:
         file = plot_dir(kind, tag, name) / "metrics.json"
@@ -1876,17 +1876,50 @@ def compare_models(kind, tag, names):
     fig.tight_layout()
     fig.savefig(out / "comparison_forward.png")
     plt.close(fig)
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for name in names:
+    colors = plt.get_cmap("tab10").colors
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5), sharey=True)
+    for i, name in enumerate(names):
         _, ckpt = load_model(kind, tag, name)
-        if ckpt is not None:
-            h = ckpt["history"]
-            val = h["val"] if "val" in h else h["stage1"]["val"] + h["stage2"]["val"] + h["stage3"]["val"]
-            ax.plot(val, label=name)
-    ax.set(xlabel="Epoch", ylabel="Validation loss", yscale="log")
-    ax.legend(ncol=2)
+        if ckpt is None:
+            continue
+        h = ckpt["history"]
+        for ax, key in zip(axes, ("train", "val")):
+            ax.plot(h[key] if key in h else sum((h[st][key] for st in ("stage1", "stage2", "stage3")), []), color=colors[i % 10], label=name)
+    for ax, title in zip(axes, ("Training loss", "Validation loss")):
+        ax.set(xlabel="Epoch", yscale="log", title=title)
+    axes[0].set_ylabel("Loss")
+    axes[1].legend(ncol=2)
     fig.tight_layout()
-    fig.savefig(out / "validation_loss.png")
+    fig.savefig(out / "loss_curves_all_models.png")
+    plt.close(fig)
+
+    # the same test configurations for every model: solver ERP vs the prediction of each model
+    ids = data.split["test"][:6]
+    true = data.erp[ids]
+    fig, axes = plt.subplots(2, 3, figsize=(18, 8), sharex=True)
+    for ax, t in zip(axes.ravel(), true):
+        ax.plot(freqs, t, "k", lw=2, label="Solver (true)")
+    for i, name in enumerate(names):
+        model, _ = load_model(kind, tag, name)
+        if model is None:
+            continue
+        with torch.no_grad():
+            if kind == "forward":
+                configuration = torch.from_numpy(normalize_config(data.config[ids], data.norm)).to(device)
+                frequency = torch.from_numpy(data.freq_norm)[None, :, None].expand(len(ids), -1, -1).to(device)
+                pred = model(configuration, frequency).squeeze(-1).cpu()
+            else:
+                design = torch.from_numpy(encode_bounded(sort_by_ft(data.config[ids]), data.norm)).flatten(1).to(device)
+                pred = model.predict_erp(design).cpu()
+        for ax, p in zip(axes.ravel(), denormalize_erp(pred, data.norm)):
+            ax.plot(freqs, p, color=colors[i % 10], lw=1.0, alpha=0.85, label=name)
+    for k, ax in enumerate(axes.ravel()):
+        ax.set_title(f"Test configuration {k + 1}")
+    axes[1, 0].set_xlabel(FREQ_LABEL)
+    axes[0, 0].set_ylabel(ERP_LABEL)
+    axes[0, 0].legend(ncol=2, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out / "test_examples_all_models.png")
     plt.close(fig)
 
 
@@ -2043,7 +2076,7 @@ def run_models(kind, data):
             direction = ("forward", "inverse")[choose("Direction?", ["Forward: design -> ERP", "Inverse: target ERP (of a given design) -> design"])]
         predict_configuration(kind, data.tag, selected, data, prompt_configuration(data), direction)
     if len(selected) > 1 and action != 2:
-        compare_models(kind, data.tag, selected)
+        compare_models(kind, data.tag, selected, data)
 
 
 def main():
