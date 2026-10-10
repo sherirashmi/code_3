@@ -10,6 +10,7 @@
 # Folders   dataset/{datasets,stats,plots}
 #           forward_models/{models,plots/<dataset>/<MODEL>}
 #           invertible_models/{models,plots/<dataset>/<MODEL>}
+# Data      m, f_t, x, y of every resonator by Latin hypercube (k = m (2 pi f_t)^2)
 # Defaults  every model uses the set + f_t-sorted resonator encoder and the
 #           plate-mode (physics-aware) features; invertible models use the
 #           bounded design, bounded gate, binned readout, cycle/alignment
@@ -25,7 +26,6 @@ import time
 import copy
 import json
 import random
-import itertools
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
@@ -93,11 +93,9 @@ erp_nx, erp_ny = 280, 100
 X_grid, Y_grid = np.meshgrid(np.linspace(0, Lx, erp_nx), np.linspace(0, Ly, erp_ny))
 dA = (Lx / (erp_nx - 1)) * (Ly / (erp_ny - 1))
 
-# Resonators: mass and tuning frequency by Latin hypercube, k = m (2 pi f_t)^2, c = 1 N s/m,
-# positions on a 14 x 5 grid of mounting points (0.1 m spacing)
+# Resonators: mass, tuning frequency and position all by Latin hypercube, k = m (2 pi f_t)^2, c = 1 N s/m
 m_min, m_max = 0.1, 1.0
 edge_margin = 0.05
-grid_nx, grid_ny = 14, 5
 resonator_damping = 1.0
 
 # Plate modes (set when a dataset is generated or loaded)
@@ -226,30 +224,12 @@ def solve_configurations(configurations, report_every=0):
 #%% 4. Dataset creation
 
 
-def balanced_grid_cells(n, num_res, seed=SEED):
-    """(n, num_res) grid-cell indices: distinct cells per configuration, every cell combination used equally often."""
-    rng = np.random.default_rng(seed)
-    cells = grid_nx * grid_ny
-    if math.comb(cells, num_res) <= 2_000_000:
-        combos = np.array(list(itertools.combinations(range(cells), num_res)))
-        order = np.concatenate([rng.permutation(len(combos)) for _ in range(-(-n // len(combos)))])[:n]
-        picked = combos[order]
-    else:
-        picked = np.stack([rng.choice(cells, num_res, replace=False) for _ in range(n)])
-    return rng.permuted(picked, axis=1)
-
-
 def sample_configurations(n, num_res, seed=SEED):
-    """(n, num_res, 5) [m, k, f_t, x, y]: m and f_t by Latin hypercube, positions on the mounting grid."""
-    bounds = np.tile([[m_min, m_max], [f_min, f_max]], (num_res, 1))
-    lhs = qmc.scale(qmc.LatinHypercube(d=2 * num_res, seed=seed).random(n), bounds[:, 0], bounds[:, 1])
-    m, f_t = lhs[:, 0::2], lhs[:, 1::2]
-    xs = np.linspace(edge_margin, Lx - edge_margin, grid_nx)
-    ys = np.linspace(edge_margin, Ly - edge_margin, grid_ny)
-    points = np.array([(x, y) for x in xs for y in ys])
-    pos = points[balanced_grid_cells(n, num_res, seed)]
-    k = m * (2 * np.pi * f_t) ** 2
-    return np.stack([m, k, f_t, pos[..., 0], pos[..., 1]], axis=-1).astype(np.float32)
+    """(n, num_res, 5) [m, k, f_t, x, y]: m, f_t, x and y of every resonator from one Latin hypercube, k = m (2 pi f_t)^2."""
+    bounds = np.tile([[m_min, m_max], [f_min, f_max], [edge_margin, Lx - edge_margin], [edge_margin, Ly - edge_margin]], (num_res, 1))
+    lhs = qmc.scale(qmc.LatinHypercube(d=4 * num_res, seed=seed).random(n), bounds[:, 0], bounds[:, 1])
+    m, f_t, x, y = (lhs[:, i::4] for i in range(4))
+    return np.stack([m, m * (2 * np.pi * f_t) ** 2, f_t, x, y], axis=-1).astype(np.float32)
 
 
 def dataset_tag(n, num_res, nx_modes, ny_modes):
@@ -451,7 +431,7 @@ def dataset_statistics(data):
     plt.close(fig)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 4))
-    axes[0].hist2d(config[..., 3].ravel(), config[..., 4].ravel(), bins=(grid_nx, grid_ny), range=[[0, Lx], [0, Ly]], cmap="Blues")
+    axes[0].hist2d(config[..., 3].ravel(), config[..., 4].ravel(), bins=(28, 10), range=[[0, Lx], [0, Ly]], cmap="Blues")
     axes[0].set(xlabel="$x$ (m)", ylabel="$y$ (m)", title="Resonator positions", aspect="equal")
     axes[1].hist(peaks, bins=np.arange(-0.5, max(peaks) + 1.5), color="C0")
     axes[1].set(xlabel="Peaks per spectrum", ylabel="Spectra", title="Peaks (prominence 3 dB)")
