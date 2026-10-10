@@ -7,7 +7,7 @@
 #           4 dataset creation   5 normalisation, splits, statistics
 #           6 forward models     7 invertible models (iDON, iFNO family)
 #           8 training, validation, prediction, plots    9 main
-# Folders   dataset/{datasets,stats,plots}
+# Folders   dataset/{datasets,stats/<dataset>,plots/<dataset>}
 #           forward_models/{models,plots/<dataset>/<MODEL>}
 #           invertible_models/{models,plots/<dataset>/<MODEL>}
 # Data      m, f_t, x, y (uniform) and damping ratio zeta (log-uniform) of every resonator by Latin hypercube;
@@ -414,13 +414,16 @@ def dataset_statistics(data):
     """Statistics and plots of a dataset -> dataset/stats/<tag>_*.csv/.txt and dataset/plots/<tag>_*.png."""
     make_folders()
     tag, erp, config = data.tag, data.erp, data.config
+    stats_dir, plots_dir = DATASET_DIR / "stats" / tag, DATASET_DIR / "plots" / tag
+    stats_dir.mkdir(exist_ok=True)
+    plots_dir.mkdir(exist_ok=True)
     q1, med, q3 = np.percentile(erp, [25, 50, 75], axis=0)
     iqr = q3 - q1
     low = np.where(erp >= q1 - 1.5 * iqr, erp, np.inf).min(0)
     high = np.where(erp <= q3 + 1.5 * iqr, erp, -np.inf).max(0)
     columns = ["frequency_hz", "min_db", "lower_whisker_db", "q1_db", "median_db", "q3_db", "upper_whisker_db", "max_db", "mean_db", "std_db"]
     table = np.column_stack([data.freqs, erp.min(0), low, q1, med, q3, high, erp.max(0), erp.mean(0), erp.std(0)])
-    np.savetxt(DATASET_DIR / "stats" / f"{tag}_erp_frequency_statistics.csv", table, delimiter=",", header=",".join(columns), comments="")
+    np.savetxt(stats_dir / "erp_frequency_statistics.csv", table, delimiter=",", header=",".join(columns), comments="")
 
     peaks = [len(find_peaks(s, prominence=3.0)[0]) for s in erp[np.random.default_rng(SEED).choice(len(erp), min(2000, len(erp)), replace=False)]]
     natural = [f for f in omega_n / (2 * np.pi) if f_min <= f <= f_max]
@@ -432,7 +435,7 @@ def dataset_statistics(data):
              f"bare-plate natural frequencies in band: {', '.join(f'{f:.1f}' for f in natural)} Hz", "", "field        mean        std        min        max"]
     lines += [f"{name:<6s} {config[..., i].mean():11.4f} {config[..., i].std():10.4f} {config[..., i].min():10.4f} {config[..., i].max():10.4f}"
               for i, name in enumerate(FIELDS)]
-    (DATASET_DIR / "stats" / f"{tag}_summary.txt").write_text("\n".join(lines) + "\n")
+    (stats_dir / "summary.txt").write_text("\n".join(lines) + "\n")
 
     fig, ax = plt.subplots(figsize=(11, 4.5))
     for j, f in enumerate(natural):
@@ -444,7 +447,7 @@ def dataset_statistics(data):
     ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, xlim=(f_min, f_max), title=f"ERP distribution, {tag}")
     ax.legend(ncol=2)
     fig.tight_layout()
-    fig.savefig(DATASET_DIR / "plots" / f"{tag}_erp_frequency_band.png")
+    fig.savefig(plots_dir / "erp_frequency_band.png")
     plt.close(fig)
 
     fig, axes = plt.subplots(1, 5, figsize=(20, 3.6))
@@ -454,7 +457,7 @@ def dataset_statistics(data):
         ax.hist(values, bins=np.geomspace(values.min(), values.max(), 41) if i == 5 else 40, color="C0")
         ax.set(xlabel=label, ylabel="Resonators", xscale="log" if i == 5 else "linear")
     fig.tight_layout()
-    fig.savefig(DATASET_DIR / "plots" / f"{tag}_parameter_distributions.png")
+    fig.savefig(plots_dir / "parameter_distributions.png")
     plt.close(fig)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 4))
@@ -463,9 +466,9 @@ def dataset_statistics(data):
     axes[1].hist(peaks, bins=np.arange(-0.5, max(peaks) + 1.5), color="C0")
     axes[1].set(xlabel="Peaks per spectrum", ylabel="Spectra", title="Peaks (prominence 3 dB)")
     fig.tight_layout()
-    fig.savefig(DATASET_DIR / "plots" / f"{tag}_positions_and_peaks.png")
+    fig.savefig(plots_dir / "positions_and_peaks.png")
     plt.close(fig)
-    print(f"Statistics saved to dataset/stats and dataset/plots ({tag})")
+    print(f"Statistics saved to dataset/stats/{tag} and dataset/plots/{tag}")
 
 #%% 6. Forward models (configuration, frequency -> ERP)
 ACT = {"relu": nn.ReLU, "gelu": nn.GELU, "silu": nn.SiLU, "tanh": nn.Tanh}
@@ -2000,7 +2003,7 @@ def choose_dataset():
     index = choose("Which dataset?", [f"{d['tag']}  ({d['n']} configurations, {d['num_res']} resonators, {d['nx_modes']}x{d['ny_modes']} plate modes)"
                                        for d in datasets])
     data = ERPData(datasets[index]["tag"])
-    if not (DATASET_DIR / "stats" / f"{data.tag}_summary.txt").exists():
+    if not (DATASET_DIR / "stats" / data.tag / "summary.txt").exists():
         dataset_statistics(data)
     return data
 
