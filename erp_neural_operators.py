@@ -619,7 +619,7 @@ class DON(nn.Module):
     The trunk maps the frequency alone to Q + 1 functions; psi_1..psi_Q are orthonormalised by QR on every pass
     (Psi^T Psi = F I), psi_0 is a free bias function. The branch (resonator encoder + MLP) gives the coefficients b."""
 
-    def __init__(self, num_res, hidden_dim=45, context_dim=71, q=64, trunk_hidden=128, num_fourier=32):
+    def __init__(self, num_res, hidden_dim=54, context_dim=86, q=64, trunk_hidden=155, num_fourier=32):
         super().__init__()
         self.encoder = SetAndSortedEncoder(num_res, hidden_dim, hidden_dim, context_dim)
         self.branch_head = MLP([context_dim, 2 * hidden_dim, q], nn.Tanh)
@@ -779,7 +779,7 @@ class HaarWaveletBlock1d(nn.Module):
 class WNO(nn.Module):
     """Wavelet neural operator along frequency."""
 
-    def __init__(self, num_res, width=30, depth=4, levels=3, config_hidden=57, query_dim=22):
+    def __init__(self, num_res, width=31, depth=4, levels=3, config_hidden=58, query_dim=22):
         super().__init__()
         self.encoder = SetAndSortedEncoder(num_res, config_hidden, config_hidden, width)
         self.query = ResonanceQueryEncoder(query_dim, query_dim, query_dim)
@@ -806,7 +806,7 @@ def pole_features(f, sigma, omega, r_re, r_im):
 class LNO(nn.Module):
     """Laplace neural operator: poles and residues predicted from the configuration."""
 
-    def __init__(self, num_res, width=90, num_poles=13, config_hidden=64, pole_hidden=64, query_dim=25):
+    def __init__(self, num_res, width=86, num_poles=13, config_hidden=62, pole_hidden=62, query_dim=24):
         super().__init__()
         self.num_poles = num_poles
         self.encoder = SetAndSortedEncoder(num_res, config_hidden, config_hidden, width)
@@ -846,7 +846,7 @@ class GNO(nn.Module):
     uses_modal_features = True
     uses_detuning = True
 
-    def __init__(self, num_res, width=60, depth=3, frequency_dim=28, harmonics=4, dropout=0.1):
+    def __init__(self, num_res, width=68, depth=3, frequency_dim=32, harmonics=4, dropout=0.1):
         super().__init__()
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.SiLU)
@@ -915,7 +915,7 @@ class STO(nn.Module):
     """Set Transformer operator: resonator self-attention, detuning-biased cross-attention from frequencies."""
     uses_modal_features = True
 
-    def __init__(self, num_res, width=56, heads=4, depth=2, ff_dim=144, harmonics=4, dropout=0.1):
+    def __init__(self, num_res, width=64, heads=4, depth=2, ff_dim=168, harmonics=4, dropout=0.1):
         super().__init__()
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.GELU)
@@ -978,7 +978,7 @@ class SIREN(nn.Module):
 class NN(nn.Module):
     """Plain MLP on the flattened configuration and the frequency (baseline; trained with resonator-order shuffling)."""
 
-    def __init__(self, num_res, hidden_dim=148, depth=6, dropout=0.1):
+    def __init__(self, num_res, hidden_dim=168, depth=6, dropout=0.1):
         super().__init__()
         self.num_res = num_res
         layers, n_in = [], num_res * CONF_DIM + 1
@@ -992,7 +992,7 @@ class NN(nn.Module):
         return self.output(self.mlp(torch.cat((flat, frequency), dim=-1)))
 
 
-# name -> (class, learning rate); sizes are about 1e5 parameters each
+# name -> (class, learning rate); sizes are about 145k parameters each (2 resonators)
 FORWARD_MODELS = {"DON": (DON, 5e-4), "DNO": (DNO, 5e-4), "FNO": (FNO, 5e-4), "DCO": (DCO, 5e-4), "GNO": (GNO, 5e-4),
                   "STO": (STO, 5e-4), "SIREN": (SIREN, 2e-4), "WNO": (WNO, 5e-4), "NN": (NN, 5e-4), "LNO": (LNO, 5e-4)}
 
@@ -1196,7 +1196,7 @@ class FourierGate(nn.Module):
 
 
 class IFNO(InvertibleOperator):
-    def __init__(self, num_res, width=24, num_blocks=4, modes=48, config_hidden=80, query_dim=32):
+    def __init__(self, num_res, width=72, num_blocks=4, modes=48, config_hidden=239, query_dim=96):
         self._init_base(num_res, width, nn.GELU)
         self.encoder = SortedResonatorEncoder(num_res, config_hidden, 2 * width)
         self.query = ResonanceQueryEncoder(query_dim, query_dim, query_dim)
@@ -1219,7 +1219,7 @@ class DCOGate(nn.Module):
 
 
 class IDCO(InvertibleOperator):
-    def __init__(self, num_res, width=24, num_blocks=4, branch_dim=56, trunk_dim=28, query_dim=32):
+    def __init__(self, num_res, width=132, num_blocks=4, branch_dim=307, trunk_dim=154, query_dim=175):
         self._init_base(num_res, width, nn.SiLU)
         self.branch = SortedResonatorEncoder(num_res, branch_dim, branch_dim)
         self.trunk = MLP([1, trunk_dim, trunk_dim], nn.SiLU)
@@ -1247,7 +1247,7 @@ class IGNO(InvertibleOperator):
     uses_modal_features = True
     uses_detuning = True
 
-    def __init__(self, num_res, width=24, num_blocks=4, depth=3, frequency_dim=28, harmonics=4, dropout=0.1):
+    def __init__(self, num_res, width=142, num_blocks=4, depth=3, frequency_dim=165, harmonics=4, dropout=0.1):
         self._init_base(num_res, width, nn.SiLU)
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), width, width], nn.SiLU)
@@ -1290,7 +1290,7 @@ class LNOGate(nn.Module):
 
 
 class ILNO(InvertibleOperator):
-    def __init__(self, num_res, width=24, num_blocks=4, num_poles=12, gate_poles=8, context_dim=48, config_hidden=64, pole_hidden=48, query_dim=24):
+    def __init__(self, num_res, width=138, num_blocks=4, num_poles=12, gate_poles=8, context_dim=275, config_hidden=367, pole_hidden=275, query_dim=137):
         self._init_base(num_res, width, nn.SiLU)
         self.num_poles = num_poles
         self.encoder = SortedResonatorEncoder(num_res, config_hidden, context_dim)
@@ -1309,7 +1309,7 @@ class ILNO(InvertibleOperator):
 class ISTO(InvertibleOperator):
     uses_modal_features = True
 
-    def __init__(self, num_res, width=24, num_blocks=4, token_width=32, heads=4, encoder_depth=2, ff_dim=64, harmonics=4, frequency_dim=24):
+    def __init__(self, num_res, width=128, num_blocks=4, token_width=172, heads=4, encoder_depth=2, ff_dim=340, harmonics=4, frequency_dim=128):
         self._init_base(num_res, width, nn.GELU)
         self.harmonics = harmonics
         self.node_lift = MLP([feature_dim(harmonics), token_width, token_width], nn.GELU)
