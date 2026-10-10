@@ -1760,6 +1760,51 @@ def plot_forward_results(out, name, true, pred, frequencies):
     plt.close(fig)
 
 
+def draw_plate(ax, true_config=None, proposals=(), legend=True):
+    """Plate outline with the force position, the true resonators (circles) and proposed resonators (triangles).
+    proposals: list of (label, (R, 6) configuration, colour, emphasised)."""
+    ax.add_patch(plt.Rectangle((0, 0), Lx, Ly, fill=False, edgecolor="black", lw=1.5))
+    ax.scatter([xf], [yf], marker="*", s=180, color="cyan", edgecolors="black", linewidths=0.8, zorder=3, label="Force $F_0$")
+    if true_config is not None:
+        c = np.asarray(true_config, float)
+        ax.scatter(c[:, 3], c[:, 4], marker="o", s=90, color="crimson", edgecolors="black", linewidths=0.8, zorder=4, label="True resonator")
+        for ft, x, y in c[:, [2, 3, 4]]:
+            ax.annotate(f"{ft:.1f} Hz", (x, y), textcoords="offset points", xytext=(6, 6), fontsize=8, color="crimson")
+    for label, cfg, color, strong in proposals:
+        c = np.asarray(cfg, float)
+        ax.scatter(c[:, 3], c[:, 4], marker="^", s=90 if strong else 28, color=color, alpha=1.0 if strong else 0.35,
+                   edgecolors="black" if strong else "none", linewidths=0.8, zorder=5 if strong else 2, label=label)
+        if strong:
+            for ft, x, y in c[:, [2, 3, 4]]:
+                ax.annotate(f"{ft:.1f} Hz", (x, y), textcoords="offset points", xytext=(6, -12), fontsize=8, color=color)
+    ax.set_xlim(-0.05 * Lx, 1.05 * Lx)
+    ax.set_ylim(-0.05 * Ly, 1.05 * Ly)
+    ax.set(aspect="equal", xlabel="$x$ (m)", ylabel="$y$ (m)", title="Resonator layout on plate")
+    if legend:
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.38), ncol=2, fontsize=8)
+
+
+def plot_spectrum_and_plate(path, true, curves, true_config, title, proposals=(), faint=()):
+    """Repo-style figure: spectrum (true in black, predictions dashed, red dotted lines at the resonator tuning
+    frequencies) on the left, plate with force and resonator positions on the right.
+    curves: list of (label, spectrum, colour); faint: extra thin spectra (other proposals)."""
+    fig, (ax, ax_plate) = plt.subplots(1, 2, figsize=(13, 4.8), gridspec_kw={"width_ratios": [1.6, 1]})
+    for i, y in enumerate(faint):
+        ax.plot(freqs, y, color="C0", alpha=0.2, lw=0.9, label="Other proposals" if i == 0 else None)
+    ax.plot(freqs, true, lw=2.2, color="black", label="Ground truth (solver)")
+    for label, y, color in curves:
+        ax.plot(freqs, y, "--", lw=1.7, color=color, label=label)
+    for i, ft in enumerate(np.asarray(true_config, float)[:, 2]):
+        ax.axvline(ft, color="red", ls=":", lw=1.3, alpha=0.85, zorder=0, label="Resonator $f_t$" if i == 0 else None)
+    first = np.asarray(curves[0][1], float) - np.asarray(true, float)
+    ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, title=f"{title}\nMSE $= {np.mean(first**2):.3f}$ dB$^2$, MAE $= {np.mean(np.abs(first)):.3f}$ dB")
+    ax.legend(fontsize=8)
+    draw_plate(ax_plate, true_config, proposals)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
 # ---- inverse validation (invertible models) ------------------------------------------------------------------
 @torch.no_grad()
 def inverse_designs(model, data, spectrum, num_samples):
@@ -1793,19 +1838,14 @@ def evaluate_inverse(model, name, data, loaders, out, num_targets=100, num_sampl
                                             for i, f in enumerate(FIELDS) if f != "k"}
     metrics["num_targets"], metrics["num_samples"] = int(n), int(num_samples)
 
-    fig, axes = plt.subplots(1, 5, figsize=(22, 4), sharey=True)
-    for r, ax in enumerate(axes):
-        for s in range(num_samples):
-            ax.plot(freqs, solved[r, s], "C0", alpha=0.25, lw=0.9, label="Other proposals" if s == 0 else None)
-        ax.plot(freqs, solved[r, pick[r]], "C3", lw=1.5, label="Selected proposal")
-        ax.plot(freqs, true[r], "k", lw=1.5, label="Target")
-        ax.set_xlabel(FREQ_LABEL)
-    axes[0].set_ylabel(ERP_LABEL)
-    axes[0].legend()
-    fig.suptitle(f"{name}: solver response of the proposed designs vs target")
-    fig.tight_layout()
-    fig.savefig(out / "inverse_examples.png")
-    plt.close(fig)
+    for r in range(min(5, n)):  # target spectrum + solver ERP of the selected proposal, true vs proposed configurations
+        others = [k for k in range(num_samples) if k != pick[r]]
+        plot_spectrum_and_plate(out / f"inverse_target_{r + 1:02d}.png", true[r], [("Selected proposal (solver)", solved[r, pick[r]], "#C44E52")],
+                                truth[r], f"{name}: inverse design for target {r + 1}",
+                                proposals=[("Other proposals", samples[r, k], "C0", False) for k in others[:1]] +
+                                          [("", samples[r, k], "C0", False) for k in others[1:]] +
+                                          [("Selected proposal", samples[r, pick[r]], "#C44E52", True)],
+                                faint=[solved[r, k] for k in others])
 
     fig, axes = plt.subplots(1, 1 + N_DESIGN, figsize=(4.4 * (1 + N_DESIGN), 4))
     for ax, (i, f) in zip(axes[1:], [(i, f) for i, f in enumerate(FIELDS) if f != "k"]):
@@ -1837,6 +1877,10 @@ def evaluate_model(kind, tag, name, data=None, batch_size=128):
           f"Pearson {metrics['forward']['pearson_r']:.4f} | RMSE at peaks {metrics['forward']['rmse_at_peaks_db']:.3f} dB")
     plot_loss(ckpt["history"], name, out / "loss_curve.png")
     plot_forward_results(out, name, true, pred, data.freqs)
+    test_configs = data.config[data.split["test"]]
+    for i in range(min(5, len(true))):  # spectrum + plate with force and resonators, as in the repository
+        plot_spectrum_and_plate(out / f"erp_spectrum_test_config_{i + 1:02d}.png", true[i], [(name, pred[i], "#C44E52")],
+                                test_configs[i], f"{name}: test configuration {i + 1}")
     if kind == "invertible":
         metrics["inverse"] = evaluate_inverse(model, name, data, loaders, out)
         m = metrics["inverse"]["own_forward_pick"]
@@ -1938,19 +1982,21 @@ def configuration_from_rows(rows):
 
 @torch.no_grad()
 def predict_configuration(kind, tag, names, data, configuration, direction="forward", num_samples=8):
-    """Forward: predicted ERP of the configuration. Inverse (invertible): designs proposed for the configuration's ERP."""
+    """Forward: predicted ERP of the configuration. Inverse (invertible): designs proposed for the configuration's ERP,
+    shown next to the true configuration on the plate."""
     true = compute_erp_spectrum(to_resonators(configuration))
     target = torch.from_numpy(normalize_erp(true, data.norm))[None]
     stamp = time.strftime("%Y%m%d_%H%M%S")
     out = plot_dir(kind, tag, names[0] if len(names) == 1 else "ALL_MODELS")
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    ax.plot(freqs, true, "k", lw=2, label="Solver (target)")
     report = [f"Configuration [m, k, f_t, x, y, zeta]:\n{np.array2string(configuration, precision=4)}"]
+    colors = plt.get_cmap("tab10").colors
+    curves, proposals, faint = [], [], []
     for i, name in enumerate(names):
         model, _ = load_model(kind, tag, name)
         if model is None:
             print(f"{name}: not trained for '{tag}', skipped")
             continue
+        color = colors[(i + 3) % 10]
         if direction == "forward":
             if kind == "forward":
                 cfg = torch.from_numpy(normalize_config(configuration, data.norm))[None].to(device)
@@ -1960,20 +2006,25 @@ def predict_configuration(kind, tag, names, data, configuration, direction="forw
                 design = torch.from_numpy(encode_bounded(sort_by_ft(configuration), data.norm)).flatten()[None].to(device)
                 pred = model.predict_erp(design).cpu()
             pred = denormalize_erp(pred, data.norm)[0]
-            ax.plot(freqs, pred, f"C{i}", lw=1.3, label=f"{name} (RMSE {np.sqrt(np.mean((pred - true) ** 2)):.2f} dB)")
-            report.append(f"{name}: RMSE {np.sqrt(np.mean((pred - true) ** 2)):.3f} dB")
+            rmse = np.sqrt(np.mean((pred - true) ** 2))
+            curves.append((f"{name} (RMSE {rmse:.2f} dB)", pred, color))
+            report.append(f"{name}: RMSE {rmse:.3f} dB")
         else:
             samples, point, pick = inverse_designs(model, data, target, num_samples)
-            solved = solve_configurations(np.concatenate([samples[0], point]))
+            solved = solve_configurations(samples[0])
             best = solved[pick[0]]
-            ax.plot(freqs, best, f"C{i}", lw=1.3, label=f"{name} proposal (RMSE {np.sqrt(np.mean((best - true) ** 2)):.2f} dB)")
+            rmse = np.sqrt(np.mean((best - true) ** 2))
+            curves.append((f"{name} proposal, solver (RMSE {rmse:.2f} dB)", best, color))
+            proposals.append((f"{name} proposal", sort_by_ft(samples[0][pick[0]]), color, True))
+            if len(names) == 1:
+                faint = [solved[k] for k in range(num_samples) if k != pick[0]]
+                proposals = [("Other proposals", samples[0][k], "C0", False) for k in range(num_samples) if k != pick[0]][:1] + \
+                            [("", samples[0][k], "C0", False) for k in range(num_samples) if k != pick[0]][1:] + proposals
             report.append(f"{name}: proposed design [m, k, f_t, x, y, zeta]:\n{np.array2string(sort_by_ft(samples[0][pick[0]]), precision=4)}\n"
-                          f"   solver RMSE {np.sqrt(np.mean((best - true) ** 2)):.3f} dB")
-    ax.set(xlabel=FREQ_LABEL, ylabel=ERP_LABEL, title="Prediction for the given configuration" if direction == "forward" else "Inverse design for the target ERP")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(out / f"{direction}_prediction_{stamp}.png")
-    plt.close(fig)
+                          f"   solver RMSE {rmse:.3f} dB")
+    if curves:
+        title = "Prediction for the given configuration" if direction == "forward" else "Inverse design for the target ERP"
+        plot_spectrum_and_plate(out / f"{direction}_prediction_{stamp}.png", true, curves, configuration, title, proposals, faint)
     (out / f"{direction}_prediction_{stamp}.txt").write_text("\n".join(report) + "\n")
     print("\n".join(report))
     print(f"Saved {out / f'{direction}_prediction_{stamp}.png'}")
