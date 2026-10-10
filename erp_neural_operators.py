@@ -615,31 +615,30 @@ class ResonanceQueryEncoder(nn.Module):
 
 # ---- architectures ----------------------------------------------------------------------------------------------
 class DON(nn.Module):
-    """DeepONet: multi-term branch/trunk inner product, FiLM-modulated trunk, frequency refinement."""
+    """DeepONet with an orthonormal basis (as in iDON): ERP(f) = sum_q b_q(configuration) psi_q(f) + psi_0(f).
+    The trunk maps the frequency alone to Q + 1 functions; psi_1..psi_Q are orthonormalised by QR on every pass
+    (Psi^T Psi = F I), psi_0 is a free bias function. The branch (resonator encoder + MLP) gives the coefficients b."""
 
-    def __init__(self, num_res, hidden_dim=45, context_dim=71, basis_dim=113, num_terms=4, refine_width=28):
+    def __init__(self, num_res, hidden_dim=45, context_dim=71, q=64, trunk_hidden=128, num_fourier=32):
         super().__init__()
-        self.num_terms, self.basis_dim = num_terms, basis_dim
-        stacked = num_terms * basis_dim
         self.encoder = SetAndSortedEncoder(num_res, hidden_dim, hidden_dim, context_dim)
-        self.branch_head = MLP([context_dim, hidden_dim, stacked])
-        self.trunk = MLP([1, hidden_dim, hidden_dim, stacked])
-        self.trunk_modulation = MLP([context_dim, hidden_dim, 2 * stacked])
-        self.term_logits = nn.Parameter(torch.zeros(num_terms))
-        self.bias = nn.Parameter(torch.zeros(1))
-        self.refine_lift, self.refine = nn.Linear(1, refine_width), FrequencyRefinement1d(refine_width)
-        self.refine_project = nn.Linear(refine_width, 1)
+        self.branch_head = MLP([context_dim, 2 * hidden_dim, q], nn.Tanh)
+        self.register_buffer("fourier", torch.arange(1, num_fourier + 1, dtype=torch.float32) * math.pi)
+        self.trunk = MLP([1 + 2 * num_fourier, trunk_hidden, trunk_hidden, trunk_hidden, q + 1], nn.SiLU)
+
+    def basis(self, frequency):
+        """(Psi (F, Q) with Psi^T Psi = F I, psi_0 (F,)) on the frequency grid (shared by the batch)."""
+        f = frequency.reshape(-1)
+        f = 2 * (f - f.min()) / (f.max() - f.min()) - 1
+        arg = f[:, None] * self.fourier[None]
+        out = self.trunk(torch.cat((f[:, None], torch.sin(arg), torch.cos(arg)), dim=-1))
+        qmat, _ = torch.linalg.qr(out[:, 1:])
+        return qmat * math.sqrt(len(f)), out[:, 0]
 
     def forward(self, configuration, frequency):
-        b, n_f, _ = frequency.shape
-        context = self.encoder(configuration)
-        branch = self.branch_head(context).view(b, 1, self.num_terms, self.basis_dim)
-        gamma, beta = self.trunk_modulation(context).chunk(2, dim=-1)
-        trunk = ((1 + 0.25 * torch.tanh(gamma[:, None])) * self.trunk(frequency) + 0.1 * beta[:, None]).view(b, n_f, self.num_terms, self.basis_dim)
-        terms = (branch * trunk).sum(-1) / math.sqrt(self.basis_dim)
-        base = (terms * torch.softmax(self.term_logits, 0)).sum(-1, keepdim=True) + self.bias
-        refined = self.refine(self.refine_lift(base).transpose(1, 2))
-        return base + self.refine_project(refined.transpose(1, 2))
+        psi, psi0 = self.basis(frequency[0])
+        coefficients = self.branch_head(self.encoder(configuration))
+        return (coefficients @ psi.T + psi0).unsqueeze(-1)
 
 
 class FiLMResidualBlock(nn.Module):
